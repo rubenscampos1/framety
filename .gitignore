@@ -3,5 +3,6 @@ uploads/
 framety-db.json
 framety-db.json.tmp
 _restore_*/
+_backups/
 .env
 .claude/

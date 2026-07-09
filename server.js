@@ -10,9 +10,12 @@ const { Pool } = require('pg');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DIR = __dirname;
-const UPLOADS = path.join(DIR, 'uploads');
+// Uploads live on a persistent disk in production (Render disk mounted at
+// UPLOADS_DIR, e.g. /var/data/uploads) so they survive deploys/restarts.
+// Falls back to a local ./uploads folder for dev.
+const UPLOADS = process.env.UPLOADS_DIR || path.join(DIR, 'uploads');
 
-if (!fs.existsSync(UPLOADS)) fs.mkdirSync(UPLOADS);
+if (!fs.existsSync(UPLOADS)) fs.mkdirSync(UPLOADS, { recursive: true });
 
 const USE_PG = !!process.env.DATABASE_URL;
 const DB_FILE = require('path').join(DIR, 'framety-db.json');
@@ -650,6 +653,36 @@ app.put('/api/ai-section', requireAuth, (req, res) => {
   db.settings.aiSection = current;
   save();
   res.json({ ok: true });
+});
+
+// ── TEMP diagnostic: discover the persistent disk mount and its contents ──────
+// Auth-protected, read-only. Removed after we finish restoring uploads.
+app.get('/api/_diag', requireAuth, (req, res) => {
+  const probe = (p) => {
+    try {
+      const st = fs.statSync(p);
+      if (!st.isDirectory()) return { exists: true, dir: false };
+      const files = fs.readdirSync(p);
+      return { exists: true, dir: true, count: files.length, sample: files.slice(0, 10) };
+    } catch { return { exists: false }; }
+  };
+  const out = {
+    currentUploads: UPLOADS,
+    uploadsDirEnv: process.env.UPLOADS_DIR || null,
+    cwd: process.cwd(),
+  };
+  const candidates = ['/var/data', '/data', '/mnt/data', '/var/lib/data', '/var/data/uploads',
+    '/opt/render/project/src/uploads', '/opt/render/project/uploads', '/opt/render/project/src', UPLOADS];
+  out.candidates = {};
+  candidates.forEach(p => { out.candidates[p] = probe(p); });
+  try {
+    out.mounts = fs.readFileSync('/proc/mounts', 'utf8').split('\n')
+      .map(l => l.split(' ')).filter(a => a[1])
+      .map(a => ({ mount: a[1], type: a[2] }))
+      .filter(m => !['proc','sysfs','tmpfs','devtmpfs','cgroup','cgroup2','mqueue','devpts','overlay','shm','securityfs','pstore','bpf','tracefs','debugfs','configfs','fusectl','nsfs','autofs','hugetlbfs'].includes(m.type));
+  } catch (e) { out.mounts = 'n/a: ' + e.message; }
+  out.envKeys = Object.keys(process.env).filter(k => /disk|mount|render|data|upload/i.test(k));
+  res.json(out);
 });
 
 app.post('/api/upload/ai-image/:itemId', requireAuth, upload.single('file'), (req, res) => {
