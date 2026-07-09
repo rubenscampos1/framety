@@ -1,6 +1,7 @@
 const express = require('express');
 const compression = require('compression');
 const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -251,6 +252,30 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+// ── Storage backend: Cloudinary (durable, survives deploys) when CLOUDINARY_URL
+//    is set; otherwise the local disk (dev). Runs after multer; exposes the final
+//    URL to store in the DB as `req.uploadedUrl`. Uploads to Cloudinary stream
+//    from the temp file on disk (no large RAM buffers), then remove the temp. ──
+const USE_CLOUDINARY = !!process.env.CLOUDINARY_URL;
+if (USE_CLOUDINARY) { try { cloudinary.config({ secure: true }); } catch (e) { console.error('[cloudinary config]', e.message); } }
+async function storeUpload(req, res, next) {
+  if (!req.file) return next();
+  if (!USE_CLOUDINARY) { req.uploadedUrl = `/uploads/${req.file.filename}`; return next(); }
+  try {
+    const isVideo = /^video\//.test(req.file.mimetype);
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: 'framety',
+      resource_type: isVideo ? 'video' : 'image',
+    });
+    fs.unlink(req.file.path, () => {}); // drop the temp file
+    req.uploadedUrl = result.secure_url;
+    next();
+  } catch (e) {
+    fs.unlink(req.file.path, () => {});
+    next(e);
+  }
+}
 
 // ── gzip text responses (HTML/CSS/JS/JSON). Skips SSE (event-stream) so the
 //    real-time /api/events stream is never buffered. Media (mp4/png/jpg) is
@@ -655,59 +680,29 @@ app.put('/api/ai-section', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── TEMP diagnostic: discover the persistent disk mount and its contents ──────
-// Auth-protected, read-only. Removed after we finish restoring uploads.
-app.get('/api/_diag', requireAuth, (req, res) => {
-  const probe = (p) => {
-    try {
-      const st = fs.statSync(p);
-      if (!st.isDirectory()) return { exists: true, dir: false };
-      const files = fs.readdirSync(p);
-      return { exists: true, dir: true, count: files.length, sample: files.slice(0, 10) };
-    } catch { return { exists: false }; }
-  };
-  const out = {
-    currentUploads: UPLOADS,
-    uploadsDirEnv: process.env.UPLOADS_DIR || null,
-    cwd: process.cwd(),
-  };
-  const candidates = ['/var/data', '/data', '/mnt/data', '/var/lib/data', '/var/data/uploads',
-    '/opt/render/project/src/uploads', '/opt/render/project/uploads', '/opt/render/project/src', UPLOADS];
-  out.candidates = {};
-  candidates.forEach(p => { out.candidates[p] = probe(p); });
-  try {
-    out.mounts = fs.readFileSync('/proc/mounts', 'utf8').split('\n')
-      .map(l => l.split(' ')).filter(a => a[1])
-      .map(a => ({ mount: a[1], type: a[2] }))
-      .filter(m => !['proc','sysfs','tmpfs','devtmpfs','cgroup','cgroup2','mqueue','devpts','overlay','shm','securityfs','pstore','bpf','tracefs','debugfs','configfs','fusectl','nsfs','autofs','hugetlbfs'].includes(m.type));
-  } catch (e) { out.mounts = 'n/a: ' + e.message; }
-  out.envKeys = Object.keys(process.env).filter(k => /disk|mount|render|data|upload/i.test(k));
-  res.json(out);
-});
-
-app.post('/api/upload/ai-image/:itemId', requireAuth, upload.single('file'), (req, res) => {
+app.post('/api/upload/ai-image/:itemId', requireAuth, upload.single('file'), storeUpload, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const ai = db.settings.aiSection;
   if (!ai || !Array.isArray(ai.items)) {
-    unlinkUpload(`/uploads/${req.file.filename}`);
+    unlinkUpload(req.uploadedUrl);
     return res.status(404).json({ error: 'AI section not found' });
   }
   const item = ai.items.find(i => i.id === req.params.itemId);
   if (!item) {
-    unlinkUpload(`/uploads/${req.file.filename}`);
+    unlinkUpload(req.uploadedUrl);
     return res.status(404).json({ error: 'Item not found' });
   }
   unlinkUpload(item.imageUrl);
-  item.imageUrl = `/uploads/${req.file.filename}`;
+  item.imageUrl = req.uploadedUrl;
   save();
   res.json({ url: item.imageUrl });
 });
 
 // ── Uploads ───────────────────────────────────────────────────────────────────
-app.post('/api/upload/reel', requireAuth, upload.single('file'), (req, res) => {
+app.post('/api/upload/reel', requireAuth, upload.single('file'), storeUpload, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   unlinkUpload(db.settings.reel_url);
-  const url = `/uploads/${req.file.filename}`;
+  const url = req.uploadedUrl;
   db.settings.reel_url = url;
   db.settings.reel_name = req.file.originalname;
   save();
@@ -722,37 +717,37 @@ app.delete('/api/upload/reel', requireAuth, (req, res) => {
   res.status(204).end();
 });
 
-app.post('/api/upload/cover/:catId', requireAuth, upload.single('file'), (req, res) => {
+app.post('/api/upload/cover/:catId', requireAuth, upload.single('file'), storeUpload, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const cat = db.categories.find(c => c.id === req.params.catId);
   if (!cat) {
-    unlinkUpload(`/uploads/${req.file.filename}`);
+    unlinkUpload(req.uploadedUrl);
     return res.status(404).json({ error: 'Category not found' });
   }
   unlinkUpload(cat.coverUrl);
-  const url = `/uploads/${req.file.filename}`;
+  const url = req.uploadedUrl;
   cat.coverUrl = url;
   save();
   res.json({ url });
 });
 
-app.post('/api/upload/logo/:clientId', requireAuth, upload.single('file'), (req, res) => {
+app.post('/api/upload/logo/:clientId', requireAuth, upload.single('file'), storeUpload, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const client = db.clients.find(c => c.id === req.params.clientId);
   if (!client) {
-    unlinkUpload(`/uploads/${req.file.filename}`);
+    unlinkUpload(req.uploadedUrl);
     return res.status(404).json({ error: 'Client not found' });
   }
   unlinkUpload(client.logoUrl);
-  const url = `/uploads/${req.file.filename}`;
+  const url = req.uploadedUrl;
   client.logoUrl = url;
   save();
   res.json({ url });
 });
 
-app.post('/api/upload/thumb', requireAuth, upload.single('file'), (req, res) => {
+app.post('/api/upload/thumb', requireAuth, upload.single('file'), storeUpload, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
-  res.json({ url: `/uploads/${req.file.filename}` });
+  res.json({ url: req.uploadedUrl });
 });
 
 // ── Partners ──────────────────────────────────────────────────────────────────
