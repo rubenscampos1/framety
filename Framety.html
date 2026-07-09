@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <base href="/">
+    <title>Framety I Produtora especializada no mercado imobiliário.</title>
+    <link rel="icon" type="image/png" href="/fav-icon2.png" sizes="any">
+    <link rel="apple-touch-icon" href="/fav-icon2.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="dns-prefetch" href="https://i.ytimg.com">
+    <link rel="dns-prefetch" href="https://www.youtube.com">
+    <!-- Gibson não está disponível como webfont aberto. Usamos Outfit (geometric humanist sans, free, próximo do Gibson) como fallback principal. -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="wave-bg.js" defer></script>
+    <script src="letter-swap.js" defer></script>
+    <script src="content.js"></script>
+    <script src="https://unpkg.com/@dotlottie/player-component@latest/dist/dotlottie-player.mjs" type="module"></script>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script src="api.js"></script>
+    <script src="live.js"></script>
+    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+        integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+        crossorigin="anonymous"></script>
+    <!-- html2canvas + jsPDF are loaded on demand (only when exporting an OS PDF) — see loadPdfLibs() in admin.jsx -->
+
+    <script type="text/babel" src="tweaks-panel.jsx"></script>
+    <script type="text/babel" src="data.jsx"></script>
+    <script type="text/babel" src="primitives.jsx"></script>
+    <script type="text/babel" src="landing.jsx"></script>
+    <script type="text/babel" src="category.jsx"></script>
+    <script type="text/babel" src="admin.jsx"></script>
+    <script type="text/babel" src="presentation.jsx"></script>
+    <script type="text/babel" src="partner.jsx"></script>
+    <script type="text/babel" src="tutorial.jsx"></script>
+    <script type="text/babel" src="app.jsx"></script>
+</body>
+
+</html>

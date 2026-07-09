@@ -1,0 +1,7 @@
+node_modules/
+uploads/
+framety-db.json
+framety-db.json.tmp
+_restore_*/
+.env
+.claude/
