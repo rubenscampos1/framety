@@ -363,6 +363,7 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
   }, []);
 
   const handleEnter = (v) => {
+    if (IS_TOUCH) return; // no hover-preview on touch — static cards
     const ytId = window.getYouTubeId?.(v.videoUrl);
     if (!ytId) return;
     clearTimeout(hoverTimer.current);

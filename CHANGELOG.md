@@ -7,7 +7,21 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 Correções e melhorias feitas após a v1.0. Vão ao ar no próximo deploy.
 
-- _(nada ainda — adicionar conforme formos corrigindo)_
+- **Mobile — scroll travado nos cards:** o `SpotlightCard` tinha `touch-action: none`
+  e um listener global de `pointermove`, o que bloqueava o rolar da página ao tocar
+  em qualquer card (rows do console, accordion IA, clipes). Em toque, agora os
+  efeitos de brilho/hover são desligados (cards "crus") e o scroll funciona.
+  ([primitives.jsx] `IS_TOUCH`)
+- **Mobile — accordion IA travando o arraste:** mesma causa acima (era `SpotlightCard`).
+- **Mobile — console não rolava nos itens:** mesma causa acima.
+- **Mobile — preview de vídeo nos clipes:** hover-preview desativado em toque
+  ([category.jsx] e [landing.jsx] `handleCardEnter`/`handleEnter`).
+- **Mobile — blocos do processo colados:** `.process-steps` ganhou `gap: 16px`
+  no mobile. ([styles.css])
+- **Mobile — play do vídeo em 1 toque:** o player do YouTube agora é pré-carregado
+  (cued) ao abrir o modal e a reprodução começa a partir do gesto do toque, então
+  não aparece mais o segundo "play" do YouTube. ([category.jsx] `CustomYouTubePlayer`
+  `autoStart`/`controlRef`, `VideoModal` `startPlay`)
 
 ## [1.0] — No ar no Render (tag `v1.0`, commit 87ba798)
 

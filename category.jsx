@@ -36,7 +36,7 @@ const ClientBadge = ({ name, size = 24 }) => {
 };
 
 /* ─────────────────────────── Custom YouTube Player ──────────────────────── */
-const CustomYouTubePlayer = ({ videoId }) => {
+const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
   const containerRef = React.useRef(null);
   const playerRef    = React.useRef(null);
   const tickerRef    = React.useRef(null);
@@ -56,7 +56,7 @@ const CustomYouTubePlayer = ({ videoId }) => {
         width: '100%',
         height: '100%',
         playerVars: {
-          autoplay: 1, controls: 0, modestbranding: 1,
+          autoplay: autoStart ? 1 : 0, controls: 0, modestbranding: 1,
           rel: 0, showinfo: 0, iv_load_policy: 3,
           disablekb: 1, playsinline: 1,
           origin: window.location.origin,
@@ -65,6 +65,12 @@ const CustomYouTubePlayer = ({ videoId }) => {
           onReady: (e) => {
             e.target.setVolume(80);
             setTotal(e.target.getDuration() || 0);
+            // Expose imperative play/pause so the parent can start playback from
+            // WITHIN a tap gesture (required for one-tap play with sound on mobile).
+            if (controlRef) controlRef.current = {
+              play:  () => e.target.playVideo(),
+              pause: () => e.target.pauseVideo(),
+            };
           },
           onStateChange: (e) => {
             const isPlaying = e.data === 1;
@@ -223,6 +229,7 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
   const filtered = vidsByClient.filter(v => empFilter === "all" || v.empreendimento === empFilter);
 
   const handleCardEnter = (v) => {
+    if (IS_TOUCH) return; // no hover-preview on touch — cards stay static ("cru")
     const ytId = getYouTubeId(v.videoUrl);
     if (!ytId) return;
     clearTimeout(hoverTimer.current);
@@ -427,7 +434,14 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
   const [sugPage, setSugPage] = React.useState(0);
   const [isLandscape, setIsLandscape] = React.useState(false);
   const playerRef = React.useRef(null);
+  const ytCtl = React.useRef(null); // imperative play() of the pre-mounted YT player
   const PER_PAGE = 4;
+
+  // Start playback FROM the tap gesture so mobile plays with sound in one tap.
+  const startPlay = () => {
+    if (ytCtl.current) ytCtl.current.play();
+    setPlaying(true);
+  };
 
   const toggleFullscreen = (e) => {
     e && e.stopPropagation();
@@ -552,7 +566,13 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
               <Icon name="fullscreen" size={16}/>
             </button>
           )}
-          {playing && ytId && <CustomYouTubePlayer videoId={ytId}/>}
+          {/* YouTube is pre-mounted (cued) and revealed on play, so the tap that
+              starts it happens on a ready player → one-tap play with sound on mobile. */}
+          {ytId && (
+            <div style={{position:"absolute",inset:0,opacity:playing?1:0,pointerEvents:playing?"auto":"none",transition:"opacity 0.25s ease"}}>
+              <CustomYouTubePlayer videoId={ytId} autoStart={false} controlRef={ytCtl}/>
+            </div>
+          )}
           {playing && vimeoId && !ytId && (
             <iframe
               src={`https://player.vimeo.com/video/${vimeoId}?autoplay=1&byline=0&portrait=0&title=0`}
@@ -567,7 +587,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
                 : <div className={`modal-player-bg ${cat?.bgClass||"bg-comm"}`}/>}
               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.28)"}}/>
               <button className="modal-bigplay"
-                onClick={() => hasVideo && setPlaying(true)}
+                onClick={() => hasVideo && startPlay()}
                 style={{opacity: hasVideo ? 1 : 0.3, cursor: hasVideo ? "pointer" : "default"}}
                 data-cursor="hover">
                 <Icon name="play" size={28}/>

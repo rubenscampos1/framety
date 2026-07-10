@@ -4424,7 +4424,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
 
 /* ── Horizontal scroll areas on mobile ────────────────────── */
 @media (max-width: 720px) {
-  .process-steps { gap: 0; }
+  .process-steps { gap: 16px; }
   .cat-client-dropdown-menu {
     max-height: 50vh;
     overflow-y: auto;

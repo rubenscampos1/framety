@@ -1,6 +1,11 @@
 /* primitives.jsx — shared bits */
 const { useEffect, useRef, useState, useLayoutEffect, useCallback } = React;
 
+/* Touch device? On phones/tablets we drop pointer-follow effects (glow, magnet,
+   tilt) so they don't fight with scrolling — the cards render "cru" (static). */
+const IS_TOUCH = typeof window !== 'undefined' && window.matchMedia
+  && window.matchMedia('(hover: none), (pointer: coarse)').matches;
+
 /* SVG icon set (small, no extra deps) */
 const Icon = ({ name, size = 16, stroke = 1.6, ...rest }) => {
   const s = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: stroke, strokeLinecap: "round", strokeLinejoin: "round", ...rest };
@@ -115,6 +120,7 @@ const SpotlightCard = ({ children, className = "", color = "red", style = {}, ov
   };
 
   useEffect(() => {
+    if (IS_TOUCH) return; // no pointer-follow glow on touch — keeps scrolling smooth
     const syncPointer = (e) => {
       const { clientX: x, clientY: y } = e;
       if (cardRef.current) {
@@ -154,7 +160,9 @@ const SpotlightCard = ({ children, className = "", color = "red", style = {}, ov
     backgroundAttachment: 'fixed',
     border:               'var(--border-size) solid var(--backup-border)',
     position:             'relative',
-    touchAction:          'none',
+    // 'none' would block page scroll when a finger lands on a card; on touch we
+    // let the browser own the gesture so vertical scrolling works everywhere.
+    touchAction:          IS_TOUCH ? 'auto' : 'none',
     ...style
   };
 
