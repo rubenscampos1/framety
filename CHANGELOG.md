@@ -3,9 +3,11 @@
 Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 (tag git). Correções em andamento entram em "Não lançado" até o próximo deploy.
 
-## [1.1.0] — Não lançado (em andamento)
+## [Não lançado]
 
-Correções e melhorias feitas após a v1.0. Vão ao ar no próximo deploy.
+- _(nada ainda — adicionar conforme formos corrigindo)_
+
+## [1.1.0] — No ar no Render (tag `v1.1`) — 2026-07-10
 
 - **Mobile — scroll travado nos cards:** o `SpotlightCard` tinha `touch-action: none`
   e um listener global de `pointermove`, o que bloqueava o rolar da página ao tocar
