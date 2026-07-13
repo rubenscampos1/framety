@@ -5,6 +5,10 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## [Não lançado]
 
+- _(nada ainda — adicionar conforme formos corrigindo)_
+
+## [1.2.0] — No ar no Render (tag `v1.2`) — 2026-07-13
+
 - **Vídeo novo sumindo sozinho (bug):** ao adicionar um vídeo (que nasce como
   rascunho), ele sumia após o live-update. Causa: `API.getData()` buscava
   `/api/data` **sem o token**, então o servidor devolvia só os vídeos públicos e o
