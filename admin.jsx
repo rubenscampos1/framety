@@ -1329,8 +1329,19 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
   const descRef = React.useRef(null);
   React.useEffect(() => { if (descRef.current) descRef.current.innerHTML = initialData?.description || ""; }, []);
 
+  const [framePicker, setFramePicker] = React.useState(false);
   const ytId = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)?.[1];
-  const previewThumb = thumbUrl || (ytId ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg` : null);
+  // YouTube frame options (moments of the video). hqdefault = início (alta res);
+  // 1/2/3.jpg = ¼ / meio / ¾ do vídeo. maxresdefault 404s em vídeos não-HD.
+  const ytFrames = ytId ? {
+    inicio: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
+    q1:     `https://img.youtube.com/vi/${ytId}/1.jpg`,
+    meio:   `https://img.youtube.com/vi/${ytId}/2.jpg`,
+    q3:     `https://img.youtube.com/vi/${ytId}/3.jpg`,
+  } : null;
+  // Default when nothing chosen: a frame from the MIDDLE of the video.
+  const autoThumb = ytFrames ? ytFrames.meio : null;
+  const previewThumb = thumbUrl || autoThumb;
 
   const uploadThumb = async (file) => {
     setUploading(true);
@@ -1364,7 +1375,8 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
       status,
       views:    views || "—",
       videoUrl: src !== "upload" ? (url || null) : (initialData?.videoUrl || null),
-      thumbUrl: thumbUrl || null,
+      // No custom/chosen thumb → auto-pick a frame from the middle of the video.
+      thumbUrl: thumbUrl || autoThumb || null,
       description: descRef.current?.innerHTML || "",
       baImages: baImages,
     });
@@ -1474,27 +1486,67 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
               {!previewThumb && <Icon name="video" size={18} style={{color:"var(--ink-dim)"}}/>}
             </div>
             <div style={{flex:1,display:"flex",flexDirection:"column",gap:8}}>
-              <label style={{display:"inline-flex",alignItems:"center",gap:8,padding:"9px 14px",
-                border:"1px solid var(--line-strong)",borderRadius:8,cursor:"pointer",
-                fontSize:12,color:"var(--ink-dim)",width:"fit-content"}}>
-                <Icon name="upload" size={13}/>
-                {uploading ? "Enviando…" : "Carregar imagem"}
-                <input type="file" accept="image/jpeg,image/png" style={{display:"none"}}
-                  onChange={(e)=>{ const f=e.target.files[0]; if(f) uploadThumb(f); }}/>
-              </label>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {ytId && (
+                  <button type="button" onClick={()=>setFramePicker(v=>!v)}
+                    style={{display:"inline-flex",alignItems:"center",gap:8,padding:"9px 14px",
+                      border:"1px solid var(--line-strong)",borderRadius:8,cursor:"pointer",
+                      fontSize:12,color:"var(--ink-dim)",background:"none"}}>
+                    <Icon name="play" size={12}/>
+                    {framePicker ? "Fechar seleção" : "Usar como thumb (escolher momento)"}
+                  </button>
+                )}
+                <label style={{display:"inline-flex",alignItems:"center",gap:8,padding:"9px 14px",
+                  border:"1px solid var(--line-strong)",borderRadius:8,cursor:"pointer",
+                  fontSize:12,color:"var(--ink-dim)"}}>
+                  <Icon name="upload" size={13}/>
+                  {uploading ? "Enviando…" : "Carregar imagem"}
+                  <input type="file" accept="image/jpeg,image/png" style={{display:"none"}}
+                    onChange={(e)=>{ const f=e.target.files[0]; if(f) uploadThumb(f); }}/>
+                </label>
+              </div>
               {ytId && !thumbUrl && (
                 <span style={{fontSize:11,color:"var(--ink-dim)",fontFamily:"var(--font-mono)",letterSpacing:"0.08em"}}>
-                  ↑ Auto-gerado do YouTube
+                  Automático: um frame do meio do vídeo
                 </span>
               )}
               {thumbUrl && (
                 <button type="button" onClick={()=>setThumbUrl("")}
                   style={{fontSize:11,color:"var(--accent)",background:"none",border:"none",cursor:"pointer",fontFamily:"var(--font-mono)",letterSpacing:"0.08em",textAlign:"left",padding:0}}>
-                  × remover thumb personalizada
+                  × voltar ao automático (meio do vídeo)
                 </button>
               )}
             </div>
           </div>
+
+          {/* Moment picker — watch the video and pick a frame */}
+          {framePicker && ytId && (
+            <div style={{marginTop:12,padding:12,border:"1px solid var(--line-strong)",borderRadius:10,background:"rgba(255,255,255,0.02)"}}>
+              <div style={{position:"relative",width:"100%",aspectRatio:"16/9",borderRadius:8,overflow:"hidden",marginBottom:10,background:"#000"}}>
+                <iframe src={`https://www.youtube.com/embed/${ytId}`} allow="encrypted-media; fullscreen" allowFullScreen
+                  title="Assistir para escolher a thumb" style={{position:"absolute",inset:0,width:"100%",height:"100%",border:"none"}}/>
+              </div>
+              <div style={{fontSize:11,color:"var(--ink-dim)",marginBottom:8,fontFamily:"var(--font-mono)",letterSpacing:"0.06em"}}>
+                Escolha um momento do vídeo:
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                {[["Início",ytFrames.inicio],["¼",ytFrames.q1],["Meio",ytFrames.meio],["¾",ytFrames.q3]].map(([label,frameUrl])=>{
+                  const selected = thumbUrl ? thumbUrl===frameUrl : frameUrl===autoThumb;
+                  return (
+                    <button key={label} type="button" onClick={()=>setThumbUrl(frameUrl)}
+                      style={{flex:1,padding:0,border:selected?"2px solid var(--accent)":"1px solid var(--line-strong)",
+                        borderRadius:8,overflow:"hidden",cursor:"pointer",background:"#000"}}>
+                      <div style={{width:"100%",aspectRatio:"16/9",backgroundImage:`url(${frameUrl})`,backgroundSize:"cover",backgroundPosition:"center"}}/>
+                      <div style={{fontSize:10,padding:"4px 0",textAlign:"center",color:selected?"var(--accent)":"var(--ink-dim)",fontFamily:"var(--font-mono)"}}>{label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{fontSize:10,color:"var(--ink-mute)",marginTop:8,lineHeight:1.5}}>
+                Os frames ¼/meio/¾ vêm do YouTube em resolução menor. Para máxima qualidade, use "Carregar imagem" com um print do momento exato.
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Toggles */}

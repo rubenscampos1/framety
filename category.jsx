@@ -13,7 +13,8 @@ const getVimeoId = (url) => {
 const getThumbUrl = (v) => {
   if (v.thumbUrl) return v.thumbUrl;
   const ytId = getYouTubeId(v.videoUrl);
-  if (ytId) return `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`;
+  // hqdefault always exists (maxresdefault 404s for non-HD videos → broken thumb).
+  if (ytId) return `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
   return null;
 };
 
