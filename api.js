@@ -41,8 +41,10 @@
     getLocucoesWith:  (token)     => fetch('/api/locucoes', { headers: { 'x-auth-token': token } }).then(r => { if (!r.ok) throw { status: r.status }; return r.json(); }),
     setProducoesStatus: (token, pageId, uid, status) => fetch('/api/producoes/status', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-auth-token': token }, body: JSON.stringify({ pageId, uid, status }) }).then(r => { if (!r.ok) throw { status: r.status }; return r.json(); }),
 
-    // Data (public)
-    getData: () => fetch('/api/data').then(r => r.json()),
+    // Data. Sends the auth token when present so the console sees ALL videos
+    // (incl. drafts); on the public site there's no token → only public videos.
+    // Without this, a newly-added draft video vanishes on the next live refetch.
+    getData: () => fetch('/api/data', { headers: { 'x-auth-token': getToken() } }).then(r => r.json()),
 
     // Videos
     addVideo:      (v)    => req('POST',   '/api/videos',          v),

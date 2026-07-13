@@ -1512,9 +1512,15 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
                   Automático: um frame do meio do vídeo
                 </span>
               )}
-              {thumbUrl && (
+              {thumbUrl && !/img\.youtube\.com/.test(thumbUrl) && (
                 <button type="button" onClick={()=>setThumbUrl("")}
                   style={{fontSize:11,color:"var(--accent)",background:"none",border:"none",cursor:"pointer",fontFamily:"var(--font-mono)",letterSpacing:"0.08em",textAlign:"left",padding:0}}>
+                  × remover imagem personalizada
+                </button>
+              )}
+              {thumbUrl && /img\.youtube\.com/.test(thumbUrl) && (
+                <button type="button" onClick={()=>setThumbUrl("")}
+                  style={{fontSize:11,color:"var(--ink-dim)",background:"none",border:"none",cursor:"pointer",fontFamily:"var(--font-mono)",letterSpacing:"0.08em",textAlign:"left",padding:0}}>
                   × voltar ao automático (meio do vídeo)
                 </button>
               )}

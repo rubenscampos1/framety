@@ -5,6 +5,15 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## [Não lançado]
 
+- **Vídeo novo sumindo sozinho (bug):** ao adicionar um vídeo (que nasce como
+  rascunho), ele sumia após o live-update. Causa: `API.getData()` buscava
+  `/api/data` **sem o token**, então o servidor devolvia só os vídeos públicos e o
+  rascunho recém-criado era filtrado. Agora o `getData` envia o token quando existe
+  (console vê tudo, incl. rascunhos; site público continua vendo só os públicos).
+  ([api.js])
+- **"Remover imagem personalizada":** essa opção volta a aparecer, mas **só quando
+  há uma imagem própria carregada** (upload). Para um frame do YouTube escolhido,
+  aparece "voltar ao automático". ([admin.jsx] `VideoFormModal`)
 - **Thumb do YouTube quebrada:** o site e o form usavam `maxresdefault.jpg`, que
   dá 404 em vídeos não-HD (thumb quebrada). Agora usa `hqdefault.jpg`, que sempre
   existe. ([category.jsx] `getThumbUrl`, [admin.jsx] `VideoFormModal`)
