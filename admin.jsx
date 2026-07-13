@@ -1487,15 +1487,17 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
             </div>
             <div style={{flex:1,display:"flex",flexDirection:"column",gap:8}}>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {ytId && (
-                  <button type="button" onClick={()=>setFramePicker(v=>!v)}
-                    style={{display:"inline-flex",alignItems:"center",gap:8,padding:"9px 14px",
-                      border:"1px solid var(--line-strong)",borderRadius:8,cursor:"pointer",
-                      fontSize:12,color:"var(--ink-dim)",background:"none"}}>
-                    <Icon name="play" size={12}/>
-                    {framePicker ? "Fechar seleção" : "Usar como thumb (escolher momento)"}
-                  </button>
-                )}
+                <button type="button" disabled={!ytId} onClick={()=>ytId && setFramePicker(v=>!v)}
+                  title={ytId ? "Assistir e escolher um frame do vídeo" : "Cole um link do YouTube para habilitar"}
+                  style={{display:"inline-flex",alignItems:"center",gap:8,padding:"9px 14px",borderRadius:8,
+                    fontSize:12,fontWeight:600,cursor:ytId?"pointer":"not-allowed",
+                    border:ytId?"1px solid var(--accent)":"1px solid var(--line-strong)",
+                    color:ytId?"var(--accent)":"var(--ink-mute)",
+                    background:ytId?"rgba(255,45,45,0.10)":"transparent",
+                    opacity:ytId?1:0.5}}>
+                  <Icon name="play" size={12}/>
+                  {framePicker ? "Fechar" : "Escolher frame do vídeo"}
+                </button>
                 <label style={{display:"inline-flex",alignItems:"center",gap:8,padding:"9px 14px",
                   border:"1px solid var(--line-strong)",borderRadius:8,cursor:"pointer",
                   fontSize:12,color:"var(--ink-dim)"}}>

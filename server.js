@@ -410,9 +410,11 @@ app.get(SPA_ROUTES, (req, res) => {
 // (Registered BEFORE the repo-root handler because the uploads folder lives
 // inside DIR — otherwise the generic handler would serve it with the short TTL.)
 app.use('/uploads', express.static(UPLOADS, { maxAge: '365d', immutable: true, etag: true }));
-// Repo assets (css/js/jsx/images): short cache + ETag revalidation so a redeploy
-// propagates quickly while repeat views within a session are instant.
-app.use(express.static(DIR, { maxAge: '1h', etag: true }));
+// Repo assets (css/js/jsx/html): revalidate every load via ETag ('no-cache' =
+// "you may cache, but always check with me first"). The browser gets a tiny 304
+// when nothing changed and the fresh file the instant it does — so a deploy (or a
+// local edit) shows up immediately, with no stale-code mismatch and no hard-refresh.
+app.use(express.static(DIR, { etag: true, setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
 
 // ── Login rate limiter (max 10 attempts per 15 min per IP) ───────────────────
 const loginAttempts = new Map();

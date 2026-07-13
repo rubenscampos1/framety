@@ -8,11 +8,16 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 - **Thumb do YouTube quebrada:** o site e o form usavam `maxresdefault.jpg`, que
   dá 404 em vídeos não-HD (thumb quebrada). Agora usa `hqdefault.jpg`, que sempre
   existe. ([category.jsx] `getThumbUrl`, [admin.jsx] `VideoFormModal`)
-- **"Usar como thumb" (escolher momento):** no adicionar/editar vídeo, um botão
-  abre o player do YouTube pra assistir + 4 opções de momento (Início / ¼ / Meio /
-  ¾) clicáveis pra usar como thumb. Continua tendo "Carregar imagem" para máxima
-  qualidade. Quando nada é escolhido, o padrão passa a ser um frame do **meio** do
-  vídeo. ([admin.jsx] `VideoFormModal` `framePicker`/`ytFrames`/`autoThumb`)
+- **"Escolher frame do vídeo" (escolher momento da thumb):** no adicionar **e**
+  editar vídeo, um botão claro (apagado sem link, aceso na cor de destaque quando
+  cola o link do YouTube) abre o player pra assistir + 4 opções de momento
+  (Início / ¼ / Meio / ¾) clicáveis. Continua tendo "Carregar imagem" para máxima
+  qualidade. Sem escolha → padrão é um frame do **meio** do vídeo.
+  ([admin.jsx] `VideoFormModal` `framePicker`/`ytFrames`/`autoThumb`)
+- **Cache de código revalida sempre:** os arquivos de código (.jsx/.css/.html)
+  passam a usar `Cache-Control: no-cache` (revalida via ETag → 304 se não mudou).
+  Evita ficar com JS/CSS antigo em cache após um deploy (ou edição local), sem
+  precisar de hard-refresh. ([server.js])
 
 ## [1.1.0] — No ar no Render (tag `v1.1`) — 2026-07-10
 
