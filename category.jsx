@@ -362,7 +362,6 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
   const [playing, setPlaying] = React.useState(false);
   const [sugPage, setSugPage] = React.useState(0);
   const [isLandscape, setIsLandscape] = React.useState(false);
-  const playerRef = React.useRef(null);
   const ytCtl = React.useRef(null); // imperative play() of the pre-mounted YT player
   const PER_PAGE = 4;
 
@@ -370,18 +369,6 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
   const startPlay = () => {
     if (ytCtl.current) ytCtl.current.play();
     setPlaying(true);
-  };
-
-  const toggleFullscreen = (e) => {
-    e && e.stopPropagation();
-    const el = playerRef.current;
-    if (!el) return;
-    const d = document;
-    if (d.fullscreenElement || d.webkitFullscreenElement) {
-      (d.exitFullscreen || d.webkitExitFullscreen || (()=>{})).call(d);
-    } else {
-      (el.requestFullscreen || el.webkitRequestFullscreen || el.webkitEnterFullscreen || (()=>{})).call(el);
-    }
   };
 
   React.useEffect(() => {
@@ -489,14 +476,10 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
         </div>
 
         {/* ── Player ── */}
-        <div className="modal-player" ref={playerRef}>
-          {playing && hasVideo && (
-            <button className="modal-fs-btn" onClick={toggleFullscreen} data-cursor="hover" title="Tela cheia" aria-label="Tela cheia">
-              <Icon name="fullscreen" size={16}/>
-            </button>
-          )}
+        <div className="modal-player">
           {/* YouTube is pre-mounted (cued) and revealed on play, so the tap that
-              starts it happens on a ready player → one-tap play with sound on mobile. */}
+              starts it happens on a ready player → one-tap play with sound on mobile.
+              Fullscreen is handled by the native YouTube controls now. */}
           {ytId && (
             <div style={{position:"absolute",inset:0,opacity:playing?1:0,pointerEvents:playing?"auto":"none",transition:"opacity 0.25s ease"}}>
               <CustomYouTubePlayer videoId={ytId} autoStart={false} controlRef={ytCtl}/>
@@ -608,7 +591,6 @@ const PlaylistPage = ({ catId }) => {
   const [activeId, setActiveId] = React.useState(vids[0]?.id || null);
   const active = vids.find(v => v.id === activeId) || vids[0];
   const [isLandscape, setIsLandscape] = React.useState(false);
-  const playerRef = React.useRef(null);
 
   React.useEffect(() => { window.scrollTo(0, 0); document.title = (cat ? cat.name + " — " : "") + "Framety"; }, []);
 
@@ -626,18 +608,6 @@ const PlaylistPage = ({ catId }) => {
       window.removeEventListener('orientationchange', checkOrientation);
     };
   }, []);
-
-  const toggleFullscreen = (e) => {
-    e && e.stopPropagation();
-    const el = playerRef.current;
-    if (!el) return;
-    const d = document;
-    if (d.fullscreenElement || d.webkitFullscreenElement) {
-      (d.exitFullscreen || d.webkitExitFullscreen || (()=>{})).call(d);
-    } else {
-      (el.requestFullscreen || el.webkitRequestFullscreen || el.webkitEnterFullscreen || (()=>{})).call(el);
-    }
-  };
 
   if (!cat || !vids.length) {
     return (
@@ -665,10 +635,7 @@ const PlaylistPage = ({ catId }) => {
 
       <div className="playlist-body">
         <div className="playlist-main">
-          <div className="playlist-player" ref={playerRef}>
-            <button className="playlist-fs-btn" onClick={toggleFullscreen} data-cursor="hover" title="Tela cheia" aria-label="Tela cheia">
-              <Icon name="fullscreen" size={16}/>
-            </button>
+          <div className="playlist-player">
             {ytId
               ? <CustomYouTubePlayer key={active.id} videoId={ytId}/>
               : vimeoId
