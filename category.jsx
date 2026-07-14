@@ -40,13 +40,6 @@ const ClientBadge = ({ name, size = 24 }) => {
 const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
   const containerRef = React.useRef(null);
   const playerRef    = React.useRef(null);
-  const tickerRef    = React.useRef(null);
-  const [playing,  setPlaying]  = React.useState(false);
-  const [progress, setProgress] = React.useState(0);
-  const [total,    setTotal]    = React.useState(0);
-  const [vol,      setVol]      = React.useState(80);
-  const [muted,    setMuted]    = React.useState(false);
-
   React.useEffect(() => {
     let destroyed = false;
 
@@ -57,35 +50,22 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
         width: '100%',
         height: '100%',
         playerVars: {
-          autoplay: autoStart ? 1 : 0, controls: 0, modestbranding: 1,
-          rel: 0, showinfo: 0, iv_load_policy: 3,
-          disablekb: 1, playsinline: 1,
+          autoplay: autoStart ? 1 : 0,
+          controls: 1,          // native controls → quality (resolution) menu, fullscreen
+          modestbranding: 1,
+          rel: 0,
+          playsinline: 1,       // 360° videos: native drag-to-look + gyro work with native controls
           origin: window.location.origin,
         },
         events: {
           onReady: (e) => {
             e.target.setVolume(80);
-            setTotal(e.target.getDuration() || 0);
-            // Expose imperative play/pause so the parent can start playback from
-            // WITHIN a tap gesture (required for one-tap play with sound on mobile).
+            // Expose imperative play so the parent can start playback from WITHIN a
+            // tap gesture (one-tap play with sound on mobile).
             if (controlRef) controlRef.current = {
               play:  () => e.target.playVideo(),
               pause: () => e.target.pauseVideo(),
             };
-          },
-          onStateChange: (e) => {
-            const isPlaying = e.data === 1;
-            setPlaying(isPlaying);
-            clearInterval(tickerRef.current);
-            if (isPlaying) {
-              tickerRef.current = setInterval(() => {
-                const p = playerRef.current;
-                if (p?.getCurrentTime) {
-                  setProgress(p.getCurrentTime());
-                  if (!total && p.getDuration) setTotal(p.getDuration());
-                }
-              }, 300);
-            }
           },
         },
       });
@@ -106,67 +86,15 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
 
     return () => {
       destroyed = true;
-      clearInterval(tickerRef.current);
       playerRef.current?.destroy?.();
     };
   }, [videoId]);
 
-  const togglePlay = () => {
-    if (!playerRef.current) return;
-    playing ? playerRef.current.pauseVideo() : playerRef.current.playVideo();
-  };
-
-  const seek = (e) => {
-    if (!total) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const t = ((e.clientX - r.left) / r.width) * total;
-    playerRef.current?.seekTo(t, true);
-    setProgress(t);
-  };
-
-  const adjustVol = (e) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const v = Math.round(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * 100);
-    setVol(v); setMuted(v === 0);
-    playerRef.current?.setVolume(v);
-    if (v > 0) playerRef.current?.unMute?.();
-  };
-
-  const toggleMute = () => {
-    if (muted) { playerRef.current?.unMute?.(); playerRef.current?.setVolume(vol || 50); setMuted(false); }
-    else        { playerRef.current?.mute?.();   setMuted(true); }
-  };
-
-  const fmt = (s) =>
-    `${String(Math.floor((s||0)/60)).padStart(2,'0')}:${String(Math.floor((s||0)%60)).padStart(2,'0')}`;
-
-  const pct = total > 0 ? `${(progress/total)*100}%` : '0%';
-
+  // Native YouTube controls handle play/pause, resolution, fullscreen and 360° panning.
+  // No overlay on top of the iframe — an overlay would block the 360 drag and the controls.
   return (
     <div className="cplayer">
-      {/* YouTube injects its iframe into this div */}
       <div ref={containerRef} className="cplayer-video"/>
-      {/* Transparent capture layer — sits above the iframe, intercepts ALL touch/click events
-          before YouTube's own JS can navigate top.location to youtube.com */}
-      <div className="cplayer-capture" onClick={togglePlay} />
-      {/* Custom controls bar */}
-      <div className="cplayer-controls" onClick={e => e.stopPropagation()}>
-        <button className="cp-btn" onClick={togglePlay}>
-          <Icon name={playing ? "pause" : "play"} size={14}/>
-        </button>
-        <span className="cp-time">{fmt(progress)}</span>
-        <div className="cp-progress" onClick={seek}>
-          <div className="cp-progress-fill" style={{width:pct}}/>
-          <div className="cp-progress-dot"  style={{left:pct}}/>
-        </div>
-        <span className="cp-time cp-dim">{fmt(total)}</span>
-        <button className="cp-btn" onClick={toggleMute}>
-          <Icon name="volume" size={13}/>
-        </button>
-        <div className="cp-volume" onClick={adjustVol}>
-          <div className="cp-volume-fill" style={{width: muted ? '0%' : `${vol}%`}}/>
-        </div>
-      </div>
     </div>
   );
 };

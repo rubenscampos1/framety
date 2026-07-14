@@ -1188,14 +1188,13 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
   background: #000;
   overflow: hidden;
 }
-/* Iframe extends ABOVE and BELOW visible area; container clips YT chrome via overflow:hidden.
-   Video stays centered horizontally — only vertical offset to push title bar (top) and
-   suggestions+logo bar (bottom) out of view. */
+/* The iframe fills the player and keeps native YouTube controls: quality/resolution
+   menu, fullscreen, and 360° drag-to-look. It MUST receive pointer events (no
+   overlay, no pointer-events:none) or the controls and 360 panning won't work. */
 .cplayer { overflow: hidden; }
 .cplayer-video {
   position: absolute;
-  top: -60px; bottom: -60px;
-  left: 0; right: 0;
+  inset: 0;
   overflow: hidden;
 }
 .cplayer-video iframe {
@@ -1203,7 +1202,6 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
   width: 100% !important;
   height: 100% !important;
   border: none !important;
-  pointer-events: none !important;
 }
 .cplayer-capture {
   position: absolute; inset: 0;

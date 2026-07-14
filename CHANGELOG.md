@@ -5,7 +5,12 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## [Não lançado]
 
-- _(nada ainda — adicionar conforme formos corrigindo)_
+- **Player grande com controles nativos do YouTube:** no modal de vídeo e na
+  playlist, o player passou a usar os controles nativos (`controls: 1`) em vez dos
+  customizados. Isso habilita **escolher a resolução** (engrenagem), **tela cheia**
+  nativa e, nos vídeos **360°, arrastar com o mouse para olhar em volta** (+ giroscópio
+  no celular). A camada que interceptava o mouse e o `pointer-events: none` do iframe
+  (que bloqueavam o 360) foram removidos. ([category.jsx] `CustomYouTubePlayer`, [styles.css])
 
 ## [1.2.0] — No ar no Render (tag `v1.2`) — 2026-07-13
 
