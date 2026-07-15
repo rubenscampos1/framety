@@ -7,6 +7,19 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 - _(nada ainda — adicionar conforme formos corrigindo)_
 
+## [1.4.0] — No ar no Render (tag `v1.4`) — 2026-07-15
+
+- **Vídeos 360° agora giram no player do site (arrastar para olhar em volta):** o
+  giro nativo do YouTube **não** ativa dentro de embeds de terceiros (o vídeo é 360
+  de verdade, mas o embed não mostra a bússola nem deixa arrastar). Diagnóstico
+  confirmado no ar: `getSphericalProperties()` reconhece o 360, mas o arraste nativo
+  não engata. Solução: passamos a **girar a esfera pela própria API do YouTube**
+  (`setSphericalProperties`). Uma camada de arraste sobre o vídeo 360 converte o
+  gesto do mouse/dedo em giro (yaw/pitch); um selo **"360°"** liga/desliga o modo —
+  desligado, os controles nativos (resolução, tela cheia) ficam livres. A detecção é
+  automática: só vídeos realmente 360 recebem a camada; vídeos normais ficam
+  intactos. ([category.jsx] `CustomYouTubePlayer`, [styles.css])
+
 ## [1.3.0] — No ar no Render (tag `v1.3`) — 2026-07-14
 
 - **Player grande com controles nativos do YouTube:** no modal de vídeo e na

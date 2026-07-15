@@ -40,8 +40,20 @@ const ClientBadge = ({ name, size = 24 }) => {
 const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
   const containerRef = React.useRef(null);
   const playerRef    = React.useRef(null);
+  const dragRef      = React.useRef(null);
+  const [is360, setIs360]       = React.useState(false);
+  const [lookMode, setLookMode] = React.useState(true);
   React.useEffect(() => {
     let destroyed = false;
+
+    // A 360° (spherical) video reports get/setSphericalProperties — but only once
+    // playback has actually started. Poll a few times after PLAYING to detect it.
+    const detect360 = (p, tries = 0) => {
+      if (destroyed || is360) return;
+      let sp; try { sp = p.getSphericalProperties?.(); } catch (_) {}
+      if (sp && Object.keys(sp).length) { setIs360(true); return; }
+      if (tries < 8) setTimeout(() => detect360(p, tries + 1), 400);
+    };
 
     const initPlayer = () => {
       if (destroyed || !containerRef.current || !window.YT?.Player) return;
@@ -54,7 +66,7 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
           controls: 1,          // native controls → quality (resolution) menu, fullscreen
           modestbranding: 1,
           rel: 0,
-          playsinline: 1,       // 360° videos: native drag-to-look + gyro work with native controls
+          playsinline: 1,
           origin: window.location.origin,
         },
         events: {
@@ -67,6 +79,7 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
               pause: () => e.target.pauseVideo(),
             };
           },
+          onStateChange: (e) => { if (e.data === 1) detect360(e.target); }, // 1 = playing
         },
       });
     };
@@ -90,11 +103,56 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
     };
   }, [videoId]);
 
-  // Native YouTube controls handle play/pause, resolution, fullscreen and 360° panning.
-  // No overlay on top of the iframe — an overlay would block the 360 drag and the controls.
+  /* ── Drag-to-look for 360° videos ──────────────────────────────────────────
+     YouTube's native 360 drag/compass does NOT engage inside a third-party iframe
+     embed, but the IFrame API's get/setSphericalProperties() DO work. So we lay a
+     transparent surface over the video (minus the bottom native control bar) and
+     pan the sphere ourselves. The "360°" toggle disables it so the native
+     resolution menu / controls stay reachable. Regular (flat) videos never get
+     the overlay, so their native controls are untouched. */
+  const onDown = (e) => {
+    const p = playerRef.current; if (!p?.getSphericalProperties) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const sp = p.getSphericalProperties() || {};
+    dragRef.current = {
+      x: e.clientX, y: e.clientY,
+      yaw: sp.yaw || 0, pitch: sp.pitch || 0, fov: sp.fov || 100,
+      rect: e.currentTarget.getBoundingClientRect(), moved: 0,
+    };
+  };
+  const onMove = (e) => {
+    const d = dragRef.current, p = playerRef.current; if (!d || !p) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    d.moved = Math.max(d.moved, Math.abs(dx) + Math.abs(dy));
+    const yaw   = d.yaw - (dx / d.rect.width)  * d.fov;
+    const pitch = Math.max(-90, Math.min(90, d.pitch + (dy / d.rect.height) * d.fov));
+    try { p.setSphericalProperties({ yaw, pitch, roll: 0, fov: d.fov }); } catch (_) {}
+  };
+  const onUp = () => {
+    const d = dragRef.current, p = playerRef.current; dragRef.current = null;
+    if (d && d.moved < 6 && p) {                        // a tap, not a drag → play/pause
+      (p.getPlayerState?.() === 1 ? p.pauseVideo : p.playVideo).call(p);
+    }
+  };
+
   return (
     <div className="cplayer">
       <div ref={containerRef} className="cplayer-video"/>
+      {is360 && lookMode && (
+        <div className="cplayer-look"
+             onPointerDown={onDown} onPointerMove={onMove}
+             onPointerUp={onUp} onPointerCancel={onUp}/>
+      )}
+      {is360 && (
+        <button type="button"
+                className={`cplayer-360btn ${lookMode ? "on" : ""}`}
+                onClick={() => setLookMode(v => !v)}
+                title={lookMode
+                  ? "360° ativo — arraste para olhar em volta. Clique para liberar os controles do YouTube."
+                  : "Ativar giro 360° (arraste para olhar em volta)"}>
+          <span className="cplayer-360dot"/>360°
+        </button>
+      )}
     </div>
   );
 };
