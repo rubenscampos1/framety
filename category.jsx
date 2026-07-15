@@ -124,7 +124,7 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
     const d = dragRef.current, p = playerRef.current; if (!d || !p) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     d.moved = Math.max(d.moved, Math.abs(dx) + Math.abs(dy));
-    const yaw   = d.yaw - (dx / d.rect.width)  * d.fov;
+    const yaw   = d.yaw + (dx / d.rect.width)  * d.fov;  // drag right → look right
     const pitch = Math.max(-90, Math.min(90, d.pitch + (dy / d.rect.height) * d.fov));
     try { p.setSphericalProperties({ yaw, pitch, roll: 0, fov: d.fov }); } catch (_) {}
   };
