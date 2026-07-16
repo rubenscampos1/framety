@@ -1203,31 +1203,32 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
   height: 100% !important;
   border: none !important;
 }
-/* 360° drag-to-look — only added for spherical videos (see CustomYouTubePlayer).
-   Covers the video but leaves the native control bar (bottom) reachable. */
+/* ── 360° video: full-cover drag-to-look + our own control bar. Native 360 drag
+   doesn't work in embeds, so we hide YouTube's controls (controls:0) and drive
+   playback + panning ourselves. Only spherical videos get this. ── */
 .cplayer-look {
   position: absolute;
-  left: 0; right: 0; top: 0; bottom: 46px;
+  left: 0; right: 0; top: 0; bottom: 48px;   /* leave room for our control bar */
   z-index: 6;
   cursor: grab;
   touch-action: none;
 }
 .cplayer-look:active { cursor: grabbing; }
-.cplayer-360btn {
-  position: absolute; top: 12px; left: 12px; z-index: 8;
+
+/* "arraste para olhar" hint (non-interactive), top-left */
+.cplayer-360hint {
+  position: absolute; top: 14px; left: 14px; z-index: 8;
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 7px 12px;
+  padding: 6px 11px;
   font-family: var(--font-mono);
-  font-size: 11px; letter-spacing: 0.14em; color: #fff;
-  background: rgba(0,0,0,0.5);
-  border: 1px solid rgba(255,255,255,0.3);
+  font-size: 10.5px; letter-spacing: 0.12em; color: #fff;
+  background: rgba(0,0,0,0.42);
+  border: 1px solid rgba(255,255,255,0.22);
   border-radius: 999px;
-  cursor: pointer;
+  pointer-events: none;
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
-  transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+  transition: opacity 0.25s ease;
 }
-.cplayer-360btn:hover { background: rgba(0,0,0,0.72); }
-.cplayer-360btn.on { background: var(--accent); border-color: var(--accent); }
 .cplayer-360dot {
   width: 10px; height: 10px; border-radius: 50%;
   border: 2px solid currentColor; position: relative; flex-shrink: 0;
@@ -1236,6 +1237,63 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
   content: ""; position: absolute; inset: -4px;
   border-radius: 50%; border: 1px solid currentColor; opacity: 0.4;
 }
+
+/* our control bar (play / time / seek / mute / fullscreen) */
+.cbar {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 9;
+  height: 48px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 14px;
+  background: linear-gradient(0deg, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.30) 72%, transparent 100%);
+  transition: opacity 0.25s ease;
+}
+.cbar-btn {
+  color: #fff; opacity: 0.92;
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; flex-shrink: 0;
+  border-radius: 50%; cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+}
+.cbar-btn:hover { opacity: 1; background: rgba(255,255,255,0.14); }
+.cbar-btn.muted { position: relative; opacity: 0.6; }
+.cbar-btn.muted::after {
+  content: ""; position: absolute; left: 5px; right: 5px; top: 50%;
+  height: 2px; margin-top: -1px; background: currentColor;
+  transform: rotate(-45deg); border-radius: 2px;
+}
+.cbar-time {
+  font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,0.9);
+  flex-shrink: 0; min-width: 34px; text-align: center;
+}
+.cbar-dim { color: rgba(255,255,255,0.5); }
+.cbar-prog {
+  flex: 1; height: 4px; border-radius: 999px;
+  background: rgba(255,255,255,0.22);
+  position: relative; cursor: pointer;
+}
+.cbar-prog::before {   /* larger click/hit area */
+  content: ""; position: absolute; left: 0; right: 0; top: -9px; bottom: -9px;
+}
+.cbar-prog-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--accent); border-radius: 999px;
+}
+.cbar-prog-fill::after {
+  content: ""; position: absolute; right: -5px; top: 50%;
+  width: 11px; height: 11px; margin-top: -5.5px;
+  background: #fff; border-radius: 50%;
+  opacity: 0; transition: opacity 0.15s;
+}
+.cbar-prog:hover .cbar-prog-fill::after { opacity: 1; }
+
+/* auto-hide the bar + hint while playing (reappear on mouse move) */
+.cplayer-360.ui-off .cbar,
+.cplayer-360.ui-off .cplayer-360hint { opacity: 0; }
+
+/* our own fullscreen: the whole player (iframe + drag overlay + bar) fills the
+   screen, so drag-to-look keeps working in fullscreen. */
+.cplayer:fullscreen { position: fixed; inset: 0; width: 100vw; height: 100vh; background: #000; }
+.cplayer:-webkit-full-screen { position: fixed; inset: 0; width: 100vw; height: 100vh; background: #000; }
 .cplayer-capture {
   position: absolute; inset: 0;
   z-index: 5;

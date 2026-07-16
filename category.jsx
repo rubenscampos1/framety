@@ -37,12 +37,21 @@ const ClientBadge = ({ name, size = 24 }) => {
 };
 
 /* ─────────────────────────── Custom YouTube Player ──────────────────────── */
-const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
+const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef, spherical = false }) => {
+  const wrapRef      = React.useRef(null);
   const containerRef = React.useRef(null);
   const playerRef    = React.useRef(null);
   const dragRef      = React.useRef(null);
-  const [is360, setIs360]       = React.useState(false);
-  const [lookMode, setLookMode] = React.useState(true);
+  const tickRef      = React.useRef(null);
+  const hideRef      = React.useRef(null);
+  const [is360, setIs360]   = React.useState(false);
+  const [playing, setPlaying] = React.useState(false);
+  const [muted, setMuted]   = React.useState(false);
+  const [cur, setCur]       = React.useState(0);
+  const [dur, setDur]       = React.useState(0);
+  const [fs, setFs]         = React.useState(false);
+  const [ui, setUi]         = React.useState(true);   // custom control bar visible
+
   React.useEffect(() => {
     let destroyed = false;
 
@@ -54,6 +63,14 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
       if (sp && Object.keys(sp).length) { setIs360(true); return; }
       if (tries < 8) setTimeout(() => detect360(p, tries + 1), 400);
     };
+    const startTick = () => {
+      clearInterval(tickRef.current);
+      tickRef.current = setInterval(() => {
+        const p = playerRef.current; if (!p?.getCurrentTime) return;
+        setCur(p.getCurrentTime() || 0);
+        const d = p.getDuration?.() || 0; if (d) setDur(d);
+      }, 250);
+    };
 
     const initPlayer = () => {
       if (destroyed || !containerRef.current || !window.YT?.Player) return;
@@ -63,7 +80,10 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
         height: '100%',
         playerVars: {
           autoplay: autoStart ? 1 : 0,
-          controls: 1,          // native controls → quality (resolution) menu, fullscreen
+          // 360 → hide native controls and drive playback + drag ourselves (native
+          // 360 drag doesn't work in embeds). Flat videos keep native controls
+          // (incl. the resolution menu).
+          controls: spherical ? 0 : 1,
           modestbranding: 1,
           rel: 0,
           playsinline: 1,
@@ -72,6 +92,7 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
         events: {
           onReady: (e) => {
             e.target.setVolume(80);
+            setDur(e.target.getDuration?.() || 0);
             // Expose imperative play so the parent can start playback from WITHIN a
             // tap gesture (one-tap play with sound on mobile).
             if (controlRef) controlRef.current = {
@@ -79,7 +100,10 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
               pause: () => e.target.pauseVideo(),
             };
           },
-          onStateChange: (e) => { if (e.data === 1) detect360(e.target); }, // 1 = playing
+          onStateChange: (e) => {
+            if (e.data === 1) { setPlaying(true); startTick(); if (spherical) detect360(e.target); }
+            else { setPlaying(false); if (e.data !== 3) clearInterval(tickRef.current); } // 3 = buffering
+          },
         },
       });
     };
@@ -99,17 +123,29 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
 
     return () => {
       destroyed = true;
+      clearInterval(tickRef.current);
+      clearTimeout(hideRef.current);
       playerRef.current?.destroy?.();
     };
   }, [videoId]);
 
+  // Track fullscreen state (our own fullscreen wraps the whole player, so the drag
+  // overlay keeps working in fullscreen too).
+  React.useEffect(() => {
+    const onFsChange = () => setFs(!!(document.fullscreenElement || document.webkitFullscreenElement));
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+
   /* ── Drag-to-look for 360° videos ──────────────────────────────────────────
      YouTube's native 360 drag/compass does NOT engage inside a third-party iframe
      embed, but the IFrame API's get/setSphericalProperties() DO work. So we lay a
-     transparent surface over the video (minus the bottom native control bar) and
-     pan the sphere ourselves. The "360°" toggle disables it so the native
-     resolution menu / controls stay reachable. Regular (flat) videos never get
-     the overlay, so their native controls are untouched. */
+     transparent surface over the whole video and pan the sphere ourselves; a tap
+     (no drag) toggles play/pause. Our own control bar sits below it. */
   const onDown = (e) => {
     const p = playerRef.current; if (!p?.getSphericalProperties) return;
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -129,29 +165,82 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef }) => {
     try { p.setSphericalProperties({ yaw, pitch, roll: 0, fov: d.fov }); } catch (_) {}
   };
   const onUp = () => {
-    const d = dragRef.current, p = playerRef.current; dragRef.current = null;
-    if (d && d.moved < 6 && p) {                        // a tap, not a drag → play/pause
-      (p.getPlayerState?.() === 1 ? p.pauseVideo : p.playVideo).call(p);
+    const d = dragRef.current; dragRef.current = null;
+    if (d && d.moved < 6) togglePlay();                 // a tap, not a drag → play/pause
+  };
+
+  // ── Custom controls ──
+  const togglePlay = () => {
+    const p = playerRef.current; if (!p) return;
+    (p.getPlayerState?.() === 1 ? p.pauseVideo : p.playVideo).call(p);
+    poke();
+  };
+  const toggleMute = () => {
+    const p = playerRef.current; if (!p) return;
+    if (p.isMuted?.()) { p.unMute(); setMuted(false); } else { p.mute(); setMuted(true); }
+  };
+  const seek = (e) => {
+    const p = playerRef.current; if (!p || !dur) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    p.seekTo(pct * dur, true); setCur(pct * dur);
+  };
+  const toggleFs = () => {
+    const el = wrapRef.current; if (!el) return;
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    } else {
+      (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
     }
+  };
+  const poke = () => {
+    setUi(true);
+    clearTimeout(hideRef.current);
+    hideRef.current = setTimeout(() => {
+      if (playerRef.current?.getPlayerState?.() === 1) setUi(false);
+    }, 2800);
+  };
+  const fmt = (s) => {
+    s = Math.floor(s || 0); if (!isFinite(s) || s < 0) s = 0;
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   };
 
   return (
-    <div className="cplayer">
+    <div ref={wrapRef}
+         className={`cplayer ${spherical ? "cplayer-360" : ""} ${ui ? "ui-on" : "ui-off"} ${fs ? "is-fs" : ""}`}
+         onMouseMove={spherical ? poke : undefined}
+         onPointerMove={spherical ? poke : undefined}>
       <div ref={containerRef} className="cplayer-video"/>
-      {is360 && lookMode && (
+      {spherical && is360 && (
         <div className="cplayer-look"
              onPointerDown={onDown} onPointerMove={onMove}
              onPointerUp={onUp} onPointerCancel={onUp}/>
       )}
-      {is360 && (
-        <button type="button"
-                className={`cplayer-360btn ${lookMode ? "on" : ""}`}
-                onClick={() => setLookMode(v => !v)}
-                title={lookMode
-                  ? "360° ativo — arraste para olhar em volta. Clique para liberar os controles do YouTube."
-                  : "Ativar giro 360° (arraste para olhar em volta)"}>
-          <span className="cplayer-360dot"/>360°
-        </button>
+      {spherical && (
+        <>
+          {is360 && (
+            <div className="cplayer-360hint" aria-hidden="true"><span className="cplayer-360dot"/>360° · arraste para olhar</div>
+          )}
+          <div className="cbar" onPointerDown={(e) => e.stopPropagation()}>
+            <button type="button" className="cbar-btn" onClick={togglePlay}
+                    aria-label={playing ? "Pausar" : "Reproduzir"}>
+              <Icon name={playing ? "pause" : "play"} size={18}/>
+            </button>
+            <span className="cbar-time">{fmt(cur)}</span>
+            <div className="cbar-prog" onClick={seek}>
+              <div className="cbar-prog-fill" style={{ width: `${dur ? (cur / dur) * 100 : 0}%` }}/>
+            </div>
+            <span className="cbar-time cbar-dim">{fmt(dur)}</span>
+            <button type="button" className={`cbar-btn ${muted ? "muted" : ""}`} onClick={toggleMute}
+                    aria-label={muted ? "Ativar som" : "Mudo"}>
+              <Icon name="volume" size={18}/>
+            </button>
+            <button type="button" className="cbar-btn" onClick={toggleFs}
+                    aria-label="Tela cheia">
+              <Icon name="fullscreen" size={18}/>
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -540,7 +629,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
               Fullscreen is handled by the native YouTube controls now. */}
           {ytId && (
             <div style={{position:"absolute",inset:0,opacity:playing?1:0,pointerEvents:playing?"auto":"none",transition:"opacity 0.25s ease"}}>
-              <CustomYouTubePlayer videoId={ytId} autoStart={false} controlRef={ytCtl}/>
+              <CustomYouTubePlayer videoId={ytId} autoStart={false} controlRef={ytCtl} spherical={!!v.has360}/>
             </div>
           )}
           {playing && vimeoId && !ytId && (
@@ -695,7 +784,7 @@ const PlaylistPage = ({ catId }) => {
         <div className="playlist-main">
           <div className="playlist-player">
             {ytId
-              ? <CustomYouTubePlayer key={active.id} videoId={ytId}/>
+              ? <CustomYouTubePlayer key={active.id} videoId={ytId} spherical={!!active.has360}/>
               : vimeoId
                 ? <iframe src={`https://player.vimeo.com/video/${vimeoId}`} allow="autoplay; fullscreen" allowFullScreen style={{width:"100%",height:"100%",border:"none",borderRadius:14}} title={active.title}/>
                 : <div className="playlist-noembed" style={activeThumb?{backgroundImage:`url(${activeThumb})`}:{}}><Icon name="play" size={26}/></div>}

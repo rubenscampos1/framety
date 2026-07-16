@@ -7,6 +7,20 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 - _(nada ainda — adicionar conforme formos corrigindo)_
 
+## [1.5.0] — No ar no Render (tag `v1.5`) — 2026-07-16
+
+- **Player 360° repensado — giro sempre ativo + barra de controles própria:** saiu
+  o botão de liga/desliga do 360. Agora, nos vídeos 360, o giro por arraste fica
+  **sempre ativo em qualquer lugar do vídeo**, e o player usa uma **barra de
+  controles nossa** (play/pause, linha do tempo com seek, mudo, tela cheia) no lugar
+  da barra nativa do YouTube — que "brigava" com a camada de arraste. A **tela
+  cheia** agora é do nosso container, então o giro 360 passa a **funcionar também em
+  tela cheia**. A resolução nos vídeos 360 fica no **automático** do YouTube (a API
+  não permite forçar resolução manualmente). Vídeos **normais** seguem com os
+  controles nativos do YouTube (incluindo escolha de resolução). Detecção de 360 é
+  automática (`getSphericalProperties`); a camada só aparece em vídeos realmente
+  esféricos. ([category.jsx] `CustomYouTubePlayer`, [styles.css])
+
 ## [1.4.0] — No ar no Render (tag `v1.4`) — 2026-07-15
 
 - **Vídeos 360° agora giram no player do site (arrastar para olhar em volta):** o
