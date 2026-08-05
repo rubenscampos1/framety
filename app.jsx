@@ -18,16 +18,15 @@ const parseUrl = () => {
   // Configurador de sala imersiva (ferramenta standalone, só por link)
   if (p === "/screendimension" || p.startsWith("/screendimension/")) return { page: "screendimension", catId: null, tab: null };
 
-  // Storyboards — três endereços no mesmo prefixo, separados pelo número de
-  // segmentos (o link do cliente tem sempre os três: cliente/produto/projeto):
-  //   /storyboards                              → índice protegido por senha
-  //   /storyboards/<cliente>-<produto>-<projeto> → um documento, dentro do painel (protegido)
-  //   /storyboards/<cliente>/<produto>/<projeto> → link aberto do cliente
-  if (p === "/storyboards" || p === "/storyboards/") return { page: "storyboard-index", catId: null, tab: null };
-  if (p.startsWith("/storyboards/")) {
-    const segs = p.slice("/storyboards/".length).replace(/\/+$/, "").split("/").filter(Boolean);
-    return { page: segs.length === 1 ? "storyboard-index" : "storyboard-share", catId: null, tab: null };
-  }
+  // Storyboards — dois endereços, separados pelo prefixo. Nada de contar
+  // segmentos: o que está sob /storyboards é SEMPRE nosso, atrás da senha, e o
+  // que o cliente recebe é sempre um código opaco em /sb.
+  //   /storyboards                               → índice protegido por senha
+  //   /storyboards/<cliente>/<produto>/<projeto> → o documento, para editar (protegido)
+  //   /sb/<código>                               → visão do cliente (link aberto)
+  // O caminho legível deixou de ser público: só quem tem o código chega ao
+  // documento, e ele não se adivinha a partir do nome do cliente.
+  if (p === "/storyboards" || p.startsWith("/storyboards/")) return { page: "storyboard-index", catId: null, tab: null };
   if (p === "/sb" || p.startsWith("/sb/")) return { page: "storyboard-share", catId: null, tab: null };
 
   // Produções — read-only shareable link (scoped, external)

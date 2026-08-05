@@ -103,11 +103,9 @@
     // Onde as imagens enviadas ficam (durable = sobrevive a deploy).
     getStorageStatus: () => req('GET', '/api/storage-status'),
 
-    // Storyboards — public client view (sem auth).
-    // Leitura pelo caminho amigável cliente/produto/projeto (rota curinga, para
-    // sobreviver a proxies que normalizam %2F) ou pelo shareSlug antigo; escritas
-    // sempre pelo `token` opaco que veio na leitura.
-    getStoryboardByPath: (path)        => req('GET',    `/api/sb/path/${path}`),
+    // Storyboards — visão do cliente (sem auth). Só pelo código opaco: o
+    // caminho legível cliente/produto/projeto virou endereço de edição, e a
+    // busca pública por ele foi removida do servidor (ver server.js).
     getSharedStoryboard: (slug)        => req('GET',    `/api/sb/${slug}`),
     addSbComment:        (tok, data)   => req('POST',   `/api/sb/${tok}/comments`, data),
     deleteSbComment:     (tok, cid)    => req('DELETE', `/api/sb/${tok}/comments/${cid}`),

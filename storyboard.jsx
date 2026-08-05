@@ -201,24 +201,22 @@ const sbMatches = (sb, q) => {
 window.sbMatchesStoryboard = (sb, q) => sbMatches(sb, q);
 
 /* URL do cliente: domínio/storyboards/<cliente>/<produto>/<projeto>. */
+/* Link do CLIENTE: código curto e opaco. Não se adivinha a partir do nome do
+   cliente — antes o link aberto era o caminho legível, e bastava conhecer
+   cliente/produto/projeto para chegar num storyboard que não era seu. */
 const sbShareUrl = (sb) =>
-  `${window.location.origin}/storyboards/${sb.pathSlug || ""}`;
+  `${window.location.origin}/sb/${sb.shareSlug || sb.token || ""}`;
 
-/* Endereço próprio de cada documento dentro do painel:
-   /storyboards/<cliente>-<produto>-<projeto>.
-   É o mesmo trio do link do cliente, só que num segmento só — e é isso que
-   separa os dois sem ambiguidade: o link aberto do cliente tem SEMPRE três
-   segmentos (cliente/produto/projeto), este tem um. Quem cair aqui sem sessão
-   encontra a senha, não o documento. */
-const sbDocSlug = (sb) => String(sb?.pathSlug || "").replace(/\//g, "-");
+/* Endereço de EDIÇÃO de cada documento, atrás da senha:
+   /storyboards/<cliente>/<produto>/<projeto>. Tudo sob /storyboards é nosso;
+   o cliente nunca recebe um endereço desse prefixo. */
+const sbDocSlug = (sb) => String(sb?.pathSlug || "");
 
-/* Um segmento depois de /storyboards/ → atalho interno; nenhum ou três → índice
-   protegido / link do cliente. Devolve "" quando não é um atalho interno. */
+/* O que vem depois de /storyboards/ — pode ter barras. "" quando é o índice. */
 const sbSlugDaUrl = () => {
   const p = window.location.pathname;
   if (!p.startsWith("/storyboards/")) return "";
-  const segs = p.slice("/storyboards/".length).replace(/\/+$/, "").split("/").filter(Boolean);
-  return segs.length === 1 ? decodeURIComponent(segs[0]) : "";
+  return decodeURIComponent(p.slice("/storyboards/".length).replace(/\/+$/, ""));
 };
 
 /* Carrega um script externo uma única vez (libs de PDF sob demanda). */
@@ -531,8 +529,20 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
      as calhas encostam no documento; `null` é o modo deitado, onde a moldura
      volta a ocupar a linha inteira. */
   const [sheet, setSheet] = React.useState(null);
+  /* Tamanho do palco, guardado para a grade saber quantas colunas cabem. */
+  const [palco, setPalco] = React.useState(null);
+  /* Grade: todas as páginas de uma vez, com zoom out. Abre e fecha no G. */
+  const [grade, setGrade] = React.useState(false);
   const pages = sb.pages || [];
   const total = pages.length;
+
+  /* Miniaturas da grade: quantas colunas caberem em ~250px, entre 2 e 6, e a
+     escala sai da largura que cada coluna recebe. Com muitas páginas a grade
+     rola (o `overflow-y` da viewport) em vez de encolher sem limite. */
+  const GRADE_VAO = 14;
+  const gradeCols = Math.max(2, Math.min(6, Math.floor(((palco?.w || SB_PAGE_W) - 24) / 250) || 2));
+  const gradeScale = Math.max(0.04,
+    (((palco?.w || SB_PAGE_W) - 24 - GRADE_VAO * (gradeCols - 1)) / gradeCols) / SB_PAGE_W);
 
   /* Escala para caber inteira no palco (largura E altura).
      A medida sai do PALCO, não da moldura: a moldura passou a ter a largura da
@@ -559,6 +569,7 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
       const s = Math.max(0.15, Math.min(w / SB_PAGE_W, h / SB_PAGE_H));
       setScale(s);
       setSheet(deitado ? null : { w: Math.round(SB_PAGE_W * s), h: Math.round(SB_PAGE_H * s) });
+      setPalco({ w: w, h: h });
     };
     fit();
     /* Segunda medida no quadro seguinte. A primeira sai antes de o layout
@@ -572,17 +583,24 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
     return () => { cancelAnimationFrame(raf); ro.disconnect(); mq.removeEventListener?.("change", fit); };
   }, []);
 
-  /* Setas do teclado — desligadas enquanto se digita num campo. */
+  /* Teclado — desligado enquanto se digita num campo (os textos da cena são
+     textarea, e o cabeçalho tem inputs; sem esta guarda o G viraria um "g" no
+     meio da locução). Vale em leitura e em edição. */
   React.useEffect(() => {
     const onKey = (e) => {
       const t = e.target;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key === "g" || e.key === "G") { e.preventDefault(); setGrade((g) => !g); return; }
+      if (e.key === "Escape") { setGrade(false); return; }
+      /* Na grade as setas não viram página: quem manda ali é o clique. */
+      if (grade) return;
       if (e.key === "ArrowRight") setCurrent((i) => Math.min(i + 1, total - 1));
       if (e.key === "ArrowLeft")  setCurrent((i) => Math.max(i - 1, 0));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [total, setCurrent]);
+  }, [total, setCurrent, grade]);
 
   const page = pages[current];
   const canDelete = editable && page && current >= SB_LOCKED_HEAD && page.type !== "end";
@@ -597,28 +615,43 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
           sobra da coluna. */}
       {railTop && <aside className="sb-rail sb-rail-l" ref={railLRef}>{railTop}</aside>}
 
-      <div className={`sb-frame ${sheet ? "hug" : ""}`} ref={frameRef}
-        style={sheet ? { width: sheet.w, height: sheet.h } : undefined}>
-        <SBBtn className="sb-nav prev" seed={11} onClick={() => setCurrent((i) => Math.max(i - 1, 0))}
-          disabled={current === 0} aria-label="Página anterior">‹</SBBtn>
+      {/* Na grade a moldura solta o tamanho da folha e ocupa o palco inteiro —
+          é a mesma esteira de páginas de sempre, só disposta em colunas e com a
+          escala das miniaturas. Nada é montado duas vezes. */}
+      <div className={`sb-frame ${sheet && !grade ? "hug" : ""} ${grade ? "emgrade" : ""}`} ref={frameRef}
+        style={sheet && !grade ? { width: sheet.w, height: sheet.h } : undefined}>
+        {!grade && (
+          <SBBtn className="sb-nav prev" seed={11} onClick={() => setCurrent((i) => Math.max(i - 1, 0))}
+            disabled={current === 0} aria-label="Página anterior">‹</SBBtn>
+        )}
 
-        <div className="sb-viewport" ref={viewRef}>
-          <div className="sb-track" style={{ transform: `translateX(${-current * 100}%)` }}>
+        <div className={`sb-viewport ${grade ? "grade" : ""}`} ref={viewRef}
+          style={grade ? { "--sb-cols": gradeCols, "--sb-vao": GRADE_VAO + "px" } : undefined}>
+          <div className="sb-track" style={grade ? undefined : { transform: `translateX(${-current * 100}%)` }}>
             {pages.map((p, i) => (
-              <div className="sb-slide" key={p.id} aria-hidden={i !== current}>
-                <SBPage sb={sb} page={p} index={i} scale={scale} editable={editable}
+              <div className={`sb-slide ${grade && i === current ? "atual" : ""}`} key={p.id}
+                aria-hidden={!grade && i !== current}>
+                <SBPage sb={sb} page={p} index={i} scale={grade ? gradeScale : scale} editable={editable && !grade}
                   viewVersion={i === current ? viewVersion : null}
                   onChange={(np) => onChangePage(i, np)}
                   onPickImage={(slot) => onPickImage(i, slot)}
                   onDropImage={(slot) => onDropImage(i, slot)}
                   onUndoImage={(slot) => onUndoImage(i, slot)} />
+                {grade && (
+                  <button className="sb-gridpick" title={`Ir para a página ${i + 1}`}
+                    onClick={() => { setCurrent(i); setGrade(false); }}>
+                    <span>{sbPad(i + 1)}</span>
+                  </button>
+                )}
               </div>
             ))}
           </div>
         </div>
 
-        <SBBtn className="sb-nav next" seed={12} onClick={() => setCurrent((i) => Math.min(i + 1, total - 1))}
-          disabled={current >= total - 1} aria-label="Próxima página">›</SBBtn>
+        {!grade && (
+          <SBBtn className="sb-nav next" seed={12} onClick={() => setCurrent((i) => Math.min(i + 1, total - 1))}
+            disabled={current >= total - 1} aria-label="Próxima página">›</SBBtn>
+        )}
       </div>
 
       <aside className="sb-rail sb-rail-r" ref={railRRef}>
@@ -647,12 +680,16 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
             </div>
           )}
 
-          <div className="sb-dots">
-            {pages.map((p, i) => (
-              <button key={p.id} className={`sb-dot ${i === current ? "on" : ""} t-${p.type}`}
-                title={`Página ${i + 1}`} onClick={() => setCurrent(i)} />
-            ))}
-          </div>
+          {/* A fileira de bolinhas saiu: com muitas páginas ela não cabia na
+              calha e passava a atropelar o resto. A contagem sozinha diz a mesma
+              coisa em qualquer tamanho de documento, e a grade abre para quem
+              quer ver tudo de uma vez. O botão existe para o atalho não ficar
+              invisível para quem não o conhece. */}
+          <button className={`sb-gradebtn ${grade ? "on" : ""}`} onClick={() => setGrade((g) => !g)}
+            title={grade ? "Fechar a grade (G ou Esc)" : "Ver todas as páginas em grade (G)"}>
+            <Icon name="grid" size={13} />
+            <i>G</i>
+          </button>
 
           <span className="sb-counter">{sbPad(current + 1)} <i>/ {sbPad(total)}</i></span>
         </div>
@@ -1079,7 +1116,8 @@ const StoryboardsPanel = ({ list, setList, addToast, query = "", requestOpen = n
 /* ═════════════════════════ CONSOLE — editor do deck ═════════════════════════ */
 const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false, onExit = null }) => {
   const [sb, setSb] = React.useState(initial);
-  const [saving, setSaving] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);              // trava interna
+  const [salvandoVisivel, setSalvandoVisivel] = React.useState(false);  // o que o botão mostra
   const [dirty, setDirty] = React.useState(false);
   const [current, setCurrent] = React.useState(0);
   /* Abrir uma linha cai em leitura; editar é um passo deliberado (o lápis). */
@@ -1112,6 +1150,12 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
 
   const save = async ({ silent = false } = {}) => {
     setSaving(true);
+    /* A gravação automática não mexe em nada que se veja: `saving` é só a trava
+       interna (impede duas gravações ao mesmo tempo), enquanto `salvandoVisivel`
+       é o que o botão mostra. Antes o botão virava "Salvando…" a cada pausa da
+       digitação, e era esse piscar que dava a impressão de estar salvando sem
+       parar. */
+    if (!silent) setSalvandoVisivel(true);
     try {
       const saved = await window.API.updateStoryboard(sb.id, {
         cliente: sb.cliente, projeto: sb.projeto, categoria: sb.categoria,
@@ -1121,7 +1165,7 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
       if (!silent) addToast("Storyboard salvo.", "success");
       return true;
     } catch (e) { addToast(e.error || "Não foi possível salvar.", "error"); return false; }
-    finally { setSaving(false); }
+    finally { setSaving(false); if (!silent) setSalvandoVisivel(false); }
   };
 
   /* ── Sincronização entre sessões ────────────────────────────────────────
@@ -1129,6 +1173,14 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
      se edita é gravado sozinho pouco depois da última tecla e (b) o servidor
      avisa por SSE, o painel rebusca a lista e o documento novo desce até aqui
      pelo `initial`.
+
+     Por que NÃO é de 10 em 10 minutos: a gravação é justamente o que leva a
+     alteração para as outras sessões — é ela que dispara o aviso do servidor.
+     Espaçá-la para 10 minutos deixaria quem está do outro lado até 10 minutos
+     atrasado (e o cliente, no link dele, vendo um documento velho), além de
+     colocar 10 minutos de trabalho em risco a cada queda de rede ou aba
+     fechada. O incômodo era o aviso na tela, não a gravação: ela continua a
+     cada pausa da digitação, agora sem nada piscando.
 
      Ressalva honesta: a gravação é do documento inteiro, então duas pessoas no
      MESMO campo ao mesmo tempo terminam com o texto de quem gravou por último.
@@ -1346,8 +1398,8 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
                tecla, e "Concluir" grava o que estiver pendente antes de voltar
                para a leitura — o botão "Salvar/Salvo" ao lado passava o tempo
                todo apagado, dizendo apenas o que a faixa amarela já diz. */
-            <button className="btn btn-accent" onClick={leaveEdit} disabled={saving}>
-              {saving ? "Salvando…" : "Concluir"}
+            <button className="btn btn-accent" onClick={leaveEdit} disabled={salvandoVisivel}>
+              {salvandoVisivel ? "Salvando…" : "Concluir"}
             </button>
           ) : (
             /* Baixar e sair só existem fora da edição: o PDF sairia de um
@@ -1372,9 +1424,15 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
         </div>
       </header>
 
-      {editing && dirty && <div className="sb-dirty">Alterações não salvas — o link do cliente ainda mostra a versão anterior.</div>}
-
       <div className="sb-workspace">
+        {/* A tarja flutua sobre o documento em vez de ser uma linha da coluna.
+            Entrando e saindo do fluxo a cada tecla, ela mudava a altura do palco
+            e a folha era reescalada junto — o documento "pulava" enquanto se
+            digitava. Aqui ela não ocupa espaço nenhum. */}
+        {editing && dirty && (
+          <div className="sb-dirty">Alterações não salvas — o link do cliente ainda mostra a versão anterior.</div>
+        )}
+
         {/* Mesma calha da tela do cliente — mesma marcação, mesmo logo, mesma
             posição. O console deixa de ter um desenho próprio: o que se revisa
             aqui é o que o cliente vê do outro lado. */}
@@ -1461,9 +1519,17 @@ const StoryboardIndexPage = () => {
   /* Chegou por um link direto: assim que a lista existe, abre aquele documento. */
   React.useEffect(() => {
     if (!slugPendente || !list) return;
-    const alvo = list.find((s) => sbDocSlug(s) === slugPendente);
-    if (alvo) setPedidoAbrir(alvo.id);
-    else {
+    const alvo = list.find((s) => sbDocSlug(s) === slugPendente)
+      /* Atalhos gravados na v1.6.1 vinham com hífen no lugar da barra
+         (/storyboards/ebm-marista-video-imersivo). Continuam abrindo. */
+      || list.find((s) => sbDocSlug(s).replace(/\//g, "-") === slugPendente);
+    if (alvo) {
+      /* Marca antes de pedir a abertura: assim `aoAbrir` entende que já estamos
+         neste documento e corrige o endereço no lugar, em vez de empilhar uma
+         volta a mais no histórico só para trocar a forma do link. */
+      ultimoAberto.current = alvo.id;
+      setPedidoAbrir(alvo.id);
+    } else {
       addToast("Storyboard não encontrado para esse link.", "error");
       window.history.replaceState({}, "", "/storyboards");
     }
@@ -1594,14 +1660,13 @@ const StoryboardIndexPage = () => {
   );
 };
 
-/* ═══════ PÚBLICO — visão do cliente (/storyboards/<cliente>/<produto>/…) ════ */
+/* ═══════ PÚBLICO — visão do cliente (/sb/<código>) ══════════════════════════
+   Só o código opaco chega aqui. O caminho legível cliente/produto/projeto virou
+   endereço de edição, atrás da senha: com ele público, quem soubesse os nomes
+   chegava a um storyboard alheio sem nenhum segredo. */
 const StoryboardSharePage = () => {
-  /* Resolve o documento pelo caminho amigável ou pelo link antigo /sb/<hex>. */
-  const ref = React.useMemo(() => {
-    const p = window.location.pathname;
-    if (p.startsWith("/storyboards/")) return { kind: "path", value: p.slice("/storyboards/".length).replace(/\/+$/, "") };
-    return { kind: "slug", value: p.split("/")[2] || "" };
-  }, []);
+  const ref = React.useMemo(
+    () => ({ kind: "slug", value: window.location.pathname.split("/")[2] || "" }), []);
 
   const [sb, setSb] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -1628,10 +1693,7 @@ const StoryboardSharePage = () => {
   const [pedidoPdf, setPedidoPdf] = React.useState(null);  // exportação agendada para o próximo commit
 
   const fetchSb = React.useCallback(
-    () => (ref.kind === "path"
-      ? window.API.getStoryboardByPath(ref.value)
-      : window.API.getSharedStoryboard(ref.value)),
-    [ref]);
+    () => window.API.getSharedStoryboard(ref.value), [ref]);
 
   React.useEffect(() => {
     fetchSb().then(setSb).catch((e) => setErr(e.error || "Storyboard não encontrado."));
@@ -1960,8 +2022,14 @@ body.sb-appmode .admin-topbar{ display:none; }
   overflow:hidden; text-overflow:ellipsis; }
 .sb-versionchip span{ font-family:var(--font-mono); font-size:9.5px; letter-spacing:.04em; line-height:1.1; opacity:.72;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.sb-dirty{ background:rgba(255,183,3,0.1); border:1px solid rgba(255,183,3,0.28); color:#ffb703; border-radius:10px;
-  padding:8px 14px; font-size:12.5px; margin-bottom:14px; flex:none; }
+/* Sobreposta ao documento, nunca no fluxo: é o que impede a folha de ser
+   reescalada a cada tecla. Não recebe clique (pointer-events:none) porque é só
+   recado — não pode roubar um clique do que está embaixo. */
+.sb-dirty{ position:absolute; top:8px; left:0; right:0; z-index:40; margin:0 auto; width:max-content;
+  max-width:min(92%, 640px); pointer-events:none; text-align:center;
+  background:rgba(40,30,4,0.92); border:1px solid rgba(255,183,3,0.4); color:#ffb703; border-radius:10px;
+  padding:8px 14px; font-size:12.5px; box-shadow:0 10px 30px rgba(0,0,0,.55);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
 
 /* ── palco horizontal (uma página por vez) ──────────────────────────────── */
 /* O palco não tem mais altura em vh: ele ocupa a linha que sobra do pai e o
@@ -1969,7 +2037,9 @@ body.sb-appmode .admin-topbar{ display:none; }
    ele, e a página voltaria a rolar). */
 /* A folha é limitada pela altura, então alargar a coluna de comentários não
    custa documento — e o texto respira. */
-.sb-workspace{ display:grid; grid-template-columns:minmax(0,1fr) clamp(260px,21vw,370px); gap:14px; align-items:stretch;
+/* position:relative para a tarja de "não salvo" poder flutuar sobre o documento
+   sem entrar no fluxo (ver .sb-dirty). */
+.sb-workspace{ position:relative; display:grid; grid-template-columns:minmax(0,1fr) clamp(260px,21vw,370px); gap:14px; align-items:stretch;
   flex:1; min-height:0; }
 /* As setas deixaram de ser colunas do grid e passaram a flutuar sobre as
    bordas do palco: são ~96px de largura que voltam para o documento. */
@@ -1989,6 +2059,28 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-frame.hug{ height:auto; align-self:center; border-radius:14px; box-shadow:0 18px 60px rgba(0,0,0,.5); }
 .sb-frame.hug .sb-pagewrap{ box-shadow:none; }
 .sb-viewport{ overflow:hidden; min-height:0; height:100%; width:100%; display:flex; align-items:center; justify-content:center; }
+
+/* ── grade (tecla G): todas as páginas de uma vez ──────────────────────────
+   Não é uma segunda montagem do documento: é a MESMA esteira de páginas, que
+   deixa de ser uma faixa horizontal e passa a se quebrar em colunas, com a
+   escala das miniaturas. Com muitas páginas, rola. */
+.sb-frame.emgrade{ width:100%; height:100%; align-self:stretch; }
+.sb-viewport.grade{ overflow-y:auto; overflow-x:hidden; align-items:flex-start; justify-content:center; padding:8px 4px 14px; }
+.sb-viewport.grade .sb-track{ display:grid; grid-template-columns:repeat(var(--sb-cols,4), max-content);
+  gap:var(--sb-vao,14px); width:auto; height:auto; transform:none; justify-content:center; align-content:start; transition:none; }
+.sb-viewport.grade .sb-slide{ flex:none; width:auto; height:auto; position:relative; }
+/* o conteúdo da página não recebe clique na grade — quem responde é a moldura
+   de seleção por cima, senão clicar numa miniatura em modo edição focaria um
+   campo de texto em vez de abrir a página */
+.sb-viewport.grade .sb-pagewrap{ pointer-events:none; box-shadow:0 6px 18px rgba(0,0,0,.45); }
+.sb-gridpick{ position:absolute; inset:0; z-index:8; cursor:pointer; padding:0; background:none;
+  border:2px solid transparent; border-radius:14px; display:flex; align-items:flex-end; justify-content:flex-start;
+  transition:border-color .14s, background .14s; }
+.sb-gridpick:hover{ border-color:var(--accent,#E63946); background:rgba(230,57,70,0.10); }
+.sb-gridpick span{ margin:6px; font-family:var(--font-mono); font-size:10.5px; font-weight:600; line-height:1;
+  padding:3px 6px; border-radius:6px; background:rgba(8,8,10,.82); color:#f2f2f4; }
+.sb-slide.atual .sb-gridpick{ border-color:var(--accent,#E63946); }
+.sb-slide.atual .sb-gridpick span{ background:var(--accent,#E63946); }
 
 /* ── calhas verticais ───────────────────────────────────────────────────── */
 .sb-rail{ display:flex; flex-direction:column; align-items:center; min-height:0; }
@@ -2049,11 +2141,12 @@ body.sb-appmode .admin-topbar{ display:none; }
 /* contador e bolinhas, agora de pé na calha */
 .sb-counter{ writing-mode:vertical-rl; transform:rotate(180deg); font-family:var(--font-mono); font-size:12.5px; font-weight:600; }
 .sb-counter i{ font-style:normal; opacity:.5; font-weight:400; }
-.sb-dots{ display:flex; flex-direction:column; align-items:center; gap:5px; }
-.sb-dot{ width:7px; height:22px; border-radius:4px; border:none; cursor:pointer; background:rgba(255,255,255,0.16); padding:0; transition:.15s; }
-.sb-dot:hover{ background:rgba(255,255,255,0.34); }
-.sb-dot.on{ background:var(--accent,#E63946); }
-.sb-dot.t-cover, .sb-dot.t-end{ height:11px; }
+/* atalho da grade, no pé da calha */
+.sb-gradebtn{ display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; padding:6px 5px;
+  border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); color:#9a9aa6; border-radius:9px; transition:.15s; }
+.sb-gradebtn:hover{ background:rgba(255,255,255,0.12); color:#fff; }
+.sb-gradebtn.on{ background:rgba(230,57,70,0.16); border-color:rgba(230,57,70,0.42); color:#ff6b76; }
+.sb-gradebtn i{ font-style:normal; font-family:var(--font-mono); font-size:9px; letter-spacing:.06em; }
 /* ── abas de versão da página (os quadradinhos acima da folha) ───────────────
    Aceso = versão que está na tela. Apagado = versão anterior, clicável para
    comparar. Pontilhado = rodada que ainda não foi usada. */
@@ -2332,10 +2425,8 @@ body.sb-appmode .admin-topbar{ display:none; }
   .sb-rail-id{ writing-mode:horizontal-tb; transform:none; flex-direction:column; align-items:flex-start; gap:1px; }
   .sb-rail-logo{ position:static; transform:none; width:auto; height:22px; }
   .sb-rail-logo img{ transform:none; }
-  .sb-railtop, .sb-railfoot, .sb-verbar, .sb-verchips, .sb-dots, .sb-tools{ flex-direction:row; align-items:center; }
+  .sb-railtop, .sb-railfoot, .sb-verbar, .sb-verchips, .sb-tools{ flex-direction:row; align-items:center; }
   .sb-counter, .sb-verbar-lbl{ writing-mode:horizontal-tb; transform:none; }
-  .sb-dot{ width:22px; height:7px; }
-  .sb-dot.t-cover, .sb-dot.t-end{ width:11px; height:7px; }
   .sb-railmenu{ left:auto; right:0; bottom:38px; }
 }
 @media (max-width:1180px){

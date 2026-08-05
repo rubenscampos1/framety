@@ -3,6 +3,89 @@
 Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 (tag git). Correções em andamento entram em "Não lançado" até o próximo deploy.
 
+## [1.7.0] — No ar no Render (tag `v1.7`) — 2026-08-05
+
+- **Link do cliente e link de edição trocaram de forma — e o legível deixou de
+  ser público.** Os dois se distinguiam só por `-` no lugar de `/`
+  (`/storyboards/ebm-marista-video-imersivo` contra
+  `/storyboards/ebm/marista/video-imersivo`), o que tornava fácil colar o
+  errado. Agora:
+
+  | endereço | quem vê |
+  |---|---|
+  | `/sb/<código>` | **link do cliente** — código opaco, curto |
+  | `/storyboards` | índice, protegido por senha |
+  | `/storyboards/<cliente>/<produto>/<projeto>` | o documento, para **editar** (protegido) |
+
+  Tudo sob `/storyboards` passou a ser área interna: sem contar segmentos, sem
+  exceção. Os links internos com hífen da 1.6.1 continuam abrindo e são
+  reescritos para a forma nova, sem entrada extra no histórico.
+- **Buraco de privacidade fechado no caminho:** o caminho legível era o link
+  **aberto** do cliente, e havia uma busca pública por ele
+  (`GET /api/sb/path/*`) que devolvia o documento inteiro **junto com o token de
+  escrita**. Como o próprio caminho é formado pelos nomes de cliente, produto e
+  projeto, quem os conhecesse (ou os adivinhasse) lia o storyboard, comentava e
+  podia **aprová-lo**. A rota foi removida; o cliente chega só pelo código
+  opaco. ([server.js], [api.js])
+- **A área interna não descreve mais o documento nas meta tags:** `/storyboards*`
+  passou a anunciar só "Storyboards | Framety — Área restrita.", sem nome de
+  cliente e sem capa. Um link interno colado num grupo não revela de quem é o
+  projeto antes de a senha ser pedida. O link do cliente (`/sb/…`) continua com
+  título e capa, que é o que ele precisa mostrar.
+- **A tarja de "não salvo" parou de mexer no documento (bug):** ela era uma linha
+  da coluna do editor, então aparecer e desaparecer a cada tecla mudava a altura
+  do palco — e a folha era reescalada junto, "pulando" enquanto se digitava.
+  Agora ela **flutua sobre o documento**, no topo e centrada, sem ocupar espaço
+  nenhum e sem receber clique. Medido: a folha fica em 989×768 antes e depois de
+  a tarja aparecer. ([storyboard.jsx] `.sb-dirty`, `.sb-workspace`)
+- **Grade de páginas na tecla G:** em leitura ou em edição, o **G** dá zoom out e
+  mostra o documento inteiro em miniaturas; clicar numa delas abre aquela página,
+  e **G** ou **Esc** fecham. Com muitas páginas a grade rola (testado com 22
+  páginas: 5 colunas, miniaturas de 243×189, scroll ativo). Não é uma segunda
+  montagem do documento — é a **mesma** esteira de páginas, que deixa de ser uma
+  faixa horizontal e se quebra em colunas, então abrir a grade não custa memória
+  nova. O atalho não dispara enquanto se digita (os textos da cena são
+  `textarea`), e um botão no pé da calha faz o mesmo, para o atalho não ficar
+  invisível. ([storyboard.jsx] `SBDeck`, `.sb-viewport.grade`, `.sb-gridpick`)
+- **Bolinhas de página removidas:** com muitas páginas a fileira não cabia na
+  calha e atropelava o resto. Ficou só a contagem (`07/22`), que diz a mesma
+  coisa em qualquer tamanho de documento — e a grade cobre quem quer ver tudo.
+- **Gravação automática deixou de piscar:** o botão virava "Salvando…" a cada
+  pausa da digitação, e era esse piscar que dava a impressão de estar salvando
+  sem parar. Agora `saving` é só a trava interna e o botão só muda em gravação
+  pedida à mão.
+  **Por que não de 10 em 10 minutos:** a gravação é justamente o que leva a
+  alteração para as outras sessões — é ela que dispara o aviso do servidor.
+  Espaçá-la deixaria a outra pessoa (e o cliente, no link dele) até 10 minutos
+  atrasada, e colocaria 10 minutos de trabalho em risco a cada queda de rede.
+  O tempo real foi medido entre duas sessões abertas no mesmo documento, com os
+  dois relógios: **929 ms** entre digitar numa e aparecer na outra, sem recarregar.
+- **Preview do link: a capa agora aparece de verdade.** A capa já era a imagem
+  anunciada nas meta tags desde a 1.6.0 — o que faltava era ela ser *aceita*. O
+  WhatsApp **descarta em silêncio** imagem grande, e as nossas vêm da câmera: a
+  capa enviada para o storyboard EBM tem **27 MB**, e uma capa de categoria em
+  produção tem 6,5 MB. Sem erro nenhum para investigar, o link aparecia com a
+  imagem genérica do site (ou sem imagem).
+  Agora, quando a imagem está no Cloudinary, o preview pede a ele a versão que as
+  redes esperam — **1200×630, JPEG, recortada pelo assunto** (`c_fill,g_auto`).
+  Medido na conta real: **6503 KB → 81 KB**, e a imagem continua sendo a mesma
+  (mesmo `public_id`). Isso resolve de tabela o SVG, que o WhatsApp também não
+  renderiza, porque `f_jpg` converte.
+  Entraram também `og:image:secure_url`, `og:image:alt` e, **somente quando o
+  recorte foi feito por nós**, `og:image:width/height/type` — anunciar 1200×630
+  de uma imagem não verificada faz algumas redes desistirem do preview.
+  Fora do Cloudinary (disco, em desenvolvimento) a URL passa como está e nenhuma
+  medida é declarada. ([server.js] `socialImage`)
+- **Suíte:** 10 verificações novas — a capa vale para as duas formas de link
+  (`/sb/<slug>` e `/storyboards/<cliente>/<produto>/<projeto>`), o recorte é
+  pedido uma vez só (não empilha transformação), as medidas anunciadas conferem
+  com o JPEG devolvido, e capa fora do Cloudinary não inventa medida. 42 no total.
+
+  **Pendente, fora do storyboard:** a imagem padrão do site
+  (`framety_social_preview.png`, 685 KB) é servida pelo próprio site, não passa
+  pelo Cloudinary e portanto não é reduzida. Ela ainda é o preview de todo link
+  sem capa própria.
+
 ## [1.6.1] — No ar no Render (tag `v1.6.1`) — 2026-08-05
 
 - **Cada storyboard tem o seu endereço:** abrir um documento no painel passou a

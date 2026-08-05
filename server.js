@@ -198,6 +198,22 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ── Imagem de preview social (WhatsApp, Telegram, Facebook) ──────────────────
+// As redes não aceitam qualquer arquivo. O WhatsApp descarta em SILÊNCIO imagens
+// grandes — e as nossas vêm da câmera com vários MB (uma capa de categoria real
+// tem 6,5MB) — e também não renderiza SVG. O resultado é um link sem miniatura
+// sem nenhum erro para investigar.
+// Quando a imagem está no Cloudinary, pedimos a ele a versão que as redes
+// esperam: 1200×630 JPEG, recortada pelo assunto. Na prática, 6503KB → 81KB.
+// Fora do Cloudinary (disco, em desenvolvimento) a URL passa como está.
+const OG_IMG_W = 1200, OG_IMG_H = 630;
+function socialImage(url) {
+  const v = String(url || '');
+  const m = v.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.+)$/i);
+  if (!m) return v;
+  return `${m[1]}c_fill,g_auto,w_${OG_IMG_W},h_${OG_IMG_H},f_jpg,q_auto/${m[2]}`;
+}
+
 // Transforma um caminho do site em URL absoluta para as meta tags sociais.
 // Quem já é absoluto (Cloudinary) passa direto. `PUBLIC_ORIGIN` permite fixar o
 // domínio final quando o Host que chega não é o público.
@@ -441,14 +457,22 @@ app.get(SPA_ROUTES, (req, res) => {
     desc = "Ferramenta de dimensionamento de projeções para salas imersivas.";
   }
 
-  if (p === '/sb' || p.startsWith('/sb/') || p === '/storyboards' || p.startsWith('/storyboards/')) {
-    const sb = p.startsWith('/storyboards/')
-      ? (db.storyboards || []).find(s => s.pathSlug === p.slice('/storyboards/'.length))
-      : (db.storyboards || []).find(s => s.shareSlug === p.split('/')[2]);
+  // Link do cliente: é o único que descreve o documento nas meta tags, porque é
+  // o único feito para ser compartilhado. A capa enviada no console é o que
+  // aparece ao colar esse link no WhatsApp.
+  if (p === '/sb' || p.startsWith('/sb/')) {
+    const sb = (db.storyboards || []).find(s => s.shareSlug === p.split('/')[2]);
     title = sb ? `Storyboard — ${sb.cliente || 'Framety'} | ${sb.projeto || ''}`.trim() : "Storyboard | Framety";
     desc = "Storyboard para aprovação — visualize as cenas e envie seus comentários.";
-    // A capa enviada no console é o que aparece ao colar o link no WhatsApp.
     if (sb && sb.coverUrl) image = sb.coverUrl;
+  }
+
+  // Área interna: nada sobre o documento sai daqui. O caminho traz o nome do
+  // cliente, e um link colado num grupo não deve revelar de quem é o projeto
+  // (nem a capa) antes de a senha ser pedida.
+  if (p === '/storyboards' || p.startsWith('/storyboards/')) {
+    title = "Storyboards | Framety";
+    desc = "Área restrita.";
   }
 
   const eTitle = escapeHtml(title);
@@ -457,13 +481,23 @@ app.get(SPA_ROUTES, (req, res) => {
   // fora do contexto da página e não resolvem caminho relativo — com "/foo.png"
   // o link simplesmente aparece sem miniatura. Atrás do proxy do Render o
   // protocolo real vem no x-forwarded-proto (a conexão interna é http).
-  const eImage = escapeHtml(absoluteUrl(req, image));
+  const original = absoluteUrl(req, image);
+  const eImage = escapeHtml(absoluteUrl(req, socialImage(image)));
+  // Só declara medidas quando fomos nós que pedimos o recorte — dizer 1200×630
+  // de uma imagem que não passou pela transformação seria mentir para o
+  // rastreador, e algumas redes desistem do preview quando a medida não bate.
+  const medida = eImage !== escapeHtml(original);
   const metaHtml = `
     <title>${eTitle}</title>
     <meta name="description" content="${eDesc}">
     <meta property="og:title" content="${eTitle}">
     <meta property="og:description" content="${eDesc}">
     <meta property="og:image" content="${eImage}">
+    <meta property="og:image:secure_url" content="${eImage}">${medida ? `
+    <meta property="og:image:type" content="image/jpeg">
+    <meta property="og:image:width" content="${OG_IMG_W}">
+    <meta property="og:image:height" content="${OG_IMG_H}">` : ''}
+    <meta property="og:image:alt" content="${eTitle}">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${eTitle}">
@@ -1222,16 +1256,13 @@ app.post('/api/storyboards/:id/asset/remove', requireAuth, async (req, res) => {
 });
 
 // ── Storyboards — public client view ─────────────────────────────────────────
-// Leitura pelo caminho amigável (rota curinga); escritas pelo token opaco, que
-// cabe num único segmento de rota. Links antigos (/sb/<hex>) seguem valendo.
+// O cliente chega SÓ pelo código opaco (shareSlug), que também é o token das
+// escritas dele. A busca pelo caminho legível (cliente/produto/projeto) foi
+// REMOVIDA: ela era pública e devolvia o documento inteiro junto com o token de
+// escrita, então quem adivinhasse os nomes — que aparecem no próprio caminho —
+// lia o storyboard, comentava e podia até aprová-lo. Esse caminho agora é
+// endereço de edição, atrás da senha.
 const sbBySlug = (slug) => db.storyboards.find(s => s.shareSlug === slug);
-
-// Declarada antes de /api/sb/:slug para não ser capturada por ela.
-app.get('/api/sb/path/*', (req, res) => {
-  const sb = db.storyboards.find(s => s.pathSlug === req.params[0]);
-  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
-  res.json(sbPublic(sb));
-});
 
 app.get('/api/sb/:slug', (req, res) => {
   const sb = sbBySlug(req.params.slug);

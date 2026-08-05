@@ -125,9 +125,49 @@ function form(file, nome) {
   check('og:title traz o cliente', ogT.includes('ACME'), ogT);
   const capaResp = await fetch(og);
   check('a imagem de preview abre de verdade', capaResp.status === 200, 'status ' + capaResp.status);
+  check('tem og:image:secure_url', /og:image:secure_url/.test(html));
+  check('tem og:image:alt', /og:image:alt/.test(html));
+  // Capa no disco (dev): não pode anunciar medida que não conferimos.
+  check('capa fora do Cloudinary nao inventa medida', !/og:image:width/.test(html));
+
+  // O caminho legivel cliente/produto/projeto e endereco de EDICAO, atras da
+  // senha. Ele nao pode descrever o documento: o proprio caminho traz o nome do
+  // cliente, e um link colado num grupo nao deve revelar de quem e o projeto.
+  const caminho = (vivo && vivo.pathSlug) || '';
+  const viaPath = await fetch(`${BASE}/storyboards/${caminho}`).then(r => r.text()).catch(() => '');
+  const ogPathImg = (viaPath.match(/<meta property="og:image" content="([^"]+)"/) || [])[1] || '';
+  const ogPathT = (viaPath.match(/<meta property="og:title" content="([^"]+)"/) || [])[1] || '';
+  check('area interna nao expoe a capa', !ogPathImg.endsWith(upCapa.data.coverUrl), ogPathImg);
+  check('area interna nao expoe o cliente', !/ACME/i.test(ogPathT), ogPathT);
+
+  // E a busca publica pelo caminho legivel tem de estar fechada: ela devolvia o
+  // documento inteiro E o token de escrita a quem adivinhasse os nomes.
+  const espiar = await fetch(`${BASE}/api/sb/path/${caminho}`);
+  check('busca publica pelo caminho legivel esta fechada', espiar.status === 404, 'status ' + espiar.status);
 
   console.log('\n── 5. Reinício do servidor (o "atualizar o site") ────────');
+  // Segundo documento, só para o recorte social: a capa dele vai apontar para o
+  // Cloudinary, e assim o primeiro continua com a capa de disco intacta para as
+  // conferências de sobrevivência e de limpeza do armazenamento.
+  const criado2 = await api('POST', '/api/storyboards', { cliente: 'CLOUD', projeto: 'PREVIEW', categoria: 'Teste', produto: 'CAPA' });
+  const ID2 = criado2.data && criado2.data.id;
+  const SLUG2 = criado2.data && criado2.data.shareSlug;
+
   await stop();
+
+  // Com o servidor parado, aponta a capa do segundo para uma URL do Cloudinary
+  // e exercita o recorte social. O WhatsApp descarta em silencio imagem de
+  // vários MB (as nossas vêm da câmera), então o preview tem de sair pedindo ao
+  // Cloudinary a versão 1200x630 em JPEG.
+  const dbPath = path.join(DIR, 'db.json');
+  {
+    const raw = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const alvo = raw.storyboards.find(s => s.id === ID2);
+    alvo.coverUrl = 'https://res.cloudinary.com/hqualqrf/image/upload/v1783625920/framety/exemplo.png';
+    alvo.coverPublicId = 'framety/exemplo';
+    fs.writeFileSync(dbPath, JSON.stringify(raw, null, 2));
+  }
+
   await start(); await esperaNoAr();
   const relogin = await api('POST', '/api/auth/login', { password: '0000' });
   TOKEN = relogin.data.token;
@@ -139,6 +179,16 @@ function form(file, nome) {
   check('imagem da cena sobrevive', sb2 && sb2.pages.some(p => p.imageUrl === upCena.data.url));
   const arq = await fetch(BASE + upCena.data.url);
   check('o arquivo da cena ainda é servido', arq.status === 200, 'status ' + arq.status);
+
+  console.log('\n── 5b. Recorte social da capa (o que salva o preview) ────');
+  const htmlC = await fetch(`${BASE}/sb/${SLUG2}`).then(r => r.text());
+  const ogC = (htmlC.match(/<meta property="og:image" content="([^"]+)"/) || [])[1] || '';
+  check('pede o recorte ao Cloudinary', /\/image\/upload\/c_fill,g_auto,w_1200,h_630,f_jpg,q_auto\//.test(ogC), ogC);
+  check('mantem a mesma imagem (mesmo public_id)', ogC.endsWith('/v1783625920/framety/exemplo.png'), ogC);
+  check('nao empilha transformacao sobre transformacao', (ogC.match(/c_fill/g) || []).length === 1, ogC);
+  check('anuncia 1200x630', /og:image:width" content="1200"/.test(htmlC) && /og:image:height" content="630"/.test(htmlC));
+  check('anuncia jpeg', /og:image:type" content="image\/jpeg"/.test(htmlC));
+  check('og:image absoluta e https', /^https:\/\//.test(ogC), ogC);
 
   console.log('\n── 6. Visão pública e comentários ────────────────────────');
   const pub = await api('GET', `/api/sb/${SLUG}`);
