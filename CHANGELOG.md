@@ -3,6 +3,29 @@
 Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 (tag git). Correções em andamento entram em "Não lançado" até o próximo deploy.
 
+## [1.6.1] — No ar no Render (tag `v1.6.1`) — 2026-08-05
+
+- **Cada storyboard tem o seu endereço:** abrir um documento no painel passou a
+  escrever o link dele na barra —
+  `/storyboards/<cliente>-<produto>-<projeto>` — e esse link, colado num
+  navegador, abre direto naquele documento. Fechar devolve `/storyboards`,
+  trocar de documento empilha (o **voltar** do navegador funciona) e renomear o
+  storyboard corrige o endereço sem criar uma volta a mais.
+  Os três endereços convivem no mesmo prefixo porque se distinguem pelo número
+  de segmentos — o link aberto do cliente tem sempre os três
+  (`cliente/produto/projeto`), o atalho interno tem um:
+
+  | endereço | quem vê |
+  |---|---|
+  | `/storyboards` | índice, protegido por senha |
+  | `/storyboards/ebm-metropolitan-marista-video-imersivo` | o documento **dentro do painel**, protegido |
+  | `/storyboards/ebm/metropolitan-marista/video-imersivo` | link aberto do cliente |
+
+  Quem abrir o atalho interno sem sessão encontra a senha — o documento e o
+  nome do cliente não aparecem. Link que não corresponde a nenhum documento
+  avisa e volta para a lista. ([app.jsx] roteamento, [storyboard.jsx]
+  `sbDocSlug`/`sbSlugDaUrl`, `StoryboardIndexPage`)
+
 ## [1.6.0] — No ar no Render (tag `v1.6`) — 2026-08-05
 
 **Estreia da aba de Storyboards em produção.** Todo o recurso — console, link do

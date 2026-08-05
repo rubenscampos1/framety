@@ -204,6 +204,23 @@ window.sbMatchesStoryboard = (sb, q) => sbMatches(sb, q);
 const sbShareUrl = (sb) =>
   `${window.location.origin}/storyboards/${sb.pathSlug || ""}`;
 
+/* Endereço próprio de cada documento dentro do painel:
+   /storyboards/<cliente>-<produto>-<projeto>.
+   É o mesmo trio do link do cliente, só que num segmento só — e é isso que
+   separa os dois sem ambiguidade: o link aberto do cliente tem SEMPRE três
+   segmentos (cliente/produto/projeto), este tem um. Quem cair aqui sem sessão
+   encontra a senha, não o documento. */
+const sbDocSlug = (sb) => String(sb?.pathSlug || "").replace(/\//g, "-");
+
+/* Um segmento depois de /storyboards/ → atalho interno; nenhum ou três → índice
+   protegido / link do cliente. Devolve "" quando não é um atalho interno. */
+const sbSlugDaUrl = () => {
+  const p = window.location.pathname;
+  if (!p.startsWith("/storyboards/")) return "";
+  const segs = p.slice("/storyboards/".length).replace(/\/+$/, "").split("/").filter(Boolean);
+  return segs.length === 1 ? decodeURIComponent(segs[0]) : "";
+};
+
 /* Carrega um script externo uma única vez (libs de PDF sob demanda). */
 const sbLoadScript = (src) => new Promise((resolve, reject) => {
   if ([...document.scripts].some((s) => s.src === src)) return resolve();
@@ -883,7 +900,7 @@ async function sbExportPDF(sb, { withComments, onProgress = () => {} }) {
 }
 
 /* ═══════════════════════ CONSOLE — lista de storyboards ═════════════════════ */
-const StoryboardsPanel = ({ list, setList, addToast, query = "", requestOpen = null, onOpened, onOpenChange, onExit = null }) => {
+const StoryboardsPanel = ({ list, setList, addToast, query = "", requestOpen = null, onOpened, onOpenChange, onExit = null, requestClose = 0 }) => {
   const [openId, setOpenId] = React.useState(null);
   const [openInEdit, setOpenInEdit] = React.useState(false);   // lápis abre já editando
   const [confirmDel, setConfirmDel] = React.useState(null);
@@ -930,9 +947,17 @@ const StoryboardsPanel = ({ list, setList, addToast, query = "", requestOpen = n
     onOpened && onOpened();
   }, [requestOpen]);
 
-  /* Avisa quem hospeda o painel (a tela exclusiva esconde a busca com um
-     storyboard aberto — lá dentro ela não procura nada). */
-  React.useEffect(() => { onOpenChange && onOpenChange(!!openId); }, [openId]);
+  /* Avisa quem hospeda o painel QUAL documento está aberto (ou null). A tela
+     exclusiva usa isso para esconder a busca e para pôr o endereço do documento
+     na barra do navegador. O `pathSlug` entra nas dependências porque renomear
+     o storyboard muda o endereço dele. */
+  React.useEffect(() => { onOpenChange && onOpenChange(open || null); }, [openId, open && open.pathSlug]);
+
+  /* Pedido de fechar vindo de fora — o "voltar" do navegador. */
+  React.useEffect(() => {
+    if (!requestClose) return;
+    setOpenId(null); setOpenInEdit(false);
+  }, [requestClose]);
 
   /* Filtro da busca — só filtra o que aparece; `list` continua inteira, senão
      apagar um storyboard com a busca ativa derrubaria os escondidos. */
@@ -1407,6 +1432,55 @@ const StoryboardIndexPage = () => {
   const [busca, setBusca] = React.useState("");
   const [pedidoAbrir, setPedidoAbrir] = React.useState(null);
   const [aberto, setAberto] = React.useState(false);   // um storyboard está aberto?
+  const [pedidoFechar, setPedidoFechar] = React.useState(0);
+  /* Atalho pedido pela URL, esperando a lista chegar para virar um id. O ref
+     acompanha o estado porque `aoAbrir` é estável (useCallback sem deps) e
+     precisa enxergar o valor de agora. */
+  const [slugPendente, setSlugPendente] = React.useState(() => sbSlugDaUrl());
+  const pendenteRef = React.useRef(slugPendente);
+  const ultimoAberto = React.useRef(null);
+
+  /* ── Endereço próprio de cada documento ──────────────────────────────────
+     Abrir um storyboard escreve /storyboards/<cliente>-<produto>-<projeto> na
+     barra; fechar devolve /storyboards. Trocar de documento empilha (o "voltar"
+     do navegador funciona); renomear o que já está aberto só corrige o endereço
+     no lugar, sem criar uma volta a mais. */
+  const aoAbrir = React.useCallback((sb) => {
+    setAberto(!!sb);
+    /* Enquanto um atalho da URL não foi resolvido, o painel ainda está de mãos
+       vazias e avisa "nada aberto" — obedecer a isso apagaria justamente o
+       endereço pelo qual a pessoa entrou, antes de ele abrir o documento. */
+    if (!sb && pendenteRef.current) return;
+    const destino = sb ? `/storyboards/${sbDocSlug(sb)}` : "/storyboards";
+    if (window.location.pathname === destino) { ultimoAberto.current = sb ? sb.id : null; return; }
+    const mesmoDoc = sb && ultimoAberto.current === sb.id;
+    window.history[mesmoDoc ? "replaceState" : "pushState"]({}, "", destino);
+    ultimoAberto.current = sb ? sb.id : null;
+  }, []);
+
+  /* Chegou por um link direto: assim que a lista existe, abre aquele documento. */
+  React.useEffect(() => {
+    if (!slugPendente || !list) return;
+    const alvo = list.find((s) => sbDocSlug(s) === slugPendente);
+    if (alvo) setPedidoAbrir(alvo.id);
+    else {
+      addToast("Storyboard não encontrado para esse link.", "error");
+      window.history.replaceState({}, "", "/storyboards");
+    }
+    pendenteRef.current = "";
+    setSlugPendente("");
+  }, [slugPendente, list]);
+
+  /* Voltar/avançar do navegador: relê o endereço e abre ou fecha conforme ele. */
+  React.useEffect(() => {
+    const onPop = () => {
+      const slug = sbSlugDaUrl();
+      if (slug) { pendenteRef.current = slug; setSlugPendente(slug); }
+      else { ultimoAberto.current = null; setPedidoFechar((n) => n + 1); }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   /* Abrir um storyboard a partir da busca global (Ctrl+Espaço). */
   React.useEffect(() => {
@@ -1508,8 +1582,8 @@ const StoryboardIndexPage = () => {
       )}
 
       <StoryboardsPanel list={list} setList={setList} addToast={addToast} query={busca}
-        requestOpen={pedidoAbrir} onOpened={() => setPedidoAbrir(null)} onOpenChange={setAberto}
-        onExit={sair} />
+        requestOpen={pedidoAbrir} onOpened={() => setPedidoAbrir(null)} onOpenChange={aoAbrir}
+        requestClose={pedidoFechar} onExit={sair} />
 
       {!!toasts.length && (
         <div className="sb-toasts">
