@@ -2018,12 +2018,26 @@ body.in-cat-page.cat-peek .cat-page {
   display: grid;
   grid-template-columns: 240px 1fr;
   animation: fadeIn 0.4s ease;
+  transition: grid-template-columns 0.28s cubic-bezier(.4,0,.2,1);
+}
+/* Modo foco (só na aba Storyboards): recolhe o menu para o deck ganhar largura.
+   min-width:0 é necessário — sem ele o item de grid não encolhe abaixo do
+   conteúdo e a coluna de 0 não fecha. */
+.admin-shell.nav-hidden { grid-template-columns: 0 1fr; }
+.admin-shell.nav-hidden .admin-side {
+  min-width: 0; overflow: hidden; padding-left: 0; padding-right: 0;
+  opacity: 0; pointer-events: none; border-right-width: 0;
 }
 .admin-side {
   border-right: 1px solid var(--line);
   background: transparent;
   padding: 28px 20px;
   display: flex; flex-direction: column; gap: 8px;
+  transition: opacity 0.18s ease, padding 0.28s cubic-bezier(.4,0,.2,1);
+}
+/* precisa vir depois das duas regras acima: mesma especificidade, ganha a última */
+@media (prefers-reduced-motion: reduce) {
+  .admin-shell, .admin-side { transition: none; }
 }
 .admin-side .crest {
   display: flex; align-items: center; gap: 10px;
@@ -4285,8 +4299,10 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
 
 /* Admin mobile */
 @media (max-width: 900px) {
-  .admin-shell { grid-template-columns: 1fr; }
+  .admin-shell, .admin-shell.nav-hidden { grid-template-columns: 1fr; }
   .admin-side { display: none; }
+  /* abaixo de 900px o menu já dá lugar à barra de abas: o botão não faz nada */
+  .admin-focus-btn { display: none; }
   .admin-main { padding: 20px 16px 40px; }
   .admin-stats { grid-template-columns: repeat(2, 1fr); }
   .admin-row { grid-template-columns: 24px 64px 1fr 60px; gap: 12px; }

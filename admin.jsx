@@ -107,6 +107,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
       tutorial: "tutorial",
       locucoes: "locucoes",
       links: "links",
+      storyboards: "storyboards",
     };
     const slug = slugMap[tab] || "visao-geral";
     const newPath = `/console/${slug}`;
@@ -127,17 +128,39 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
     return () => window.removeEventListener('framety-admin-edit', onEdit);
   }, []);
 
+  // Busca global (Ctrl+Espaço) → abre o storyboard escolhido. O id fica guardado
+  // porque o painel só existe depois que a aba troca — ele lê o pedido ao montar.
+  const [sbRequestOpen, setSbRequestOpen] = React.useState(null);
+  React.useEffect(() => {
+    const onOpenSb = (e) => { setTab("storyboards"); setSbRequestOpen(e.detail?.id || null); };
+    window.addEventListener('framety-open-storyboard', onOpenSb);
+    return () => window.removeEventListener('framety-open-storyboard', onOpenSb);
+  }, []);
+
   const [vids, setVids] = React.useState([]);
   const [cats, setCats] = React.useState([]);
   const [clients, setClients] = React.useState([]);
   const [reelName, setReelName] = React.useState("");
   const [partners, setPartners] = React.useState([]);
+  const [storyboards, setStoryboards] = React.useState([]);
   const [locucoesPages, setLocucoesPages] = React.useState([]);
   const [locucoesActivePageId, setLocucoesActivePageId] = React.useState(null);
   const [locucoesCad, setLocucoesCad] = React.useState({ clientes: [], projetos: [], empreendimentos: [], categorias: [] });
   const [redirects, setRedirects] = React.useState([]);
   const [producoesUnlocked, setProducoesUnlocked] = React.useState(false);
   const [showProducoesPass, setShowProducoesPass] = React.useState(false);
+  // Modo foco do storyboard: recolhe o menu do console para o deck (1280px de
+  // página) ganhar largura. A preferência persiste entre sessões, mas só tem
+  // efeito na aba de storyboards — sair dela sempre devolve o menu.
+  const [sbFocus, setSbFocus] = React.useState(() => {
+    try { return localStorage.getItem("framety.sbFocus") === "1"; } catch { return false; }
+  });
+  const toggleSbFocus = () => setSbFocus((v) => {
+    const next = !v;
+    try { localStorage.setItem("framety.sbFocus", next ? "1" : "0"); } catch {}
+    return next;
+  });
+  const navHidden = tab === "storyboards" && sbFocus;
 
   // ── Toast & confirm system ────────────────────────────────────────────────────
   const [toasts, setToasts] = React.useState([]);
@@ -183,6 +206,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
         setLocucoesCad(d.cad || { clientes: [], projetos: [], empreendimentos: [], categorias: [] });
       }).catch(() => {});
       window.API.getRedirects().then(setRedirects).catch(() => {});
+      window.API.getStoryboards().then(setStoryboards).catch(() => {});
       setLoading(false);
 
       // Views auto-update logic removed per user request
@@ -190,6 +214,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
   }, []);
 
   // Keep global in sync so other pages reflect changes
+  React.useEffect(() => { window.FRAMETY_SB = storyboards; }, [storyboards]);   // busca global
   React.useEffect(() => { if (window.FRAMETY_DATA) window.FRAMETY_DATA.videos = vids; }, [vids]);
   React.useEffect(() => { if (window.FRAMETY_DATA) window.FRAMETY_DATA.categories = cats; }, [cats]);
   React.useEffect(() => { if (window.FRAMETY_DATA) window.FRAMETY_DATA.clients = clients; }, [clients]);
@@ -227,6 +252,11 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
       }).catch(() => {});
       window.API.getPartners().then(setPartners).catch(() => {});
     });
+    // Comentários chegam pelo link do cliente — o console precisa acender o sino
+    // sem depender de recarregar a página.
+    const offSb = window.FRAMETY_LIVE.on('storyboards', () => {
+      window.API.getStoryboards().then(setStoryboards).catch(() => {});
+    });
     const offLoc = window.FRAMETY_LIVE.on('locucoes', () => {
       if (locucoesSavePending.current) return; // don't clobber my own in-progress edit
       window.API.getLocucoes().then(d => {
@@ -238,7 +268,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
     const offRed = window.FRAMETY_LIVE.on('redirects', () => {
       window.API.getRedirects().then(setRedirects).catch(() => {});
     });
-    return () => { offContent(); offLoc(); offRed(); };
+    return () => { offContent(); offSb(); offLoc(); offRed(); };
   }, [loading]);
 
   const handleReelUpload = async (file) => {
@@ -287,8 +317,11 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
     overview: "Visão geral", videos: "Vídeos", clientes: "Clientes",
     categorias: "Categorias", reel: "Demoreel da capa", ia: "Seção IA",
     seguranca: "Segurança", parceiros: "Parceiros", tutorial: "Tutorial",
-    locucoes: "Produções", links: "Links",
+    storyboards: "Storyboards", locucoes: "Produções", links: "Links",
   };
+
+  // Soma dos comentários novos que ainda não foram abertos — acende o sino.
+  const sbUnread = storyboards.reduce((n, s) => n + (s.unread || 0), 0);
 
   if (loading) {
     return (
@@ -299,8 +332,8 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
   }
 
   return (
-    <div className="admin-shell page-enter" data-screen-label="07 Admin">
-      <aside className="admin-side">
+    <div className={"admin-shell page-enter" + (navHidden ? " nav-hidden" : "")} data-screen-label="07 Admin">
+      <aside className="admin-side" {...(navHidden ? { inert: "", "aria-hidden": "true" } : {})}>
         <div className="crest" style={{justifyContent: "center", marginBottom: 30}}>
           <img src="/vector_framety.svg?v=1" alt="Framety" style={{height: 48}}/>
         </div>
@@ -315,6 +348,10 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
           {partners.length > 0 && <span className="num" style={{marginLeft:"auto",fontSize:10,background:"var(--accent)",color:"#fff",borderRadius:20,padding:"1px 7px",fontFamily:"var(--font-mono)"}}>{partners.length}</span>}
         </a>
         <a className={"admin-nav-item " + (tab==="tutorial"?"active":"")} onClick={()=>setTab("tutorial")} data-cursor="hover"><span className="ico"><Icon name="help" size={15}/></span> Tutorial</a>
+        <a className={"admin-nav-item " + (tab==="storyboards"?"active":"")} onClick={()=>setTab("storyboards")} data-cursor="hover">
+          <span className="ico"><Icon name="list" size={15}/></span> Storyboards
+          {sbUnread > 0 && <span className="num" style={{marginLeft:"auto",fontSize:10,background:"var(--accent)",color:"#fff",borderRadius:20,padding:"1px 7px",fontFamily:"var(--font-mono)"}} title={`${sbUnread} atualização(ões) do cliente`}>🔔 {sbUnread}</span>}
+        </a>
         <div className="group-label">— Ordens de serviço</div>
         <a className={"admin-nav-item " + (tab==="locucoes"?"active":"")} onClick={()=>setTab("locucoes")} data-cursor="hover"><span className="ico"><Icon name="list" size={15}/></span> Produções</a>
         <a className={"admin-nav-item " + (tab==="links"?"active":"")} onClick={()=>setTab("links")} data-cursor="hover"><span className="ico"><Icon name="share" size={15}/></span> Links</a>
@@ -353,6 +390,9 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
           <a className={tab==="tutorial"?"active":""} onClick={tapMobile(()=>setTab("tutorial"))}>
             <Icon name="help" size={16}/><span>Tutorial</span>
           </a>
+          <a className={tab==="storyboards"?"active":""} onClick={tapMobile(()=>setTab("storyboards"))}>
+            <Icon name="list" size={16}/><span>Storyboards</span>
+          </a>
           <a className={tab==="locucoes"?"active":""} onClick={tapMobile(()=>setTab("locucoes"))}>
             <Icon name="list" size={16}/><span>Produções</span>
           </a>
@@ -382,12 +422,22 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
               : tab==="seguranca" ? "ADMIN"
               : tab==="parceiros" ? `${partners.length} CADASTROS`
               : tab==="tutorial" ? "SUPORTE"
+              : tab==="storyboards" ? `${storyboards.length} STORYBOARDS`
               : tab==="locucoes" ? `${locucoesPages.reduce((n,p)=>n+p.rows.length,0)} LINHAS`
               : tab==="links" ? `${redirects.length} LINKS`
               : "DASHBOARD"}
             </span>
           </h2>
           <div className="admin-topbar-right">
+            {tab === "storyboards" && (
+              <button className="btn btn-ghost admin-focus-btn" style={{padding:"9px 14px",fontSize:13}}
+                onClick={toggleSbFocus} data-cursor="hover"
+                aria-pressed={sbFocus}
+                title={sbFocus ? "Mostrar o menu do console" : "Ocultar o menu do console e focar no storyboard"}>
+                <Icon name={sbFocus ? "chevron-right" : "chevron-left"} size={14}/>
+                <span className="admin-focus-label">{sbFocus ? "Mostrar menu" : "Modo foco"}</span>
+              </button>
+            )}
             <button className="btn btn-ghost admin-pres-btn" style={{padding:"9px 16px",fontSize:13}} onClick={onOpenPresentation} data-cursor="hover">
               <Icon name="external" size={14}/> Apresentação
             </button>
@@ -408,6 +458,8 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
         {tab === "seguranca" && <SecurityPanel/>}
         {tab === "parceiros" && <PartnersPanel partners={partners} setPartners={setPartners}/>}
         {tab === "tutorial" && <TutorialPanel/>}
+        {tab === "storyboards" && <StoryboardsPanel list={storyboards} setList={setStoryboards} addToast={addToast}
+          requestOpen={sbRequestOpen} onOpened={() => setSbRequestOpen(null)}/>}
         {tab === "locucoes" && (producoesUnlocked
           ? <LocucoesPanel pages={locucoesPages} setPages={setLocucoesPages} activePageId={locucoesActivePageId} setActivePageId={setLocucoesActivePageId} cad={locucoesCad} setCad={setLocucoesCad}
               onChangePassword={() => setShowProducoesPass(true)}

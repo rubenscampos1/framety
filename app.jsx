@@ -15,6 +15,15 @@ const parseUrl = () => {
   // Partner registration
   if (p.includes("/cadastroparceiro")) return { page: "partner", catId: null, tab: null };
 
+  // Configurador de sala imersiva (ferramenta standalone, só por link)
+  if (p === "/screendimension" || p.startsWith("/screendimension/")) return { page: "screendimension", catId: null, tab: null };
+
+  // Storyboard — visão do cliente. /storyboards (índice) é protegido por senha;
+  // /storyboards/<cliente>/<produto>/<projeto> é o link aberto do cliente.
+  if (p === "/storyboards" || p === "/storyboards/") return { page: "storyboard-index", catId: null, tab: null };
+  if (p.startsWith("/storyboards/")) return { page: "storyboard-share", catId: null, tab: null };
+  if (p === "/sb" || p.startsWith("/sb/")) return { page: "storyboard-share", catId: null, tab: null };
+
   // Produções — read-only shareable link (scoped, external)
   if (p === "/producoes" || p.startsWith("/producoes/") || p.startsWith("/producoes?")) {
     return { page: "producoes-share", catId: null, tab: null };
@@ -58,6 +67,7 @@ const parseUrl = () => {
       "tutorial": "tutorial",
       "locucoes": "locucoes",
       "links": "links",
+      "storyboards": "storyboards",
     };
     
     // Find internal tab name from slug or vice-versa (fallback to overview)
@@ -72,12 +82,22 @@ const parseUrl = () => {
 };
 
 /* ── Global Search component ─────────────────────────────── */
-const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, adminMode = false }) => {
+const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, adminMode = false, storyboardsOnly = false }) => {
   const [query, setQuery]   = React.useState("");
   const [hoverVid, setHoverVid] = React.useState(null);
   const inputRef   = React.useRef(null);
   const hoverTimer = React.useRef(null);
   const data = window.FRAMETY_DATA || { categories: [], videos: [], clients: [] };
+
+  // Storyboards não vivem no FRAMETY_DATA (são só de quem tem sessão). O que já
+  // foi carregado antes serve de partida, e a lista é atualizada ao abrir.
+  const [sbs, setSbs] = React.useState(() => window.FRAMETY_SB || []);
+  React.useEffect(() => {
+    if (!window.API?.getToken?.()) return;
+    window.API.getStoryboards()
+      .then((l) => { window.FRAMETY_SB = l; setSbs(l); })
+      .catch(() => {});
+  }, []);
 
   React.useEffect(() => {
     inputRef.current?.focus();
@@ -88,15 +108,18 @@ const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, admi
 
   const q = query.toLowerCase().trim();
 
-  const matchedCats = !q ? [] : data.categories.filter(c =>
+  const matchSb = window.sbMatchesStoryboard || (() => false);
+  const matchedSbs = !q ? [] : sbs.filter((s) => matchSb(s, q)).slice(0, 9);
+
+  const matchedCats = storyboardsOnly || !q ? [] : data.categories.filter(c =>
     c.name.toLowerCase().includes(q) || c.desc?.toLowerCase().includes(q)
   );
-  const matchedClients = !q ? [] : (data.clients || []).filter(c =>
+  const matchedClients = storyboardsOnly || !q ? [] : (data.clients || []).filter(c =>
     c.name.toLowerCase().includes(q)
   );
   const allEmps = [...new Set(data.videos.map(v => v.empreendimento).filter(Boolean))];
-  const matchedEmps = !q ? [] : allEmps.filter(e => e.toLowerCase().includes(q));
-  const matchedVids = !q ? [] : data.videos.filter(v =>
+  const matchedEmps = storyboardsOnly || !q ? [] : allEmps.filter(e => e.toLowerCase().includes(q));
+  const matchedVids = storyboardsOnly || !q ? [] : data.videos.filter(v =>
     v.status !== "draft" && (
       v.title.toLowerCase().includes(q) ||
       v.catLabel?.toLowerCase().includes(q) ||
@@ -106,7 +129,9 @@ const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, admi
     )
   ).slice(0, 9);
 
-  const hasResults = matchedCats.length || matchedClients.length || matchedEmps.length || matchedVids.length;
+  const hasResults = matchedCats.length || matchedClients.length || matchedEmps.length || matchedVids.length || matchedSbs.length;
+  const SB_LABEL = { v1: "Aguardando revisão V1", v2: "Aguardando revisão V2", v3: "Aguardando revisão V3",
+                     v4: "Aguardando revisão V4", aprovado: "Aprovado" };
 
   const CB = window.ClientBadge;
   const getThumb = window.getThumbUrl;
@@ -126,7 +151,9 @@ const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, admi
           <input
             ref={inputRef}
             className="gsearch-input"
-            placeholder="Buscar vídeo, categoria, cliente, empreendimento…"
+            placeholder={storyboardsOnly
+              ? "Buscar storyboard por cliente, projeto ou produto…"
+              : "Buscar vídeo, categoria, cliente, empreendimento…"}
             value={query}
             onChange={e => setQuery(e.target.value)}
             autoComplete="off"
@@ -146,6 +173,26 @@ const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, admi
 
           {hasResults && (
             <div className="gsearch-results">
+
+              {matchedSbs.length > 0 && (
+                <div className="gsearch-group">
+                  <div className="gsearch-group-label">Storyboards</div>
+                  {matchedSbs.map(s => (
+                    <button key={s.id} className="gsearch-item"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('framety-open-storyboard', { detail: { id: s.id } }));
+                        onClose();
+                      }}>
+                      <span className="gsearch-item-icon"><Icon name="list" size={12}/></span>
+                      <span className="gsearch-item-title">{s.cliente || "Sem cliente"}</span>
+                      <span className="gsearch-item-sub">
+                        {[s.produto, s.projeto].filter(Boolean).join(" · ") || "—"}
+                        {" · "}{SB_LABEL[s.status] || s.status}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {matchedCats.length > 0 && (
                 <div className="gsearch-group">
@@ -537,6 +584,12 @@ const App = () => {
 
       {page === "partner" && <PartnerForm />}
 
+      {page === "screendimension" && <ScreenDimensionPage />}
+
+      {page === "storyboard-share" && <StoryboardSharePage />}
+
+      {page === "storyboard-index" && <StoryboardIndexPage />}
+
       {page === "producoes-share" && <window.ProducoesShareApp />}
 
       {page === "playlist" && <PlaylistPage catId={catId} />}
@@ -564,6 +617,7 @@ const App = () => {
           onOpenVideo={(id) => { openVideo(id); }}
           onOpenClient={(id) => { openClient(id); }}
           adminMode={page === "admin"}
+          storyboardsOnly={page === "storyboard-index"}
         />
       )}
 

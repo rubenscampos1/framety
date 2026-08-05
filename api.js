@@ -87,6 +87,33 @@
     getLocucoes:   ()      => req('GET',  '/api/locucoes'),
     saveLocucoes:  (data)  => req('POST', '/api/locucoes', data),
 
+    // Storyboards — admin
+    getStoryboards:   ()      => req('GET',    '/api/storyboards'),
+    addStoryboard:    (data)  => req('POST',   '/api/storyboards', data),
+    updateStoryboard: (id, d) => req('PUT',    `/api/storyboards/${id}`, d),
+    deleteStoryboard: (id)    => req('DELETE', `/api/storyboards/${id}`),
+    seenStoryboard:   (id)    => req('POST',   `/api/storyboards/${id}/seen`),
+    // Só o console apaga comentário já enviado pelo cliente.
+    deleteSbCommentAdmin: (id, cid) => req('DELETE', `/api/storyboards/${id}/comments/${cid}`),
+    uploadStoryboardImage: (id, file) => { const fd = new FormData(); fd.append('file', file); return req('POST', `/api/upload/storyboard/${id}`, fd, true); },
+    removeStoryboardAsset: (id, url, publicId) => req('POST', `/api/storyboards/${id}/asset/remove`, { url, publicId }),
+    // Capa: miniatura do hub e imagem de preview do link do cliente (WhatsApp).
+    uploadStoryboardCover: (id, file) => { const fd = new FormData(); fd.append('file', file); return req('POST', `/api/storyboards/${id}/cover`, fd, true); },
+    removeStoryboardCover: (id) => req('DELETE', `/api/storyboards/${id}/cover`),
+    // Onde as imagens enviadas ficam (durable = sobrevive a deploy).
+    getStorageStatus: () => req('GET', '/api/storage-status'),
+
+    // Storyboards — public client view (sem auth).
+    // Leitura pelo caminho amigável cliente/produto/projeto (rota curinga, para
+    // sobreviver a proxies que normalizam %2F) ou pelo shareSlug antigo; escritas
+    // sempre pelo `token` opaco que veio na leitura.
+    getStoryboardByPath: (path)        => req('GET',    `/api/sb/path/${path}`),
+    getSharedStoryboard: (slug)        => req('GET',    `/api/sb/${slug}`),
+    addSbComment:        (tok, data)   => req('POST',   `/api/sb/${tok}/comments`, data),
+    deleteSbComment:     (tok, cid)    => req('DELETE', `/api/sb/${tok}/comments/${cid}`),
+    submitSbComments:    (tok)         => req('POST',   `/api/sb/${tok}/submit`),
+    approveSb:           (tok, data)   => req('POST',   `/api/sb/${tok}/approve`, data),
+
     // Links (short-link redirects)
     getRedirects:    ()          => req('GET',    '/api/redirects'),
     addRedirect:     (data)      => req('POST',   '/api/redirects', data),

@@ -19,7 +19,8 @@ const UPLOADS = process.env.UPLOADS_DIR || path.join(DIR, 'uploads');
 if (!fs.existsSync(UPLOADS)) fs.mkdirSync(UPLOADS, { recursive: true });
 
 const USE_PG = !!process.env.DATABASE_URL;
-const DB_FILE = require('path').join(DIR, 'framety-db.json');
+// DB_FILE permite subir uma instância isolada (teste) sem tocar no banco real.
+const DB_FILE = process.env.DB_FILE || path.join(DIR, 'framety-db.json');
 
 const pool = USE_PG ? new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -117,6 +118,7 @@ const SEED = {
   linkRedirects: [
     { slug: 'rodolfo', target: 'https://www.google.com.br', category: 'Clientes', clicks: 3, createdAt: '2026-07-06T22:01:58.018Z', lastAccessedAt: '2026-07-06T22:03:46.309Z' },
   ],
+  storyboards: [],
 };
 
 async function loadDB() {
@@ -196,11 +198,53 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Transforma um caminho do site em URL absoluta para as meta tags sociais.
+// Quem já é absoluto (Cloudinary) passa direto. `PUBLIC_ORIGIN` permite fixar o
+// domínio final quando o Host que chega não é o público.
+function absoluteUrl(req, urlOrPath) {
+  const v = String(urlOrPath || '');
+  if (/^https?:\/\//i.test(v)) return v;
+  const fixed = String(process.env.PUBLIC_ORIGIN || '').replace(/\/+$/, '');
+  if (fixed) return fixed + (v.startsWith('/') ? v : '/' + v);
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  if (!host) return v;
+  return `${proto}://${host}${v.startsWith('/') ? v : '/' + v}`;
+}
+
 function unlinkUpload(urlPath) {
   if (typeof urlPath !== 'string' || !urlPath.startsWith('/uploads/')) return;
-  const filePath = path.join(DIR, urlPath);
+  // O caminho tem de ser montado a partir de UPLOADS, não de DIR: com um disco
+  // persistente (UPLOADS_DIR=/var/data/uploads) a pasta fica FORA do projeto, e
+  // montar por DIR gerava um caminho que nunca casava com a checagem abaixo —
+  // toda remoção virava silenciosamente um nada, e os arquivos se acumulavam
+  // no disco para sempre.
+  const filePath = path.join(UPLOADS, urlPath.slice('/uploads/'.length));
+  // continua barrando ../: o join normaliza e o prefixo tem de bater.
   if (!filePath.startsWith(UPLOADS + path.sep)) return;
   try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
+}
+
+// Derives the Cloudinary public_id from a secure_url when it wasn't stored
+// alongside the asset (e.g. rows written before public_id was tracked).
+// …/upload/v1234567890/framety/abc123.jpg  →  framety/abc123
+function cloudinaryPublicId(url) {
+  if (typeof url !== 'string' || !url.includes('res.cloudinary.com')) return null;
+  const m = url.match(/\/upload\/(?:[^/]+\/)*?v\d+\/(.+?)(?:\.[a-z0-9]+)?$/i);
+  return m ? m[1] : null;
+}
+
+// Removes one uploaded asset from whichever backend holds it. Local files go
+// through unlinkUpload; Cloudinary assets are destroyed by public_id (stored on
+// the record, or recovered from the URL). Best-effort: never throws.
+async function destroyAsset(url, publicId, resourceType) {
+  if (!url && !publicId) return;
+  if (typeof url === 'string' && url.startsWith('/uploads/')) return unlinkUpload(url);
+  const id = publicId || cloudinaryPublicId(url);
+  if (!id || !USE_CLOUDINARY) return;
+  try {
+    await cloudinary.uploader.destroy(id, { resource_type: resourceType || 'image', invalidate: true });
+  } catch (e) { console.error('[cloudinary destroy]', id, e.message); }
 }
 
 let db;
@@ -270,6 +314,7 @@ async function storeUpload(req, res, next) {
     });
     fs.unlink(req.file.path, () => {}); // drop the temp file
     req.uploadedUrl = result.secure_url;
+    req.uploadedPublicId = result.public_id; // needed to destroy the asset later
     next();
   } catch (e) {
     fs.unlink(req.file.path, () => {});
@@ -288,7 +333,10 @@ app.use(compression({
   },
 }));
 
-app.use(express.json());
+// O console grava o deck inteiro num PUT só (páginas, textos e o histórico de
+// versões de cada cena). Um storyboard longo passa folgado dos 100kb que o
+// express assume por padrão, e o pedido morreria com 413 no meio do trabalho.
+app.use(express.json({ limit: '4mb' }));
 
 // ── Live-update broadcast hook ────────────────────────────────────────────────
 // After any successful (2xx) write to /api/*, tell all connected browsers which
@@ -302,7 +350,11 @@ app.use((req, res, next) => {
     if (res.statusCode < 200 || res.statusCode >= 300) return;
     const p = req.path;
     let domain = null;
-    if (/^\/api\/(videos|categories|clients|upload|ai-section|tutorial|reel|partners)/.test(p)) domain = 'content';
+    // storyboards vem PRIMEIRO: /api/upload/storyboard/:id também casa com a
+    // regra de `content` abaixo, e caindo lá as imagens do deck não chegavam
+    // em tempo real para as outras sessões.
+    if (/^\/api\/(storyboards|sb)\b/.test(p) || /^\/api\/upload\/storyboard\b/.test(p)) domain = 'storyboards';
+    else if (/^\/api\/(videos|categories|clients|upload|ai-section|tutorial|reel|partners)/.test(p)) domain = 'content';
     else if (/^\/api\/(locucoes|producoes\/status)/.test(p)) domain = 'locucoes';
     else if (/^\/api\/redirects/.test(p)) domain = 'redirects';
     if (domain) broadcast(domain);
@@ -343,7 +395,7 @@ app.use((req, res, next) => {
 });
 
 // ── SPA Routing (Friendly URLs) ───────────────────────────────────────────────
-const SPA_ROUTES = ['/', '/Framety', '/framety', '/framety/*', '/console', '/console/*', '/presentation', '/presentation/*', '/cadastroparceiro', '/tutorial', '/producoes', '/assistir', '/assistir/*'];
+const SPA_ROUTES = ['/', '/Framety', '/framety', '/framety/*', '/console', '/console/*', '/presentation', '/presentation/*', '/cadastroparceiro', '/tutorial', '/producoes', '/assistir', '/assistir/*', '/screendimension', '/screendimension/*', '/sb', '/sb/*', '/storyboards', '/storyboards/*'];
 
 app.get(SPA_ROUTES, (req, res) => {
   const entryPath = path.join(DIR, 'Framety.html');
@@ -384,9 +436,28 @@ app.get(SPA_ROUTES, (req, res) => {
     }
   }
 
+  if (p === '/screendimension' || p.startsWith('/screendimension/')) {
+    title = "Configurador de Sala Imersiva | Framety";
+    desc = "Ferramenta de dimensionamento de projeções para salas imersivas.";
+  }
+
+  if (p === '/sb' || p.startsWith('/sb/') || p === '/storyboards' || p.startsWith('/storyboards/')) {
+    const sb = p.startsWith('/storyboards/')
+      ? (db.storyboards || []).find(s => s.pathSlug === p.slice('/storyboards/'.length))
+      : (db.storyboards || []).find(s => s.shareSlug === p.split('/')[2]);
+    title = sb ? `Storyboard — ${sb.cliente || 'Framety'} | ${sb.projeto || ''}`.trim() : "Storyboard | Framety";
+    desc = "Storyboard para aprovação — visualize as cenas e envie seus comentários.";
+    // A capa enviada no console é o que aparece ao colar o link no WhatsApp.
+    if (sb && sb.coverUrl) image = sb.coverUrl;
+  }
+
   const eTitle = escapeHtml(title);
   const eDesc = escapeHtml(desc);
-  const eImage = escapeHtml(image);
+  // og:image PRECISA ser absoluta: WhatsApp, Telegram e Facebook buscam a imagem
+  // fora do contexto da página e não resolvem caminho relativo — com "/foo.png"
+  // o link simplesmente aparece sem miniatura. Atrás do proxy do Render o
+  // protocolo real vem no x-forwarded-proto (a conexão interna é http).
+  const eImage = escapeHtml(absoluteUrl(req, image));
   const metaHtml = `
     <title>${eTitle}</title>
     <meta name="description" content="${eDesc}">
@@ -842,8 +913,401 @@ app.post('/api/locucoes', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Storyboards ───────────────────────────────────────────────────────────────
+// Admin builds the deck; the client reviews it through a public share slug.
+// Client-facing routes are unauthenticated by design (the slug IS the secret),
+// so every write they can reach is narrow: append a comment, submit a round,
+// or approve. They can never edit pages.
+// V1 e mais SB_ROUNDS rodadas de alteração — o documento para na V4. Cada cena
+// tem a sua própria contagem, com o mesmo teto (ver storyboard.jsx).
+const SB_MAX_VERSION = 4;
+const SB_ROUNDS = SB_MAX_VERSION - 1;
+const SB_STATUSES = ['v1', 'v2', 'v3', 'v4', 'aprovado'];
+const SB_DISCLAIMER = 'Todo o conteúdo apresentado neste material consiste em representações e projeções baseadas no roteiro, não refletindo necessariamente o resultado final. Alguns elementos poderão sofrer alterações ao longo do desenvolvimento. Este material pode incluir conteúdos gerados por computação gráfica e/ou inteligência artificial.';
+
+const sbId = (p) => p + crypto.randomBytes(5).toString('hex');
+const sbNow = () => new Date().toISOString();
+
+function sbNewSlug() {
+  let slug;
+  do { slug = crypto.randomBytes(6).toString('hex'); }
+  while (db.storyboards.some(s => s.shareSlug === slug));
+  return slug;
+}
+
+// ── URL amigável: /storyboards/<cliente>/<produto>/<projeto> ─────────────────
+// O caminho é derivado dos dados do card, então muda junto com eles. Como dois
+// storyboards podem ter o mesmo trio, o último segmento ganha um sufixo -2, -3…
+// para manter o caminho único.
+function sbSlugify(str, fallback) {
+  const s = String(str || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')   // remove acentos
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return s || fallback;
+}
+
+function sbBuildPath(sb) {
+  const base = [
+    sbSlugify(sb.cliente, 'cliente'),
+    sbSlugify(sb.produto, 'produto'),
+    sbSlugify(sb.projeto, 'projeto'),
+  ];
+  const taken = (p) => db.storyboards.some(s => s.id !== sb.id && s.pathSlug === p);
+  let path = base.join('/');
+  for (let n = 2; taken(path); n++) path = [base[0], base[1], `${base[2]}-${n}`].join('/');
+  return path;
+}
+
+// The starting deck every new storyboard opens with (matches the printed model):
+// cover → disclaimer → assets → first scene → closing cover.
+function sbDefaultPages() {
+  return [
+    { id: sbId('pg_'), type: 'cover' },
+    { id: sbId('pg_'), type: 'disclaimer', text: SB_DISCLAIMER },
+    { id: sbId('pg_'), type: 'assets', title: 'ASSETS', items: [] },
+    { id: sbId('pg_'), type: 'scene', imageUrl: '', imagePublicId: '', imageVersion: 1, imageSince: null, imageHistory: [], placeholder: '', locucao: '', visual: '', sfx: '' },
+    { id: sbId('pg_'), type: 'end' },
+  ];
+}
+
+// Every asset referenced by a deck, so deleting a storyboard can clean up storage.
+// Inclui o histórico de versões: a imagem que o cliente viu na V1 continua
+// guardada na página e também precisa sair do armazenamento junto com o deck.
+function sbAssets(sb) {
+  const out = [];
+  const push = (url, publicId) => { if (url) out.push({ url, publicId }); };
+  push(sb.coverUrl, sb.coverPublicId);   // a capa também sai do armazenamento
+  for (const pg of sb.pages || []) {
+    if (pg.type === 'scene') {
+      push(pg.imageUrl, pg.imagePublicId);
+      for (const h of pg.imageHistory || []) push(h.url, h.publicId);
+    }
+    if (pg.type === 'assets') for (const it of pg.items || []) {
+      push(it.url, it.publicId);
+      for (const h of it.history || []) push(h.url, h.publicId);
+    }
+  }
+  return out;
+}
+
+// Porteiro do deck que chega numa gravação. Devolve a razão da recusa, ou null
+// quando o desenho está de pé. Não reescreve nada: campos novos de página
+// continuam passando sozinhos — o que se checa aqui é só o que, se vier errado,
+// destruiria o documento sem chance de desfazer.
+const SB_PAGE_TYPES = new Set(['cover', 'disclaimer', 'assets', 'scene', 'end']);
+const SB_MAX_PAGES = 300;
+function sbPagesProblem(pages) {
+  if (!Array.isArray(pages)) return 'Formato de páginas inválido.';
+  if (!pages.length) return 'Um storyboard não pode ficar sem páginas.';
+  if (pages.length > SB_MAX_PAGES) return `Limite de ${SB_MAX_PAGES} páginas por storyboard.`;
+  const ids = new Set();
+  for (const pg of pages) {
+    if (!pg || typeof pg !== 'object' || Array.isArray(pg)) return 'Página inválida no documento.';
+    if (typeof pg.id !== 'string' || !pg.id) return 'Página sem identificador.';
+    if (!SB_PAGE_TYPES.has(pg.type)) return `Tipo de página desconhecido: ${String(pg.type).slice(0, 40)}`;
+    // ids repetidos quebram o React e, pior, fazem comentário de uma página
+    // aparecer em outra (o vínculo é por pageId).
+    if (ids.has(pg.id)) return 'Há páginas com o mesmo identificador.';
+    ids.add(pg.id);
+  }
+  return null;
+}
+
+// Shape sent to the client-facing view: no internal bookkeeping, no seen state.
+function sbPublic(sb) {
+  return {
+    id: sb.id, cliente: sb.cliente, projeto: sb.projeto, categoria: sb.categoria,
+    produto: sb.produto, status: sb.status, version: sb.version,
+    pages: sb.pages, comments: sb.comments, pathSlug: sb.pathSlug,
+    lastCommentAt: sb.lastCommentAt, updatedAt: sb.updatedAt,
+    // Token de ação: o caminho amigável tem barras e não cabe num parâmetro de
+    // rota atrás de proxy, então as escritas do cliente usam este id opaco.
+    token: sb.shareSlug,
+  };
+}
+
+const sbFind = (id) => db.storyboards.find(s => s.id === id);
+
+app.get('/api/storyboards', requireAuth, (req, res) => {
+  res.json(db.storyboards);
+});
+
+// Onde as imagens enviadas realmente ficam. Sem CLOUDINARY_URL elas vão para o
+// disco da instância — que no Render é efêmero: some no próximo deploy, e o
+// storyboard reabre com as cenas quebradas. O console mostra isso como aviso em
+// vez de deixar o usuário descobrir depois de perder as imagens.
+app.get('/api/storage-status', requireAuth, (req, res) => {
+  res.json({
+    durable: USE_CLOUDINARY,
+    backend: USE_CLOUDINARY ? 'cloudinary' : 'disk',
+    db: USE_PG ? 'postgres' : 'arquivo local',
+  });
+});
+
+app.post('/api/storyboards', requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const sb = {
+    id: sbId('sb_'),
+    cliente: trim(b.cliente, 120), projeto: trim(b.projeto, 120),
+    categoria: trim(b.categoria, 120), produto: trim(b.produto, 120),
+    status: 'v1', version: 1,
+    shareSlug: sbNewSlug(),
+    pages: sbDefaultPages(),
+    comments: [],
+    lastCommentAt: null,
+    unread: 0,
+    createdAt: sbNow(), updatedAt: sbNow(),
+  };
+  db.storyboards.unshift(sb);
+  sb.pathSlug = sbBuildPath(sb);
+  try { await saveDB(db); }
+  catch (e) {
+    db.storyboards = db.storyboards.filter(s => s.id !== sb.id);
+    console.error('[sb create]', e);
+    return res.status(500).json({ error: 'Não foi possível criar o storyboard.' });
+  }
+  res.json(sb);
+});
+
+app.put('/api/storyboards/:id', requireAuth, async (req, res) => {
+  const sb = sbFind(req.params.id);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  const b = req.body || {};
+
+  // O deck chega inteiro a cada gravação, então um `pages` malformado (vazio por
+  // um estado transitório do editor, ou truncado por uma resposta pela metade)
+  // apagaria o documento inteiro — com o histórico de versões junto. Na dúvida,
+  // recusa e mantém o que já está gravado.
+  if (b.pages !== undefined) {
+    const erro = sbPagesProblem(b.pages);
+    if (erro) return res.status(400).json({ error: erro });
+  }
+
+  const antes = JSON.stringify({
+    cliente: sb.cliente, projeto: sb.projeto, categoria: sb.categoria, produto: sb.produto,
+    pages: sb.pages, status: sb.status, pathSlug: sb.pathSlug, updatedAt: sb.updatedAt,
+  });
+  const before = [sb.cliente, sb.produto, sb.projeto].join('|');
+  ['cliente', 'projeto', 'categoria', 'produto'].forEach(k => {
+    if (typeof b[k] === 'string') sb[k] = trim(b[k], 120);
+  });
+  if (Array.isArray(b.pages)) sb.pages = b.pages;
+  if (typeof b.status === 'string' && SB_STATUSES.includes(b.status)) sb.status = b.status;
+  // O link do cliente acompanha os dados do card — recalcula quando eles mudam.
+  if ([sb.cliente, sb.produto, sb.projeto].join('|') !== before || !sb.pathSlug) sb.pathSlug = sbBuildPath(sb);
+  sb.updatedAt = sbNow();
+
+  // Responder só depois de gravar. Antes o console dizia "Storyboard salvo" e
+  // seguia em frente mesmo com o banco fora do ar — a perda só aparecia no
+  // próximo carregamento da página.
+  try { await saveDB(db); }
+  catch (e) {
+    Object.assign(sb, JSON.parse(antes));   // memória volta ao que está no banco
+    console.error('[sb save]', e);
+    return res.status(500).json({ error: 'Não foi possível gravar. Nada foi alterado — tente de novo.' });
+  }
+  res.json(sb);
+});
+
+// Clears the notification badge — the admin has now seen this round of comments.
+app.post('/api/storyboards/:id/seen', requireAuth, (req, res) => {
+  const sb = sbFind(req.params.id);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  sb.unread = 0;
+  save();
+  res.json({ ok: true });
+});
+
+app.delete('/api/storyboards/:id', requireAuth, async (req, res) => {
+  const sb = sbFind(req.params.id);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  const assets = sbAssets(sb);
+  db.storyboards = db.storyboards.filter(s => s.id !== req.params.id);
+  save();
+  res.status(204).end();
+  // Storage cleanup runs after the response — a slow/failed purge must not
+  // block the delete the admin already confirmed.
+  for (const a of assets) await destroyAsset(a.url, a.publicId);
+});
+
+// Image upload for one page of a deck. Returns url + publicId so the client can
+// store both on the page and we can destroy the asset when it's replaced/removed.
+app.post('/api/upload/storyboard/:id', requireAuth, upload.single('file'), storeUpload, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  if (!/^image\//.test(req.file.mimetype)) {
+    await destroyAsset(req.uploadedUrl, req.uploadedPublicId);
+    return res.status(400).json({ error: 'Envie um arquivo de imagem.' });
+  }
+  const sb = sbFind(req.params.id);
+  if (!sb) {
+    await destroyAsset(req.uploadedUrl, req.uploadedPublicId);
+    return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  }
+  res.json({ url: req.uploadedUrl, publicId: req.uploadedPublicId || '' });
+});
+
+// ── Capa do storyboard ───────────────────────────────────────────────────────
+// É a miniatura do hub e a imagem que o WhatsApp mostra ao colar o link do
+// cliente. Fica no próprio registro (coverUrl/coverPublicId) e não entra pelo
+// PUT: só por aqui, para a capa anterior ser destruída no armazenamento em vez
+// de virar arquivo órfão.
+app.post('/api/storyboards/:id/cover', requireAuth, upload.single('file'), storeUpload, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  if (!/^image\//.test(req.file.mimetype)) {
+    await destroyAsset(req.uploadedUrl, req.uploadedPublicId);
+    return res.status(400).json({ error: 'Envie um arquivo de imagem.' });
+  }
+  const sb = sbFind(req.params.id);
+  if (!sb) {
+    await destroyAsset(req.uploadedUrl, req.uploadedPublicId);
+    return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  }
+  const anterior = { url: sb.coverUrl, publicId: sb.coverPublicId };
+  sb.coverUrl = req.uploadedUrl;
+  sb.coverPublicId = req.uploadedPublicId || '';
+  sb.updatedAt = sbNow();
+  // Só responde depois de gravar: o console não pode dizer "capa salva" e o
+  // registro não ter ido para o banco.
+  try { await saveDB(db); }
+  catch (e) {
+    sb.coverUrl = anterior.url; sb.coverPublicId = anterior.publicId;
+    await destroyAsset(req.uploadedUrl, req.uploadedPublicId);
+    console.error('[sb cover save]', e);
+    return res.status(500).json({ error: 'Não foi possível gravar a capa.' });
+  }
+  res.json({ coverUrl: sb.coverUrl, coverPublicId: sb.coverPublicId });
+  if (anterior.url && anterior.url !== sb.coverUrl) await destroyAsset(anterior.url, anterior.publicId);
+});
+
+app.delete('/api/storyboards/:id/cover', requireAuth, async (req, res) => {
+  const sb = sbFind(req.params.id);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  const anterior = { url: sb.coverUrl, publicId: sb.coverPublicId };
+  sb.coverUrl = ''; sb.coverPublicId = '';
+  sb.updatedAt = sbNow();
+  try { await saveDB(db); }
+  catch (e) {
+    sb.coverUrl = anterior.url; sb.coverPublicId = anterior.publicId;
+    console.error('[sb cover remove]', e);
+    return res.status(500).json({ error: 'Não foi possível remover a capa.' });
+  }
+  res.status(204).end();
+  if (anterior.url) await destroyAsset(anterior.url, anterior.publicId);
+});
+
+// Apagar comentário pelo console. Depois que o cliente envia a rodada ele perde
+// o direito de remover (ver a rota pública abaixo) — daqui, com sessão de admin,
+// qualquer comentário pode ser removido, enviado ou não.
+app.delete('/api/storyboards/:id/comments/:cid', requireAuth, (req, res) => {
+  const sb = sbFind(req.params.id);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  const before = (sb.comments || []).length;
+  sb.comments = (sb.comments || []).filter(c => c.id !== req.params.cid);
+  if (sb.comments.length === before) return res.status(404).json({ error: 'Comentário não encontrado.' });
+  sb.lastCommentAt = sb.comments.length ? sb.comments[sb.comments.length - 1].createdAt : null;
+  sb.updatedAt = sbNow();   // avisa as outras sessões abertas neste storyboard
+  save();
+  res.status(204).end();
+});
+
+// Drops an image the admin removed/replaced inside the editor.
+app.post('/api/storyboards/:id/asset/remove', requireAuth, async (req, res) => {
+  const sb = sbFind(req.params.id);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  const { url, publicId } = req.body || {};
+  res.json({ ok: true });
+  await destroyAsset(url, publicId);
+});
+
+// ── Storyboards — public client view ─────────────────────────────────────────
+// Leitura pelo caminho amigável (rota curinga); escritas pelo token opaco, que
+// cabe num único segmento de rota. Links antigos (/sb/<hex>) seguem valendo.
+const sbBySlug = (slug) => db.storyboards.find(s => s.shareSlug === slug);
+
+// Declarada antes de /api/sb/:slug para não ser capturada por ela.
+app.get('/api/sb/path/*', (req, res) => {
+  const sb = db.storyboards.find(s => s.pathSlug === req.params[0]);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  res.json(sbPublic(sb));
+});
+
+app.get('/api/sb/:slug', (req, res) => {
+  const sb = sbBySlug(req.params.slug);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  res.json(sbPublic(sb));
+});
+
+app.post('/api/sb/:slug/comments', (req, res) => {
+  const sb = sbBySlug(req.params.slug);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  if (sb.status === 'aprovado') return res.status(409).json({ error: 'Storyboard já aprovado.' });
+  const { pageId, author, company, text } = req.body || {};
+  if (!trim(text, 4000)) return res.status(400).json({ error: 'Comentário vazio.' });
+  if (!(sb.pages || []).some(p => p.id === pageId)) return res.status(400).json({ error: 'Página inválida.' });
+  const c = {
+    id: sbId('c_'), pageId,
+    author: trim(author, 80) || 'Cliente', company: trim(company, 80),
+    text: trim(text, 4000),
+    version: sb.version, createdAt: sbNow(), submitted: false,
+  };
+  sb.comments.push(c);
+  sb.lastCommentAt = c.createdAt;
+  save();
+  res.json(c);
+});
+
+app.delete('/api/sb/:slug/comments/:cid', (req, res) => {
+  const sb = sbBySlug(req.params.slug);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  const c = (sb.comments || []).find(x => x.id === req.params.cid);
+  if (!c) return res.status(404).json({ error: 'Comentário não encontrado.' });
+  // Only a comment from the round still in progress can be taken back.
+  if (c.submitted) return res.status(409).json({ error: 'Comentário já enviado.' });
+  sb.comments = sb.comments.filter(x => x.id !== req.params.cid);
+  save();
+  res.status(204).end();
+});
+
+// Client closes a round: freezes their comments, bumps the version, and raises
+// the badge in the console.
+app.post('/api/sb/:slug/submit', (req, res) => {
+  const sb = sbBySlug(req.params.slug);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  if (sb.status === 'aprovado') return res.status(409).json({ error: 'Storyboard já aprovado.' });
+  if ((sb.version || 1) >= SB_MAX_VERSION) {
+    return res.status(409).json({ error: `As ${SB_ROUNDS} rodadas de alteração deste storyboard já foram usadas.` });
+  }
+  const pending = (sb.comments || []).filter(c => !c.submitted);
+  if (!pending.length) return res.status(400).json({ error: 'Nenhum comentário para enviar.' });
+  pending.forEach(c => { c.submitted = true; });
+  sb.version = Math.min(sb.version + 1, SB_MAX_VERSION);
+  sb.status = 'v' + sb.version;
+  sb.lastCommentAt = sbNow();
+  sb.unread = (sb.unread || 0) + pending.length;
+  sb.updatedAt = sbNow();
+  save();
+  res.json({ ok: true, status: sb.status, version: sb.version });
+});
+
+app.post('/api/sb/:slug/approve', (req, res) => {
+  const sb = sbBySlug(req.params.slug);
+  if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
+  const { author, company } = req.body || {};
+  (sb.comments || []).forEach(c => { c.submitted = true; });
+  sb.status = 'aprovado';
+  sb.approvedAt = sbNow();
+  sb.approvedBy = trim(author, 80) || 'Cliente';
+  sb.approvedCompany = trim(company, 80);
+  sb.unread = (sb.unread || 0) + 1;
+  sb.updatedAt = sbNow();
+  save();
+  res.json({ ok: true, status: sb.status });
+});
+
 // ── Links (short-link redirects) ──────────────────────────────────────────────
-const RESERVED_SLUGS = new Set(['console', 'framety', 'presentation', 'cadastroparceiro', 'tutorial', 'uploads', 'api', 'producoes', 'assistir']);
+const RESERVED_SLUGS = new Set(['console', 'framety', 'presentation', 'cadastroparceiro', 'tutorial', 'uploads', 'api', 'producoes', 'assistir', 'sb', 'screendimension', 'storyboards']);
 
 app.get('/api/redirects', requireAuth, (req, res) => {
   res.json(db.linkRedirects);
@@ -932,6 +1396,9 @@ setInterval(() => {
   if (db.locucoesActivePageId == null) { db.locucoesActivePageId = SEED.locucoesActivePageId; _migrated = true; }
   if (!db.locucoesCad) { db.locucoesCad = JSON.parse(JSON.stringify(SEED.locucoesCad)); _migrated = true; }
   if (!db.linkRedirects) { db.linkRedirects = JSON.parse(JSON.stringify(SEED.linkRedirects)); _migrated = true; }
+  if (!db.storyboards) { db.storyboards = []; _migrated = true; }
+  // Storyboards criados antes da URL amigável ganham seu caminho agora.
+  db.storyboards.forEach(s => { if (!s.pathSlug) { s.pathSlug = sbBuildPath(s); _migrated = true; } });
   if (!db.settings.aiSection) db.settings.aiSection = JSON.parse(JSON.stringify(SEED.settings.aiSection));
   if (!db.settings.aiSection.items) db.settings.aiSection.items = JSON.parse(JSON.stringify(SEED.settings.aiSection.items));
   if (db.settings.producoes_pass == null) db.settings.producoes_pass = SEED.settings.producoes_pass;

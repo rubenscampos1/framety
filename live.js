@@ -1,8 +1,8 @@
 // live.js — real-time updates via Server-Sent Events (plain JS, no Babel).
 // Exposes window.FRAMETY_LIVE.on(domain, cb) → returns an unsubscribe fn.
-// Domains emitted by the server: 'content' | 'locucoes' | 'redirects'.
+// Domains emitted by the server: 'content' | 'locucoes' | 'redirects' | 'storyboards'.
 (function () {
-  const listeners = { content: new Set(), locucoes: new Set(), redirects: new Set() };
+  const listeners = { content: new Set(), locucoes: new Set(), redirects: new Set(), storyboards: new Set() };
   let source = null;
   let reconnectedOnce = false;
 
@@ -24,7 +24,7 @@
     source.addEventListener('open', () => {
       // On a (re)connection after the first, refresh everything so a client that
       // was briefly offline catches up on anything it missed.
-      if (reconnectedOnce) { emit('content'); emit('locucoes'); emit('redirects'); }
+      if (reconnectedOnce) { emit('content'); emit('locucoes'); emit('redirects'); emit('storyboards'); }
       reconnectedOnce = true;
     });
 

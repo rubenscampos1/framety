@@ -6,3 +6,6 @@ _restore_*/
 _backups/
 .env
 .claude/
+_sbtest/uploads/
+_sbtest/db.json
+_sbtest/db.json.tmp
