@@ -315,6 +315,40 @@ const SBDisclaimer = ({ page, editable, onChange, pageNo, total }) => (
   </div>
 );
 
+/* ─────────────────── Arrastar e soltar imagem numa vaga ─────────────────────
+   `dragenter` e `dragleave` também disparam ao cruzar os filhos do elemento, o
+   que faria o realce piscar enquanto o arquivo passeia por cima da página. Por
+   isso conta-se a profundidade em vez de ligar/desligar a cada travessia.
+   Só reage a arquivo: arrastar um texto ou um link não abre nada.             */
+const sbTemArquivo = (e) => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes("Files");
+
+const useSoltaImagem = (ativo, aoSoltar) => {
+  const [sobre, setSobre] = React.useState(false);
+  const prof = React.useRef(0);
+  const handlers = ativo ? {
+    onDragEnter: (e) => { if (!sbTemArquivo(e)) return; e.preventDefault(); e.stopPropagation(); prof.current++; setSobre(true); },
+    onDragOver:  (e) => { if (!sbTemArquivo(e)) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "copy"; },
+    onDragLeave: (e) => { if (!sbTemArquivo(e)) return; e.stopPropagation(); prof.current = Math.max(0, prof.current - 1); if (!prof.current) setSobre(false); },
+    onDrop: (e) => {
+      if (!sbTemArquivo(e)) return;
+      e.preventDefault(); e.stopPropagation();
+      prof.current = 0; setSobre(false);
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) aoSoltar(f);
+    },
+  } : {};
+  return { sobre, handlers };
+};
+
+/* O que vai acontecer se soltar aqui — dito ANTES de soltar, porque soltar
+   sobre uma vaga que já tem imagem gasta uma rodada de alteração. */
+const sbAvisoSolta = (slot) => {
+  const ver = (slot && slot.version) || 1;
+  if (!slot || !slot.url) return { texto: "Solte para enviar a imagem", tom: "ok" };
+  if (ver >= SB_MAX_VER) return { texto: `Limite de ${SB_ROUNDS} rodadas atingido`, tom: "bloq" };
+  return { texto: `Solte para enviar a V${ver + 1} — gasta uma rodada`, tom: "aviso" };
+};
+
 /* Botões de uma vaga de imagem na edição: subir a próxima versão, desfazer a
    que está no topo, ou tirar a imagem quando ela ainda é a única.             */
 const SBSlotTools = ({ slot, onPick, onUndo, onDrop }) => {
@@ -336,32 +370,61 @@ const SBSlotTools = ({ slot, onPick, onUndo, onDrop }) => {
   );
 };
 
-const SBAssets = ({ page, editable, onChange, onPickImage, onDropImage, onUndoImage, pageNo, total }) => {
+/* Uma vaga do mosaico. Componente próprio porque cada uma tem o seu estado de
+   arraste — um hook por item não caberia num laço dentro do pai. */
+const SBAssetSlot = ({ it, i, editable, onCaption, onPickImage, onDropImage, onUndoImage, onDropFile }) => {
+  /* Ativa mesmo no teto, para o arraste poder explicar a recusa (ver SBScene). */
+  const { sobre, handlers } = useSoltaImagem(editable, (f) => onDropFile(i, f));
+  const aviso = sbAvisoSolta(it);
+  return (
+    <figure className={`sb-mo ${sobre ? "soltando" : ""}`} {...handlers}>
+      <SBText className="sb-mo-cap" editable={editable} value={it.caption}
+        placeholder="legenda" onChange={onCaption} />
+      <div className="sb-mo-img">
+        {it.url
+          ? <img src={it.url} alt={it.caption || ""} />
+          : <div className="sb-mo-empty">sem imagem</div>}
+        {editable && (
+          <div className="sb-mo-tools">
+            <SBSlotTools slot={it} onPick={() => onPickImage(i)}
+              onUndo={() => onUndoImage(i)} onDrop={() => onDropImage(i)} />
+          </div>
+        )}
+        {sobre && <div className={`sb-solta-aviso ${aviso.tom}`}>{aviso.texto}</div>}
+      </div>
+    </figure>
+  );
+};
+
+const SBAssets = ({ page, editable, onChange, onPickImage, onDropImage, onUndoImage, onDropFile, pageNo, total }) => {
   const items = page.items || [];
   const setItem = (i, patch) => onChange({ ...page, items: items.map((it, k) => (k === i ? { ...it, ...patch } : it)) });
 
+  /* A folha inteira também aceita, criando a PRÓXIMA vaga — sem isso não haveria
+     onde soltar numa página de assets ainda vazia (as vagas só nascem pelo botão
+     "adicionar imagem"). As vagas existentes tratam o drop antes, com
+     stopPropagation, então soltar em cima de uma delas troca aquela imagem. */
+  const cabeMais = items.length < 4;
+  const { sobre, handlers } = useSoltaImagem(editable, (f) => {
+    if (cabeMais) onDropFile(items.length, f);
+  });
+
   return (
-    <div className="sb-p sb-p-assets">
+    <div className={`sb-p sb-p-assets ${sobre ? "soltando" : ""}`} {...handlers}>
+      {sobre && (
+        <div className={`sb-solta-aviso ${cabeMais ? "ok" : "bloq"}`}>
+          {cabeMais ? `Solte para virar a imagem ${items.length + 1} de 4` : "Esta página já tem 4 imagens"}
+        </div>
+      )}
       <SBText className="sb-assets-title" editable={editable} value={page.title}
         placeholder="ASSETS" onChange={(t) => onChange({ ...page, title: t })} />
 
       <div className={`sb-mosaic n${Math.max(items.length, 1)}`}>
         {items.map((it, i) => (
-          <figure className="sb-mo" key={it.id || i}>
-            <SBText className="sb-mo-cap" editable={editable} value={it.caption}
-              placeholder="legenda" onChange={(t) => setItem(i, { caption: t })} />
-            <div className="sb-mo-img">
-              {it.url
-                ? <img src={it.url} alt={it.caption || ""} />
-                : <div className="sb-mo-empty">sem imagem</div>}
-              {editable && (
-                <div className="sb-mo-tools">
-                  <SBSlotTools slot={it} onPick={() => onPickImage(i)}
-                    onUndo={() => onUndoImage(i)} onDrop={() => onDropImage(i)} />
-                </div>
-              )}
-            </div>
-          </figure>
+          <SBAssetSlot key={it.id || i} it={it} i={i} editable={editable}
+            onCaption={(t) => setItem(i, { caption: t })}
+            onPickImage={onPickImage} onDropImage={onDropImage} onUndoImage={onUndoImage}
+            onDropFile={onDropFile} />
         ))}
         {editable && items.length < 4 && (
           <button className="sb-mo-add" onClick={() => onPickImage(items.length)}>
@@ -376,8 +439,20 @@ const SBAssets = ({ page, editable, onChange, onPickImage, onDropImage, onUndoIm
   );
 };
 
-const SBScene = ({ page, sceneNo, editable, onChange, onPickImage, onDropImage, onUndoImage, pageNo, total }) => (
-  <div className="sb-p sb-p-scene">
+const SBScene = ({ page, sceneNo, editable, onChange, onPickImage, onDropImage, onUndoImage, onDropFile, pageNo, total }) => {
+  const slot = sbSceneSlot(page);
+  /* A folha inteira aceita o arquivo, não só o retângulo da imagem: quem arrasta
+     mira "a página", e obrigar a acertar a moldura é atrito à toa. */
+  /* A zona segue ativa mesmo no teto de rodadas: assim o arraste consegue
+     DIZER que não vai passar ("Limite de 3 rodadas atingido", em vermelho).
+     Desligada, o arquivo simplesmente não fazia nada e ninguém entendia por quê.
+     Quem recusa o envio é o `enviarImagem`, que já explica no toast. */
+  const podeSoltar = editable;
+  /* A cena tem uma vaga só — o índice vai indefinido, como no botão. */
+  const { sobre, handlers } = useSoltaImagem(podeSoltar, (f) => onDropFile(undefined, f));
+  const aviso = sbAvisoSolta(slot);
+  return (
+  <div className={`sb-p sb-p-scene ${sobre ? "soltando" : ""}`} {...handlers}>
     <div className={`sb-scene-img ${page.imageUrl ? "" : "empty"}`}>
       {page.imageUrl ? (
         <img src={page.imageUrl} alt={`Cena ${sbPad(sceneNo)}`} />
@@ -389,9 +464,10 @@ const SBScene = ({ page, sceneNo, editable, onChange, onPickImage, onDropImage, 
       )}
       {editable && (
         <div className="sb-scene-tools">
-          <SBSlotTools slot={sbSceneSlot(page)} onPick={onPickImage} onUndo={onUndoImage} onDrop={onDropImage} />
+          <SBSlotTools slot={slot} onPick={onPickImage} onUndo={onUndoImage} onDrop={onDropImage} />
         </div>
       )}
+      {sobre && <div className={`sb-solta-aviso ${aviso.tom}`}>{aviso.texto}</div>}
       <SBPageNo n={pageNo} total={total} light />
     </div>
 
@@ -428,7 +504,8 @@ const SBScene = ({ page, sceneNo, editable, onChange, onPickImage, onDropImage, 
       <img className="sb-logo-sm" src="/dual_logo_dark.svg" alt="" />
     </div>
   </div>
-);
+  );
+};
 
 const SBEnd = ({ pageNo, total }) => (
   <div className="sb-p sb-p-end">
@@ -438,13 +515,13 @@ const SBEnd = ({ pageNo, total }) => (
 );
 
 /* ─────────────────────── Uma página + sua moldura/escala ───────────────────── */
-const SBPage = ({ sb, page: real, index, scale, editable, viewVersion, onChange, onPickImage, onDropImage, onUndoImage }) => {
+const SBPage = ({ sb, page: real, index, scale, editable, viewVersion, onChange, onPickImage, onDropImage, onUndoImage, onDropFile }) => {
   const total = sb.pages.length;
   /* Olhando uma versão anterior: as imagens vêm do histórico e a página fica
      só de leitura — editar sempre acontece sobre o documento de agora. */
   const past = viewVersion != null;
   const page = past ? sbPageAtVersion(real, viewVersion) : real;
-  const common = { page, editable: editable && !past, onChange, onPickImage, onDropImage, onUndoImage, pageNo: index + 1, total };
+  const common = { page, editable: editable && !past, onChange, onPickImage, onDropImage, onUndoImage, onDropFile, pageNo: index + 1, total };
   let inner;
   if (page.type === "cover")           inner = <SBCover sb={sb} pageNo={index + 1} total={total} />;
   else if (page.type === "disclaimer") inner = <SBDisclaimer {...common} />;
@@ -517,8 +594,8 @@ const sbPageRoundsNote = (page) => {
 
 /* ───────────── Deck horizontal: uma página por vez, como slides ───────────── */
 const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, onDeletePage,
-                  onMovePage, onPickImage, onDropImage, onUndoImage, viewVersion = null, onPickVersion,
-                  railTop = null }) => {
+                  onMovePage, onPickImage, onDropImage, onUndoImage, onDropFile = () => {},
+                  viewVersion = null, onPickVersion, railTop = null }) => {
   const viewRef  = React.useRef(null);
   const stageRef = React.useRef(null);
   const frameRef = React.useRef(null);
@@ -636,7 +713,8 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
                   onChange={(np) => onChangePage(i, np)}
                   onPickImage={(slot) => onPickImage(i, slot)}
                   onDropImage={(slot) => onDropImage(i, slot)}
-                  onUndoImage={(slot) => onUndoImage(i, slot)} />
+                  onUndoImage={(slot) => onUndoImage(i, slot)}
+                  onDropFile={(slotIdx, file) => onDropFile(i, slotIdx, file)} />
                 {grade && (
                   <button className="sb-gridpick" title={`Ir para a página ${i + 1}`}
                     onClick={() => { setCurrent(i); setGrade(false); }}>
@@ -1118,6 +1196,7 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
   const [sb, setSb] = React.useState(initial);
   const [saving, setSaving] = React.useState(false);              // trava interna
   const [salvandoVisivel, setSalvandoVisivel] = React.useState(false);  // o que o botão mostra
+  const [enviando, setEnviando] = React.useState(false);                // upload de imagem em curso
   const [dirty, setDirty] = React.useState(false);
   const [current, setCurrent] = React.useState(0);
   /* Abrir uma linha cai em leitura; editar é um passo deliberado (o lápis). */
@@ -1296,21 +1375,53 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
     addToast(`Voltou para a V${r.slot.version} desta cena.`, "success");
   };
 
-  const onFile = async (e) => {
-    const file = e.target.files?.[0];
-    const { page: pageIdx, slot: slotIdx } = target.current;
+  /* Caminho único de envio: o botão e o arrastar passam por aqui, então a regra
+     de versão é a MESMA nos dois. Vaga vazia entra como V1; vaga que já tem
+     imagem gasta uma rodada e vira a próxima V. Para trocar a imagem SEM gastar
+     rodada, remove-se a atual antes ("remover", ou "desfazer a V<n>" quando já
+     há histórico) — a vaga fica vazia e o envio seguinte volta a ser V1. */
+  const enviarImagem = async (pageIdx, slotIdx, file) => {
     if (!file || pageIdx < 0) return;
+    if (!/^image\//.test(file.type || "")) {
+      return addToast("Isso não é uma imagem. Envie JPG, PNG, WEBP ou GIF.", "error");
+    }
     const antes = getSlot(pageIdx, slotIdx) || {};
     if (antes.url && (antes.version || 1) >= SB_MAX_VER) {
       return addToast(`Esta cena já usou as ${SB_ROUNDS} rodadas de alteração.`, "error");
     }
+    setEnviando(true);
     try {
       const { url, publicId } = await window.API.uploadStoryboardImage(sb.id, file);
       const novo = sbBumpSlot(antes, { url, publicId });
       setSlot(pageIdx, slotIdx, novo);
       if (novo.version > 1) addToast(`Nova versão enviada: esta cena está na V${novo.version}.`, "success");
     } catch (err) { addToast(err.error || "Falha no envio da imagem.", "error"); }
+    finally { setEnviando(false); }
   };
+
+  const onFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    const { page: pageIdx, slot: slotIdx } = target.current;
+    enviarImagem(pageIdx, slotIdx, file);
+  };
+
+  /* Arrastou um arquivo para cima da página. Mesmo caminho do botão. */
+  const soltarArquivo = (pageIdx, slotIdx, file) => enviarImagem(pageIdx, slotIdx, file);
+
+  /* Rede de segurança do arraste: um arquivo solto FORA de uma vaga faria o
+     navegador abrir a imagem e sair do editor, levando junto o que ainda não
+     foi gravado. Aqui a janela inteira recusa o arquivo em silêncio — as vagas
+     tratam o drop antes, com stopPropagation. */
+  React.useEffect(() => {
+    if (!editing) return;
+    const recusar = (e) => { if (sbTemArquivo(e)) e.preventDefault(); };
+    window.addEventListener("dragover", recusar);
+    window.addEventListener("drop", recusar);
+    return () => {
+      window.removeEventListener("dragover", recusar);
+      window.removeEventListener("drop", recusar);
+    };
+  }, [editing]);
 
   /* Apagar comentário do cliente — só existe aqui dentro. O documento não muda,
      então a lista é ajustada na mão para não disparar o autosave. */
@@ -1429,9 +1540,10 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
             Entrando e saindo do fluxo a cada tecla, ela mudava a altura do palco
             e a folha era reescalada junto — o documento "pulava" enquanto se
             digitava. Aqui ela não ocupa espaço nenhum. */}
-        {editing && dirty && (
+        {editing && dirty && !enviando && (
           <div className="sb-dirty">Alterações não salvas — o link do cliente ainda mostra a versão anterior.</div>
         )}
+        {enviando && <div className="sb-enviando">Enviando a imagem…</div>}
 
         {/* Mesma calha da tela do cliente — mesma marcação, mesmo logo, mesma
             posição. O console deixa de ter um desenho próprio: o que se revisa
@@ -1439,6 +1551,7 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
         <SBDeck sb={sb} editable={editing} current={current} setCurrent={setCurrent}
           onChangePage={changePage} onAddPage={addPage} onDeletePage={deletePage} onMovePage={movePage}
           onPickImage={pickImage} onDropImage={dropImage} onUndoImage={undoImage}
+          onDropFile={soltarArquivo}
           viewVersion={editing ? null : verView} onPickVersion={editing ? null : setVerView}
           railTop={
             <React.Fragment>
@@ -2059,6 +2172,28 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-frame.hug{ height:auto; align-self:center; border-radius:14px; box-shadow:0 18px 60px rgba(0,0,0,.5); }
 .sb-frame.hug .sb-pagewrap{ box-shadow:none; }
 .sb-viewport{ overflow:hidden; min-height:0; height:100%; width:100%; display:flex; align-items:center; justify-content:center; }
+
+/* ── arrastar e soltar imagem ───────────────────────────────────────────────
+   O realce vive DENTRO da folha, então some por completo quando não se está
+   arrastando — e a exportação em PDF, que acontece fora de um arraste, nunca o
+   encontra. */
+.sb-p.soltando, .sb-mo.soltando{ outline:3px dashed var(--accent,#E63946); outline-offset:-6px; }
+.sb-p.soltando{ outline-offset:-10px; }
+.sb-solta-aviso{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:12;
+  padding:10px 18px; border-radius:12px; white-space:nowrap; pointer-events:none;
+  font-family:var(--font-sans,'Inter',system-ui,sans-serif); font-size:15px; font-weight:600; letter-spacing:.01em;
+  background:rgba(8,8,10,.9); color:#f2f2f4; border:1px solid rgba(255,255,255,0.2);
+  box-shadow:0 12px 34px rgba(0,0,0,.6); }
+/* o tom diz a consequência antes de soltar: verde entra como primeira imagem,
+   âmbar gasta uma rodada, vermelho não vai acontecer */
+.sb-solta-aviso.ok{ border-color:rgba(46,196,132,.55); color:#7ff0bf; }
+.sb-solta-aviso.aviso{ border-color:rgba(255,183,3,.55); color:#ffd166; }
+.sb-solta-aviso.bloq{ border-color:rgba(230,57,70,.6); color:#ff8b93; }
+/* enviando: faixa discreta sobre o documento, sem mexer no fluxo */
+.sb-enviando{ position:absolute; top:8px; left:0; right:0; z-index:41; margin:0 auto; width:max-content;
+  pointer-events:none; padding:8px 14px; border-radius:10px; font-size:12.5px;
+  background:rgba(8,8,10,.9); border:1px solid rgba(255,255,255,0.18); color:#e9e9f1;
+  box-shadow:0 10px 30px rgba(0,0,0,.55); }
 
 /* ── grade (tecla G): todas as páginas de uma vez ──────────────────────────
    Não é uma segunda montagem do documento: é a MESMA esteira de páginas, que

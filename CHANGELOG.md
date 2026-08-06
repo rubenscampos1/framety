@@ -3,6 +3,31 @@
 Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 (tag git). Correções em andamento entram em "Não lançado" até o próximo deploy.
 
+## [1.8.0] — No ar no Render (tag `v1.8`) — 2026-08-06
+
+- **Arrastar a imagem para dentro da página (edição):** soltar um arquivo sobre
+  o documento envia e aplica na hora, pelo **mesmo caminho do botão** — por isso
+  a regra de versão é idêntica nos dois: vaga vazia entra como **V1**; vaga que
+  já tem imagem **gasta uma rodada** e vira a próxima V. Para trocar a imagem
+  sem gastar rodada, remove-se a atual antes (*remover*, ou *desfazer a V&lt;n&gt;*
+  quando já há histórico) e envia-se de novo.
+  Antes de soltar, o aviso no meio da folha diz o que vai acontecer, com cor:
+  verde "Solte para enviar a imagem", âmbar "Solte para enviar a V3 — gasta uma
+  rodada", vermelho "Limite de 3 rodadas atingido". A consequência aparece
+  **antes** do gesto, não depois.
+  - Na **cena**, a folha inteira aceita — mirar a moldura da imagem seria atrito
+    à toa.
+  - Nos **assets**, cada vaga aceita a sua (soltar sobre uma troca aquela), e a
+    folha aceita criando a próxima das 4 — sem isso não haveria onde soltar numa
+    página de assets ainda vazia, já que as vagas só nascem pelo botão.
+  - Só em edição: em leitura e na visão do cliente não há zona nenhuma.
+  - Arquivo que não é imagem é recusado com o motivo; arrastar texto ou link não
+    acende nada.
+  - **Rede de segurança:** a janela inteira recusa arquivo solto fora de uma
+    vaga. Sem isso, errar o alvo por pouco faria o navegador abrir a imagem e
+    sair do editor, levando junto o que ainda não tinha sido gravado.
+  ([storyboard.jsx] `useSoltaImagem`, `sbAvisoSolta`, `SBAssetSlot`, `enviarImagem`)
+
 ## [1.7.0] — No ar no Render (tag `v1.7`) — 2026-08-05
 
 - **Link do cliente e link de edição trocaram de forma — e o legível deixou de
