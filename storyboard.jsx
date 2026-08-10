@@ -62,6 +62,14 @@ const SB_ROUNDS  = SB_MAX_VER - 1;
    usam os dois — se saírem de sincronia, a calha descola do documento.        */
 const SB_RAIL_GAP = 8;
 const SB_RAIL_BP  = 900;
+/* Abaixo disto a folha para de ser miniatura e o conteúdo REFLUI.
+   Uma página é 1280×994 (proporção 1,288). Num retrato de 375px ela caberia com
+   0,28 de escala, e o texto de 19px viraria 5px — ilegível em qualquer arranjo.
+   Não há organização de layout que resolva isso encolhendo: só reflui.
+   A ALTURA também conta: o mesmo celular deitado tem 812px de largura (passaria
+   folgado por um limite só de largura) e apenas 375 de altura — ali a folha fica
+   ainda menor, 192px, com texto de 3px. Por isso a condição é largura OU altura. */
+const SB_FLUIDO_MQ = "(max-width:760px), (max-height:520px)";
 
 const sbRoundsLeft = (v) => Math.max(0, SB_MAX_VER - (v || 1));
 
@@ -139,6 +147,23 @@ const sbVersionWindow = (page, v) => {
 const sbCommentsAtVersion = (page, comments, v) => {
   const { since, until } = sbVersionWindow(page, v);
   return comments.filter((c) => (!since || c.createdAt >= since) && (!until || c.createdAt < until));
+};
+
+/* O que aparece no painel: o comentário é da CENA **e da versão** contra a qual
+   foi escrito. Subir uma imagem nova abre uma folha em branco — o que o cliente
+   disse da V1 era sobre a imagem da V1, e continuar mostrando aquilo ao lado da
+   V2 faz parecer pedido que ninguém fez.
+
+   Sem versão escolhida vale a MAIS RECENTE, e não "todas": era esse `null` que
+   deixava o comentário da V1 grudado na V2. Para rever o que foi dito antes,
+   clica-se na V1 na barra de versões — e nada é apagado, só sai de vista.
+
+   Páginas sem faixa de imagem (capa, disclaimer, contracapa) não têm versão de
+   cena: ali o painel segue mostrando tudo. */
+const sbCommentsVisiveis = (page, comments, viewVersion) => {
+  const versions = sbPageVersions(page);
+  if (!versions.length) return comments;
+  return sbCommentsAtVersion(page, comments, viewVersion ?? versions[versions.length - 1]);
 };
 
 /* Sobe uma versão nesta faixa: a de agora vai para o histórico e a nova assume.
@@ -515,7 +540,7 @@ const SBEnd = ({ pageNo, total }) => (
 );
 
 /* ─────────────────────── Uma página + sua moldura/escala ───────────────────── */
-const SBPage = ({ sb, page: real, index, scale, editable, viewVersion, onChange, onPickImage, onDropImage, onUndoImage, onDropFile }) => {
+const SBPage = ({ sb, page: real, index, scale, fluido = false, editable, viewVersion, onChange, onPickImage, onDropImage, onUndoImage, onDropFile }) => {
   const total = sb.pages.length;
   /* Olhando uma versão anterior: as imagens vêm do histórico e a página fica
      só de leitura — editar sempre acontece sobre o documento de agora. */
@@ -529,12 +554,17 @@ const SBPage = ({ sb, page: real, index, scale, editable, viewVersion, onChange,
   else if (page.type === "end")        inner = <SBEnd pageNo={index + 1} total={total} />;
   else inner = <SBScene {...common} sceneNo={sbSceneIndex(sb.pages, page.id)} />;
 
+  /* Fluido: sem tamanho fixo e sem `scale`. A classe fica no wrapper, e é ela
+     que o CSS usa para refluir a página. A exportação em PDF clona o `.sb-p`
+     para um palco de 1280px FORA daqui, então o clone nunca vê `.fluido` e sai
+     no formato de impressão de sempre, mesmo exportando do celular. */
   return (
-    <div className="sb-pagewrap" style={{ width: SB_PAGE_W * scale, height: SB_PAGE_H * scale }}>
+    <div className={`sb-pagewrap ${fluido ? "fluido" : ""}`}
+      style={fluido ? undefined : { width: SB_PAGE_W * scale, height: SB_PAGE_H * scale }}>
       <div className="sb-pageclip">
         {/* fora do .sb-p de propósito: a tarja não entra na exportação do PDF */}
         {past && <div className="sb-pastflag">Você está vendo a V{viewVersion}</div>}
-        <div className="sb-pagescale" style={{ transform: `scale(${scale})` }} data-sb-page={page.id}>
+        <div className="sb-pagescale" style={fluido ? undefined : { transform: `scale(${scale})` }} data-sb-page={page.id}>
           {inner}
         </div>
       </div>
@@ -592,10 +622,605 @@ const sbPageRoundsNote = (page) => {
   return sbRoundsNote(versions[versions.length - 1], page.type !== "assets" ? "essa cena" : "essa página");
 };
 
+/* ═══════════════════════════ Roteiro (tecla R) ═══════════════════════════════
+   O deck é para ver; o roteiro é para ler e mandar para quem grava. As mesmas
+   cenas, sem imagem nenhuma, em duas colunas VÍDEO | ÁUDIO — o formato de
+   roteiro publicitário e institucional. Nada é digitado à parte: sai inteiro
+   dos campos que já estão na folha (VISUAL, LOCUÇÃO EM OFF, SFX), então não
+   existe versão do roteiro que discorde do storyboard.
+
+   O texto é monoespaçado de propósito. As colunas só param de pé se todo
+   caractere tiver a mesma largura, e é isso que faz o texto continuar alinhado
+   depois de copiado para um e-mail, um WhatsApp ou um .txt.                   */
+const SB_ROT_V = 38;   // largura da coluna VÍDEO, em caracteres
+const SB_ROT_A = 38;   // largura da coluna ÁUDIO
+
+/* Quebra por palavra. Palavra maior que a coluna é cortada no meio: deixá-la
+   passar empurraria a régua e desalinharia a tabela inteira daquela linha para
+   baixo — e é justamente o alinhamento que faz o formato existir. */
+const sbRotWrap = (texto, largura) => {
+  const linhas = [];
+  for (const paragrafo of String(texto == null ? "" : texto).split(/\r?\n/)) {
+    if (!paragrafo.trim()) { linhas.push(""); continue; }
+    let atual = "";
+    for (let palavra of paragrafo.trim().split(/\s+/)) {
+      while (palavra.length > largura) {
+        if (atual) { linhas.push(atual); atual = ""; }
+        linhas.push(palavra.slice(0, largura));
+        palavra = palavra.slice(largura);
+      }
+      if (!atual) atual = palavra;
+      else if (atual.length + 1 + palavra.length <= largura) atual += " " + palavra;
+      else { linhas.push(atual); atual = palavra; }
+    }
+    if (atual) linhas.push(atual);
+  }
+  return linhas.length ? linhas : [""];
+};
+
+/* A régua fecha na junção certa: o "│" das linhas de conteúdo cai na coluna
+   SB_ROT_V + 1, e é ali que entra o ┬ / ┼ / ┴. */
+const sbRotRegua = (juncao) => "─".repeat(SB_ROT_V + 1) + juncao + "─".repeat(SB_ROT_A + 1);
+const sbRotCheia  = () => "─".repeat(SB_ROT_V + SB_ROT_A + 3);
+/* Espaço à direita é lixo invisível no texto copiado — sai. */
+const sbRotLinha  = (esq, dir) => (String(esq).padEnd(SB_ROT_V) + " │ " + dir).replace(/\s+$/, "");
+
+/* Empilha os blocos de uma coluna com uma linha em branco entre eles. */
+const sbRotColuna = (blocos, largura) => {
+  if (!blocos.length) return ["—"];
+  const out = [];
+  blocos.forEach((b, i) => {
+    if (i) out.push("");
+    out.push(...sbRotWrap(b, largura));
+  });
+  return out;
+};
+
+const sbRoteiroTexto = (sb) => {
+  const cenas = (sb.pages || []).filter((p) => p.type === "scene");
+  const out = [];
+
+  const titulo = [sb.cliente, sb.produto, sb.projeto].filter(Boolean).join(" · ").toUpperCase();
+  out.push("ROTEIRO" + (titulo ? " — " + titulo : ""));
+  out.push(["V" + (sb.version || 1),
+            "atualizado em " + sbDate(sb.updatedAt),
+            cenas.length + (cenas.length === 1 ? " cena" : " cenas")].join(" · "));
+  out.push("");
+
+  if (!cenas.length) {
+    out.push("(este storyboard ainda não tem cenas)");
+    return out.join("\n");
+  }
+
+  cenas.forEach((c, i) => {
+    /* VISUAL é a descrição do plano. O `placeholder` só existe enquanto a cena
+       não tem imagem, e descreve o que vai aparecer ali — é informação de
+       vídeo também, então entra; some sozinho quando a imagem chega. */
+    const video = [];
+    if (c.visual) video.push(c.visual);
+    if (c.placeholder && c.placeholder.trim() !== (c.visual || "").trim()) video.push(c.placeholder);
+
+    const audio = [];
+    if (c.locucao) audio.push("LOC: " + c.locucao);
+    if (c.sfx)     audio.push("SFX: " + c.sfx);
+
+    const colV = sbRotColuna(video, SB_ROT_V);
+    const colA = sbRotColuna(audio, SB_ROT_A);
+
+    out.push(sbRotCheia());
+    out.push("CENA " + sbPad(i + 1));
+    out.push(sbRotRegua("┬"));
+    out.push(sbRotLinha("VÍDEO", "ÁUDIO"));
+    out.push(sbRotRegua("┼"));
+    for (let l = 0; l < Math.max(colV.length, colA.length); l++) {
+      out.push(sbRotLinha(colV[l] || "", colA[l] || ""));
+    }
+    out.push(sbRotRegua("┴"));
+    out.push("");
+  });
+
+  return out.join("\n");
+};
+
+/* Salvar um Blob com o nome escolhido. O <a> tem que estar no documento para o
+   Firefox obedecer ao clique, e a URL só é revogada depois — revogar na mesma
+   volta cancela o download no Safari. */
+const sbBaixarBlob = (blob, nome) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+const sbRoteiroNome = (sb, ext) => {
+  const partes = ["ROTEIRO", sb.cliente, sb.produto, sb.projeto, "V" + (sb.version || 1)];
+  return partes.filter(Boolean).join(" ").replace(/[\\/:*?"<>|]+/g, "-").slice(0, 120) + "." + ext;
+};
+
+/* ── A folha A4 ───────────────────────────────────────────────────────────────
+   Em pixels de tela a 96dpi: 210×297mm dão 794×1123. As margens são as de um
+   documento de texto comum (~20mm), e é o que sobra delas que define quanto
+   cabe numa página — a paginação abaixo mede contra ALTURA_UTIL.             */
+const SB_A4_W = 794;
+const SB_A4_H = 1123;
+const SB_A4_MARGEM = 76;
+const SB_A4_UTIL = SB_A4_H - SB_A4_MARGEM * 2;
+/* Os blocos de cena se encostam: cada um puxa 1px para cima para que a borda
+   de baixo de um e a de cima do seguinte virem uma linha só, e não duas. A
+   paginação precisa contar o mesmo -1, senão mede uma folha e desenha outra. */
+const SB_A4_VAO = -1;
+
+/* As mesmas cenas do texto puro, mas em pedaços — aqui quem monta as colunas é
+   o HTML, não o alinhamento por caractere. A regra de o que entra em cada
+   coluna é uma só, e vive em `sbRoteiroCenas`: o texto de colar e a folha
+   impressa nunca discordam porque leem daqui. */
+const sbRoteiroCenas = (sb) =>
+  (sb.pages || []).filter((p) => p.type === "scene").map((c, i) => {
+    const video = [];
+    if (c.visual) video.push({ txt: c.visual });
+    if (c.placeholder && c.placeholder.trim() !== (c.visual || "").trim()) video.push({ txt: c.placeholder });
+    const audio = [];
+    if (c.locucao) audio.push({ rot: "LOC", txt: c.locucao });
+    if (c.sfx)     audio.push({ rot: "SFX", txt: c.sfx });
+    // `id` é o pageId da cena: é por ele que o comentário se amarra à página, é
+    // o que faz o comentário escrito aqui aparecer na cena lá no deck, e é por
+    // ele que a edição volta para a página certa do storyboard.
+    return {
+      id: c.id, n: i + 1, video, audio,
+      // cru: o que a edição escreve de volta, campo a campo
+      visual: c.visual || "", placeholder: c.placeholder || "",
+      locucao: c.locucao || "", sfx: c.sfx || "", temImagem: !!c.imageUrl,
+    };
+  });
+
+/* Um bloco de cena. É o mesmo componente na régua de medição e na folha —
+   medir uma coisa e desenhar outra é como a paginação erra, e por isso a régua
+   recebe também o `editar`: campo de texto e parágrafo não têm a mesma altura.
+
+   "CENA 01" é uma LINHA da tabela, não um título solto acima dela: assim o
+   bloco é uma grade só, e blocos vizinhos se encostam sem costura. Os rótulos
+   VÍDEO/ÁUDIO não se repetem aqui — eles aparecem uma única vez, no topo do
+   documento, junto do cabeçalho. */
+const SBRotCena = ({ cena, sel = false, nComentarios = 0, onSel = null, editar = null }) => {
+  /* Editando, o texto vai para o MESMO campo da cena que a folha do storyboard
+     usa — não há cópia do roteiro em lugar nenhum. Por isso os campos aparecem
+     rotulados e sempre presentes, mesmo vazios: sem a linha, não há onde
+     digitar o que ainda não existe. */
+  const campo = (nome, rotulo, ph) => (
+    <div className="sb-rot-campo" key={nome}>
+      <span className="sb-rot-campo-lbl">{rotulo}</span>
+      <SBText className="sb-rot-campo-val" editable value={cena[nome]}
+        placeholder={ph} onChange={(t) => editar(cena.id, nome, t)} />
+    </div>
+  );
+
+  return (
+    <div className={`sb-rot-cena ${sel ? "sel" : ""} ${onSel ? "clicavel" : ""} ${editar ? "editando" : ""}`}
+      data-sb-cena={cena.id}
+      onClick={onSel ? () => onSel(cena.id) : undefined}>
+      <table className="sb-rot-tab">
+        {/* `table-layout:fixed` tira as larguras da primeira linha. O colgroup
+            dita 50/50 em vez de deixar isso por conta do conteúdo. */}
+        <colgroup><col /><col /></colgroup>
+        <tbody>
+          <tr>
+            <td>
+              {/* "CENA 01" mora DENTRO do retângulo, no alto da coluna de
+                  vídeo. A faixa cinza que existia aqui era uma linha inteira só
+                  para dizer um número — em um roteiro de muitas cenas, era uma
+                  tira de nada a cada bloco. */}
+              <span className="sb-rot-cena-n">
+                CENA {sbPad(cena.n)}
+                {/* Marca de quantos comentários a cena tem. Não vai no PDF. */}
+                {nComentarios > 0 && <span className="sb-rot-nc">{nComentarios}</span>}
+              </span>
+              {editar ? (
+                <>
+                  {campo("visual", "VISUAL", "descrição do visual")}
+                  {/* A descrição só existe enquanto a cena não tem imagem — é o
+                      que vai no lugar dela. Com foto, some daqui e da folha. */}
+                  {!cena.temImagem && campo("placeholder", "SEM IMAGEM", "o que vai aparecer nesta cena")}
+                </>
+              ) : cena.video.length
+                ? cena.video.map((b, i) => <p key={i}>{b.txt}</p>)
+                : <p className="vazio">—</p>}
+            </td>
+            <td>
+              {/* Cópia invisível do "CENA 01" só para reservar a mesma altura na
+                  coluna de áudio. Um padding fixo erraria assim que a fonte ou o
+                  corpo do texto mudassem; isto acompanha sozinho. */}
+              <span className="sb-rot-cena-n vazia" aria-hidden="true">CENA {sbPad(cena.n)}</span>
+              {editar ? (
+                <>
+                  {campo("locucao", "LOC", "texto da locução")}
+                  {campo("sfx", "SFX", "trilha e efeitos")}
+                </>
+              ) : cena.audio.length
+                ? cena.audio.map((b, i) => <p key={i}><b>{b.rot}:</b> {b.txt}</p>)
+                : <p className="vazio">—</p>}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+/* A mesma marca das outras páginas do documento. Variante escura em arquivo
+   próprio, e não filter:invert() — o html2canvas ignora filtros CSS, e o logo
+   sairia branco no branco da folha ao gerar o PDF.
+   É aqui que VÍDEO/ÁUDIO aparecem, uma vez só: repetir os dois rótulos em cada
+   cena enchia o documento de linha sem informação nova. */
+const SBRotCabecalho = ({ sb, cenas }) => (
+  <div className="sb-rot-doc-head">
+    <img className="sb-rot-logo" src="/dual_logo_dark.svg" alt="Framety · Grupo Skyline" />
+    <p className="sb-rot-doc-sub">{[sb.cliente, sb.produto, sb.projeto].filter(Boolean).join(" · ").toUpperCase()}</p>
+    <p className="sb-rot-doc-meta">
+      {"V" + (sb.roteiroVersion || 1)} · atualizado em {sbDate(sb.updatedAt)} · {cenas.length} {cenas.length === 1 ? "cena" : "cenas"}
+    </p>
+    <table className="sb-rot-tab sb-rot-colunas">
+      <colgroup><col /><col /></colgroup>
+      <thead><tr><th>VÍDEO</th><th>ÁUDIO</th></tr></thead>
+    </table>
+  </div>
+);
+
+/* ── Painel de revisão do roteiro ─────────────────────────────────────────────
+   O comentário é da CENA, não desta tela: ele carrega o pageId e por isso o
+   mesmo comentário aparece na página daquela cena lá no deck. O que o campo
+   `origem` guarda é onde ele foi escrito — e, portanto, qual rodada o consome.
+   Por isso a lista mostra os dois, marcando de onde veio: esconder o do
+   storyboard faria parecer que a cena não tem conversa nenhuma. */
+const SBRotPainel = ({ sb, cenas, sel, setSel, revisao }) => {
+  const numeroDaCena = React.useMemo(() => {
+    const m = {};
+    cenas.forEach((c) => { m[c.id] = c.n; });
+    return m;
+  }, [cenas]);
+
+  const aprovado = (sb.roteiroStatus || "v1") === "aprovado";
+  const versao = sb.roteiroVersion || 1;
+  const nota = sbRoundsNote(versao, "este roteiro");
+  const semRodadas = sbRoundsLeft(versao) <= 0;
+
+  const todos = (sb.comments || []).filter((c) => numeroDaCena[c.pageId]);
+  const daCena = sel ? todos.filter((c) => c.pageId === sel) : todos;
+  /* Só o que foi escrito no roteiro conta para a rodada do roteiro. */
+  const pendentes = todos.filter((c) => !c.submitted && (c.origem || "deck") === "roteiro");
+
+  const podeComentar = !!revisao && !aprovado;
+
+  return (
+    <aside className="sb-rot-side">
+      <div className="sb-rot-side-top">
+        <div className={`sb-versionchip ${aprovado ? "ok" : "wait"}`}>
+          <b>{aprovado ? "Roteiro aprovado" : `Roteiro · aguardando revisão V${versao}`}</b>
+          <span>{sb.roteiroApprovedBy ? `por ${sb.roteiroApprovedBy}` : `${todos.length} comentário(s) nas cenas`}</span>
+        </div>
+      </div>
+
+      <div className="sb-rot-side-sel">
+        {sel ? (
+          <>
+            <b>CENA {sbPad(numeroDaCena[sel])}</b>
+            <button onClick={() => setSel(null)}>ver todas</button>
+          </>
+        ) : (
+          <span>{revisao ? "Clique numa cena para comentar" : "Comentários de todas as cenas"}</span>
+        )}
+      </div>
+
+      <div className="sb-rot-side-lista">
+        {!daCena.length && (
+          <p className="sb-rot-vazio">
+            {sel ? "Nenhum comentário nesta cena." : "Nenhum comentário ainda."}
+          </p>
+        )}
+        {daCena.map((c) => (
+          /* Clicar leva à cena: seleciona e rola até o bloco. É como se
+             responde "de qual cena é este comentário?". */
+          <button key={c.id} className={`sb-rot-cmt ${c.pageId === sel ? "sel" : ""}`}
+            onClick={() => setSel(c.pageId)}>
+            <span className="sb-rot-cmt-top">
+              <b>CENA {sbPad(numeroDaCena[c.pageId])}</b>
+              {(c.origem || "deck") !== "roteiro" && <i className="sb-rot-cmt-orig">no storyboard</i>}
+              {!c.submitted && <i className="sb-rot-cmt-nov">não enviado</i>}
+            </span>
+            <span className="sb-rot-cmt-txt">{c.text}</span>
+            <span className="sb-rot-cmt-pe">
+              {c.author}{c.company ? ` · ${c.company}` : ""} · {sbStamp(c.createdAt)}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {podeComentar && (
+        <div className="sb-rot-side-novo">
+          <textarea rows={3} value={sel ? revisao.draftDe(sel) : ""}
+            onChange={(e) => sel && revisao.setDraftDe(sel, e.target.value)}
+            placeholder={sel ? `Comentar a cena ${sbPad(numeroDaCena[sel])}…` : "Escolha uma cena acima para comentar…"}
+            disabled={!sel} />
+          <SBBtn className="sb-ghostbtn sm" seed={21}
+            disabled={!sel || !(sel ? revisao.draftDe(sel) : "").trim() || revisao.busy}
+            onClick={() => revisao.onComentar(sel)}>
+            <Icon name="send" size={13} /> Comentar
+          </SBBtn>
+        </div>
+      )}
+
+      {revisao && !aprovado && (
+        <div className="sb-rot-side-acts">
+          <span className={`sb-vernote ${nota.tone}`}>{nota.text}</span>
+          {semRodadas && (
+            <p className="sb-side-note warn">
+              Para seguir ajustando, fale com a produção; aqui só resta aprovar.
+            </p>
+          )}
+          <SBBtn className="sb-ghostbtn sm" seed={22}
+            disabled={revisao.busy || !pendentes.length || semRodadas} onClick={revisao.onEnviar}>
+            <Icon name="send" size={14} /> Enviar e solicitar revisão
+          </SBBtn>
+          <SBBtn className="sb-okbtn sm" seed={23} disabled={revisao.busy} onClick={revisao.onAprovar}>
+            <Icon name="check" size={14} /> Aprovar roteiro
+          </SBBtn>
+          {!!pendentes.length && (
+            <span className="sb-rot-pend">{pendentes.length} comentário(s) ainda não enviado(s)</span>
+          )}
+        </div>
+      )}
+
+      {aprovado && (
+        <div className="sb-approved">✓ Este roteiro foi aprovado. Não é mais possível comentar.</div>
+      )}
+    </aside>
+  );
+};
+
+const SBRoteiro = ({ sb, onClose, editable = false, onAddCena = null, onEditarCena = null,
+                     revisao = null, comComentarios = false }) => {
+  const cenas = React.useMemo(() => sbRoteiroCenas(sb), [sb]);
+  const texto = React.useMemo(() => sbRoteiroTexto(sb), [sb]);
+  const [copiado, setCopiado] = React.useState(false);
+  const [pdfBusy, setPdfBusy] = React.useState(false);
+  const [erro, setErro] = React.useState("");
+  const [sel, setSel] = React.useState(null);
+  /* Antes de medir não há como saber onde as páginas quebram. `null` = ainda
+     medindo; a régua fica montada e invisível, e as folhas só aparecem depois. */
+  const [paginas, setPaginas] = React.useState(null);
+  const reguaRef = React.useRef(null);
+  const folhasRef = React.useRef(null);
+
+  /* A folha A4 tem 794px fixos — é isso que faz a paginação valer para o papel.
+     Numa janela estreita (ou com o painel de comentários ocupando 330px) a mesa
+     fica menor que isso e a folha era cortada à direita. Aqui ela só ENCOLHE na
+     exibição; as medidas de dentro seguem intocadas, e por isso a quebra de
+     página não muda com o tamanho da janela.
+     O zoom é `transform: scale` na mesa. Ele NÃO pode alcançar o que o
+     html2canvas rasteriza — transform em ancestral apaga o texto do PDF —, e
+     por isso a exportação clona a folha para um palco 1:1 fora daqui. */
+  const [zoom, setZoom] = React.useState(1);
+  React.useEffect(() => {
+    const mesa = folhasRef.current;
+    if (!mesa) return;
+    const medir = () => {
+      const disp = mesa.clientWidth - 32;          // respiro dos lados
+      setZoom(Math.min(1, Math.max(0.35, disp / SB_A4_W)));
+    };
+    medir();
+    const ro = new ResizeObserver(medir);
+    ro.observe(mesa);
+    window.addEventListener("resize", medir);
+    return () => { ro.disconnect(); window.removeEventListener("resize", medir); };
+  }, [comComentarios]);
+
+  const porCena = React.useMemo(() => {
+    const m = {};
+    for (const c of (sb.comments || [])) m[c.pageId] = (m[c.pageId] || 0) + 1;
+    return m;
+  }, [sb.comments]);
+
+  /* Selecionar uma cena rola até ela: clicar num comentário da lista tem que
+     levar o olho ao bloco, senão "de qual cena é isto?" continua sem resposta
+     num documento de várias folhas. */
+  React.useEffect(() => {
+    if (!sel || !folhasRef.current) return;
+    const alvo = folhasRef.current.querySelector(`.sb-folha [data-sb-cena="${sel}"]`);
+    if (alvo) alvo.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [sel]);
+
+  /* Paginação: mede a altura real de cada bloco na largura útil da folha e vai
+     enchendo páginas. Blocos inteiros, nunca cortados no meio — é por isso que
+     a medição acontece com o MESMO componente que a folha desenha.
+     Uma cena mais alta que a página inteira fica sozinha na sua folha e a folha
+     cresce (min-height, não height): melhor uma folha fora de medida do que
+     texto sumido no corte. */
+  React.useLayoutEffect(() => {
+    const regua = reguaRef.current;
+    if (!regua) return;
+    const alturas = [...regua.children].map((el) => el.getBoundingClientRect().height);
+    const packs = [];
+    let atual = [], usado = 0;
+    alturas.forEach((h, i) => {
+      const custo = h + (atual.length ? SB_A4_VAO : 0);
+      if (atual.length && usado + custo > SB_A4_UTIL) { packs.push(atual); atual = []; usado = 0; }
+      atual.push(i);
+      usado += h + (atual.length > 1 ? SB_A4_VAO : 0);
+    });
+    if (atual.length) packs.push(atual);
+    setPaginas(packs.length ? packs : [[0]]);
+    /* `cenas` muda a cada tecla digitada, e é isso que faz a folha se repaginar
+       enquanto se escreve — o texto cresce, o bloco cresce, e a quebra anda
+       junto. `editable` entra porque campo de texto e parágrafo não medem
+       igual: entrar e sair do modo de edição repagina. */
+  }, [cenas, editable, sb.cliente, sb.produto, sb.projeto, sb.roteiroVersion, sb.updatedAt]);
+
+  React.useEffect(() => {
+    if (!copiado) return;
+    const t = setTimeout(() => setCopiado(false), 2000);
+    return () => clearTimeout(t);
+  }, [copiado]);
+
+  /* O que se copia é o texto puro de colunas por caractere — é o que sobrevive
+     a um WhatsApp ou a um e-mail sem formatação. A folha A4 é para ler e para
+     virar PDF. */
+  const copiar = async () => {
+    try { await navigator.clipboard.writeText(texto); setCopiado(true); }
+    catch (e) {
+      const el = folhasRef.current;
+      if (!el) return;
+      const s = window.getSelection(), r = document.createRange();
+      r.selectNodeContents(el); s.removeAllRanges(); s.addRange(r);
+    }
+  };
+
+  const baixarTxt = () => sbBaixarBlob(new Blob([texto], { type: "text/plain;charset=utf-8" }), sbRoteiroNome(sb, "txt"));
+
+  /* PDF: uma folha da tela = uma página do PDF, no tamanho A4. Rasteriza cada
+     folha como o resto do projeto já faz — assim o arquivo sai exatamente igual
+     ao que está na tela, sem uma segunda diagramação para sair de sincronia. */
+  const baixarPdf = async () => {
+    if (pdfBusy) return;
+    setPdfBusy(true); setErro("");
+    try {
+      if (!window.html2canvas) await sbLoadScript("https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js");
+      if (!window.jspdf)       await sbLoadScript("https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js");
+      const { jsPDF } = window.jspdf;
+
+      const folhas = [...(folhasRef.current?.querySelectorAll(".sb-folha") || [])];
+      if (!folhas.length) throw new Error("sem folhas");
+
+      /* Cada folha é copiada para um palco fora de vista, em tamanho natural.
+         Na tela ela pode estar reduzida por `transform: scale` para caber na
+         janela, e o html2canvas mede tudo por getBoundingClientRect: rasterizar
+         dali sairia na escala errada — e transform em ancestral chega a apagar
+         o texto inteiro do PDF. O palco 1:1 tira essa variável do caminho, e é
+         o mesmo caminho que a exportação do storyboard já usa. */
+      const palco = document.createElement("div");
+      palco.style.cssText = `position:fixed; left:0; top:0; z-index:-1; opacity:0;
+        width:${SB_A4_W}px; background:#fff; pointer-events:none;`;
+      document.body.appendChild(palco);
+
+      let pdf = null;
+      try {
+        for (let i = 0; i < folhas.length; i++) {
+          await sbNextFrame();
+          const copia = folhas[i].cloneNode(true);
+          copia.style.transform = "none";
+          copia.style.margin = "0";
+          copia.style.boxShadow = "none";
+          palco.replaceChildren(copia);
+          await sbWaitImages(palco);
+
+          const alt = Math.round(copia.getBoundingClientRect().height);
+          const formato = [SB_A4_W, alt];
+          const canvas = await window.html2canvas(copia, {
+            backgroundColor: "#ffffff", scale: 2, useCORS: true,
+            width: SB_A4_W, height: alt, windowWidth: SB_A4_W, windowHeight: alt,
+            scrollX: 0, scrollY: 0,
+            /* Ferramentas moram na folha mas não são papel: o "+ Nova cena" e a
+               marca de quantos comentários a cena tem ficam de fora do PDF. */
+            ignoreElements: (el) => el.classList &&
+              (el.classList.contains("sb-rot-add") || el.classList.contains("sb-rot-nc")),
+          });
+          if (!pdf) pdf = new jsPDF({ orientation: "p", unit: "px", format: formato, compress: true });
+          else pdf.addPage(formato, "p");
+          pdf.addImage(canvas.toDataURL("image/jpeg", 0.94), "JPEG", 0, 0, SB_A4_W, alt);
+        }
+      } finally {
+        palco.remove();
+      }
+      pdf.save(sbRoteiroNome(sb, "pdf"));
+    } catch (e) {
+      setErro("Não foi possível gerar o PDF do roteiro.");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const total = paginas ? paginas.length : 0;
+  const podeSelecionar = comComentarios;
+  /* Editando, a cena não é clicável para comentar: o clique é para pôr o cursor
+     no texto. As duas coisas na mesma superfície disputariam o mesmo gesto. */
+  const editar = editable && onEditarCena ? onEditarCena : null;
+  const bloco = (i, naFolha) => {
+    if (i === 0) return <SBRotCabecalho sb={sb} cenas={cenas} />;
+    const c = cenas[i - 1];
+    return <SBRotCena cena={c} sel={naFolha && sel === c.id} nComentarios={porCena[c.id] || 0}
+      onSel={naFolha && podeSelecionar && !editar ? setSel : null}
+      editar={editar} />;
+  };
+  const quantos = cenas.length + 1;
+
+  return (
+    <div className={`sb-roteiro ${comComentarios ? "comlado" : ""}`} role="dialog" aria-label="Roteiro">
+      <div className="sb-rot-head">
+        <div className="sb-rot-tit">
+          <b>Roteiro</b>
+          <span>{total ? `${total} ${total === 1 ? "folha" : "folhas"} A4` : "montando as folhas…"}</span>
+        </div>
+        <div className="sb-rot-acts">
+          {erro && <span className="sb-rot-erro">{erro}</span>}
+          <button className="sb-rot-btn" onClick={copiar}>
+            <Icon name="copy" size={13} /> {copiado ? "Copiado" : "Copiar texto"}
+          </button>
+          <button className="sb-rot-btn" onClick={baixarTxt}>
+            <Icon name="download" size={13} /> .txt
+          </button>
+          <button className="sb-rot-btn destaque" onClick={baixarPdf} disabled={pdfBusy || !total}>
+            <Icon name="download" size={13} /> {pdfBusy ? "Gerando…" : "Baixar PDF"}
+          </button>
+          <button className="sb-rot-btn fechar" onClick={onClose} title="Fechar o roteiro (R ou Esc)">×</button>
+        </div>
+      </div>
+
+      <div className="sb-rot-corpo">
+        <div className="sb-rot-mesa" ref={folhasRef} style={{ "--sb-rot-zoom": zoom }}>
+          {/* Régua de medição: mesmos blocos, mesma largura útil, fora de vista.
+              É o que diz onde cada folha termina. */}
+          <div className="sb-rot-regua" ref={reguaRef} aria-hidden="true">
+            {Array.from({ length: quantos }, (_, i) => (
+              <React.Fragment key={i}>{bloco(i, false)}</React.Fragment>
+            ))}
+          </div>
+
+          {paginas && paginas.map((idxs, p) => (
+            <div className="sb-folha" key={p}>
+              <div className="sb-folha-corpo">
+                {idxs.map((i) => <React.Fragment key={i}>{bloco(i, true)}</React.Fragment>)}
+                {/* Só na última folha, encostado na última cena: é ali que a
+                    próxima entra. Não vai no PDF (ignoreElements na exportação)
+                    nem existe fora da edição. */}
+                {editable && onAddCena && p === paginas.length - 1 && (
+                  <button className="sb-rot-add" onClick={onAddCena}>
+                    + Nova cena
+                  </button>
+                )}
+              </div>
+              <div className="sb-folha-pe">{p + 1} / {total}</div>
+            </div>
+          ))}
+        </div>
+
+        {comComentarios && (
+          <SBRotPainel sb={sb} cenas={cenas} sel={sel} setSel={setSel} revisao={revisao} />
+        )}
+      </div>
+    </div>
+  );
+};
+
 /* ───────────── Deck horizontal: uma página por vez, como slides ───────────── */
 const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, onDeletePage,
                   onMovePage, onPickImage, onDropImage, onUndoImage, onDropFile = () => {},
-                  viewVersion = null, onPickVersion, railTop = null }) => {
+                  viewVersion = null, onPickVersion, railTop = null,
+                  /* Revisão do roteiro (trilha própria, ver SB_TRILHAS no
+                     server.js). `null` = documento sem painel; um objeto liga o
+                     comentar/enviar/aprovar do cliente. */
+                  revisaoRoteiro = null, roteiroComComentarios = false, onRoteiroChange = null }) => {
   const viewRef  = React.useRef(null);
   const stageRef = React.useRef(null);
   const frameRef = React.useRef(null);
@@ -610,6 +1235,26 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
   const [palco, setPalco] = React.useState(null);
   /* Grade: todas as páginas de uma vez, com zoom out. Abre e fecha no G. */
   const [grade, setGrade] = React.useState(false);
+  /* Roteiro: as mesmas cenas em texto, sem imagem. Abre e fecha no R. */
+  const [roteiro, setRoteiro] = React.useState(false);
+  /* O roteiro tem painel de comentários próprio e cobre o palco. Quem monta a
+     tela é o pai, que continua desenhando a SUA coluna de comentários ao lado —
+     duas listas do mesmo assunto na mesma tela. O aviso deixa o pai recolher a
+     dele enquanto o roteiro está aberto. O atalho é do teclado, então o estado
+     nasce aqui e sobe; o contrário obrigaria os dois pais a repetir a tecla R. */
+  React.useEffect(() => { if (onRoteiroChange) onRoteiroChange(roteiro); }, [roteiro]);
+  /* Celular: o documento deixa de ser folha encolhida e passa a refluir. */
+  const [estreito, setEstreito] = React.useState(
+    () => typeof window !== "undefined" && window.matchMedia(SB_FLUIDO_MQ).matches);
+  React.useEffect(() => {
+    const mq = window.matchMedia(SB_FLUIDO_MQ);
+    const ver = () => setEstreito(mq.matches);
+    ver();
+    mq.addEventListener?.("change", ver);
+    return () => mq.removeEventListener?.("change", ver);
+  }, []);
+  /* Na grade o zoom out é o objetivo — ali a folha volta a ser miniatura. */
+  const fluido = estreito && !grade;
   const pages = sb.pages || [];
   const total = pages.length;
 
@@ -657,8 +1302,28 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
     const ro = new ResizeObserver(fit);
     ro.observe(stage);
     mq.addEventListener?.("change", fit);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); mq.removeEventListener?.("change", fit); };
+    /* O ResizeObserver sozinho não bastava. A folha ficava presa na escala
+       medida uma vez: encolher a janela cortava o rodapé do documento, e
+       aumentá-la de volta não a fazia crescer. `resize` da janela é o sinal que
+       sempre chega, venha a mudança de onde vier — arrastar a borda, abrir o
+       painel de comentários, entrar em tela cheia. */
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", fit);
+    return () => {
+      cancelAnimationFrame(raf); ro.disconnect();
+      mq.removeEventListener?.("change", fit);
+      window.removeEventListener("resize", fit);
+      window.removeEventListener("orientationchange", fit);
+    };
   }, []);
+
+  /* Abrir a grade ou o roteiro tira/devolve colunas da tela, e o palco muda de
+     largura sem a janela mudar de tamanho. Sem esta remedida a folha voltava
+     com a escala da outra composição — grande demais, cortada embaixo. */
+  React.useEffect(() => {
+    const t = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    return () => cancelAnimationFrame(t);
+  }, [grade, roteiro]);
 
   /* Teclado — desligado enquanto se digita num campo (os textos da cena são
      textarea, e o cabeçalho tem inputs; sem esta guarda o G viraria um "g" no
@@ -668,16 +1333,20 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
       const t = e.target;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (e.altKey || e.ctrlKey || e.metaKey) return;
-      if (e.key === "g" || e.key === "G") { e.preventDefault(); setGrade((g) => !g); return; }
-      if (e.key === "Escape") { setGrade(false); return; }
-      /* Na grade as setas não viram página: quem manda ali é o clique. */
-      if (grade) return;
+      if (e.key === "g" || e.key === "G") { e.preventDefault(); setGrade((g) => !g); setRoteiro(false); return; }
+      /* O roteiro cobre o palco: abrir um fecha o outro, senão o G ficaria
+         mexendo numa grade que ninguém está vendo. */
+      if (e.key === "r" || e.key === "R") { e.preventDefault(); setRoteiro((v) => !v); setGrade(false); return; }
+      if (e.key === "Escape") { setGrade(false); setRoteiro(false); return; }
+      /* Na grade e no roteiro as setas não viram página: quem manda ali é o
+         clique (e no roteiro a rolagem do texto). */
+      if (grade || roteiro) return;
       if (e.key === "ArrowRight") setCurrent((i) => Math.min(i + 1, total - 1));
       if (e.key === "ArrowLeft")  setCurrent((i) => Math.max(i - 1, 0));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [total, setCurrent, grade]);
+  }, [total, setCurrent, grade, roteiro]);
 
   const page = pages[current];
   const canDelete = editable && page && current >= SB_LOCKED_HEAD && page.type !== "end";
@@ -695,20 +1364,25 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
       {/* Na grade a moldura solta o tamanho da folha e ocupa o palco inteiro —
           é a mesma esteira de páginas de sempre, só disposta em colunas e com a
           escala das miniaturas. Nada é montado duas vezes. */}
-      <div className={`sb-frame ${sheet && !grade ? "hug" : ""} ${grade ? "emgrade" : ""}`} ref={frameRef}
-        style={sheet && !grade ? { width: sheet.w, height: sheet.h } : undefined}>
+      <div className={`sb-frame ${sheet && !grade && !fluido ? "hug" : ""} ${grade ? "emgrade" : ""} ${fluido ? "fluido" : ""}`} ref={frameRef}
+        style={sheet && !grade && !fluido ? { width: sheet.w, height: sheet.h } : undefined}>
         {!grade && (
           <SBBtn className="sb-nav prev" seed={11} onClick={() => setCurrent((i) => Math.max(i - 1, 0))}
             disabled={current === 0} aria-label="Página anterior">‹</SBBtn>
         )}
 
-        <div className={`sb-viewport ${grade ? "grade" : ""}`} ref={viewRef}
+        <div className={`sb-viewport ${grade ? "grade" : ""} ${fluido ? "fluido" : ""}`} ref={viewRef}
           style={grade ? { "--sb-cols": gradeCols, "--sb-vao": GRADE_VAO + "px" } : undefined}>
-          <div className="sb-track" style={grade ? undefined : { transform: `translateX(${-current * 100}%)` }}>
+          {/* No modo fluido a esteira não desliza: a página que não é a atual
+              fica escondida por CSS (aria-hidden), e assim a altura do trilho é
+              a da página aberta — ela cresce à vontade e a tela rola. Todas
+              seguem montadas, que é do que a exportação em PDF depende. */}
+          <div className="sb-track" style={grade || fluido ? undefined : { transform: `translateX(${-current * 100}%)` }}>
             {pages.map((p, i) => (
               <div className={`sb-slide ${grade && i === current ? "atual" : ""}`} key={p.id}
                 aria-hidden={!grade && i !== current}>
-                <SBPage sb={sb} page={p} index={i} scale={grade ? gradeScale : scale} editable={editable && !grade}
+                <SBPage sb={sb} page={p} index={i} scale={grade ? gradeScale : scale} fluido={fluido}
+                  editable={editable && !grade}
                   viewVersion={i === current ? viewVersion : null}
                   onChange={(np) => onChangePage(i, np)}
                   onPickImage={(slot) => onPickImage(i, slot)}
@@ -763,15 +1437,50 @@ const SBDeck = ({ sb, editable, current, setCurrent, onChangePage, onAddPage, on
               coisa em qualquer tamanho de documento, e a grade abre para quem
               quer ver tudo de uma vez. O botão existe para o atalho não ficar
               invisível para quem não o conhece. */}
-          <button className={`sb-gradebtn ${grade ? "on" : ""}`} onClick={() => setGrade((g) => !g)}
+          <button className={`sb-gradebtn ${grade ? "on" : ""}`} onClick={() => { setGrade((g) => !g); setRoteiro(false); }}
             title={grade ? "Fechar a grade (G ou Esc)" : "Ver todas as páginas em grade (G)"}>
             <Icon name="grid" size={13} />
             <i>G</i>
           </button>
 
+          {/* Mesmo motivo do botão da grade: sem ele o atalho ficaria invisível
+              para quem não o conhece. */}
+          <button className={`sb-gradebtn ${roteiro ? "on" : ""}`} onClick={() => { setRoteiro((v) => !v); setGrade(false); }}
+            title={roteiro ? "Fechar o roteiro (R ou Esc)" : "Ver as cenas como roteiro, em texto (R)"}>
+            <Icon name="list" size={13} />
+            <i>R</i>
+          </button>
+
           <span className="sb-counter">{sbPad(current + 1)} <i>/ {sbPad(total)}</i></span>
         </div>
       </aside>
+
+      {/* Cobre o palco em vez de substituir a moldura: as páginas seguem
+          montadas embaixo, e é delas que a exportação em PDF varre o conteúdo —
+          pedir o PDF com o roteiro aberto continua dando o mesmo documento. */}
+      {roteiro && (
+        <SBRoteiro sb={sb} onClose={() => setRoteiro(false)} editable={editable}
+          revisao={revisaoRoteiro} comComentarios={roteiroComComentarios}
+          /* Editar aqui é editar a cena: o texto vai para o mesmo campo da
+             mesma página, pelo mesmo caminho do editor do deck. Não existe
+             cópia do roteiro para sair de sincronia. */
+          onEditarCena={(pageId, nome, valor) => {
+            const i = pages.findIndex((p) => p.id === pageId);
+            if (i < 0) return;
+            onChangePage(i, { ...pages[i], [nome]: valor });
+          }}
+          onAddCena={() => {
+            /* Entra depois da última cena — é onde o roteiro continua. Ainda
+               sem cena nenhuma, entra logo após as páginas fixas do documento
+               (capa e disclaimer), nunca depois dos assets ou da contracapa.
+               Daqui em diante é o mesmo caminho do "+" da calha: a cena nasce
+               no deck, é salva e vira a página atual, então fechar o roteiro
+               deixa você já nela para preencher. */
+            let pos = -1;
+            pages.forEach((p, i) => { if (p.type === "scene") pos = i + 1; });
+            onAddPage(pos < 0 ? SB_LOCKED_HEAD : pos, "scene");
+          }} />
+      )}
     </div>
   );
 };
@@ -1204,6 +1913,9 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
   /* Versão da página que está na tela (null = a atual). Trocar de página ou
      entrar em edição sempre devolve o documento de agora. */
   const [verView, setVerView] = React.useState(null);
+  /* Com o roteiro aberto, o painel dele substitui a coluna de comentários do
+     deck: duas listas do mesmo assunto lado a lado era ruído, não escolha. */
+  const [roteiroAberto, setRoteiroAberto] = React.useState(false);
   React.useEffect(() => { setVerView(null); }, [current, editing]);
   const fileRef = React.useRef(null);
   const target = React.useRef({ page: -1, slot: null });
@@ -1472,7 +2184,7 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
   const st = SB_STATUS[sb.status] || SB_STATUS.v1;
   const page = sb.pages[current];
   const pageComments = (sb.comments || []).filter((c) => page && c.pageId === page.id);
-  const shownComments = verView == null ? pageComments : sbCommentsAtVersion(page, pageComments, verView);
+  const shownComments = sbCommentsVisiveis(page, pageComments, verView);
   const docNote = sbRoundsNote(sb.version || 1, "este storyboard");
   const naoEnviados = shownComments.filter((c) => !c.submitted).length;
 
@@ -1547,12 +2259,16 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
 
         {/* Mesma calha da tela do cliente — mesma marcação, mesmo logo, mesma
             posição. O console deixa de ter um desenho próprio: o que se revisa
-            aqui é o que o cliente vê do outro lado. */}
+            aqui é o que o cliente vê do outro lado.
+            `roteiroComComentarios` sem `revisaoRoteiro`: o painel do roteiro
+            mostra os comentários e o status da trilha, mas não compõe nem
+            envia — quem revisa é o cliente. */}
         <SBDeck sb={sb} editable={editing} current={current} setCurrent={setCurrent}
           onChangePage={changePage} onAddPage={addPage} onDeletePage={deletePage} onMovePage={movePage}
           onPickImage={pickImage} onDropImage={dropImage} onUndoImage={undoImage}
           onDropFile={soltarArquivo}
           viewVersion={editing ? null : verView} onPickVersion={editing ? null : setVerView}
+          roteiroComComentarios onRoteiroChange={setRoteiroAberto}
           railTop={
             <React.Fragment>
               <div className="sb-rail-id">
@@ -1562,7 +2278,7 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
               <span className="sb-rail-logo"><img src="/dual_logo.svg" alt="Framety · Grupo Skyline" /></span>
             </React.Fragment>
           } />
-        <SBComments pageNo={current + 1} total={sb.pages.length} comments={shownComments}
+        {!roteiroAberto && <SBComments pageNo={current + 1} total={sb.pages.length} comments={shownComments}
           editable canComment={false} draft="" setDraft={() => {}} onSend={() => {}}
           viewVersion={editing ? null : verView} onAdminRemove={removeComment}
           contexto={sbPageRoundsNote(page)}
@@ -1571,7 +2287,7 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
             <div className="sb-side-acts">
               <span className={`sb-vernote ${docNote.tone}`}>{docNote.text}</span>
             </div>
-          )} />
+          )} />}
       </div>
 
       {exportState && (
@@ -1788,6 +2504,9 @@ const StoryboardSharePage = () => {
      página tudo volta sozinho para a versão mais recente. */
   const [verView, setVerView] = React.useState(null);
   React.useEffect(() => { setVerView(null); }, [current]);
+  /* Com o roteiro aberto, o painel dele substitui a coluna de comentários do
+     deck: duas listas do mesmo assunto lado a lado era ruído, não escolha. */
+  const [roteiroAberto, setRoteiroAberto] = React.useState(false);
   /* Identificação do cliente: chave única do navegador, não por documento —
      quem já se apresentou num storyboard não é perguntado de novo nos outros.
      Fica no localStorage, ou seja, até ele limpar os dados do navegador.
@@ -1828,20 +2547,28 @@ const StoryboardSharePage = () => {
     return id;
   };
 
-  const postComment = async (pageId, who) => {
-    const text = (draft[pageId] || "").trim();
+  /* `origem` diz em qual das duas trilhas de revisão o comentário nasceu — o
+     deck ou o roteiro. Ele é o mesmo comentário da cena nos dois lugares; o que
+     muda é qual rodada o consome quando o cliente envia. Ver SB_TRILHAS no
+     server.js. O rascunho é guardado por pageId+origem para o que se digita no
+     roteiro não aparecer meio escrito no painel do deck. */
+  const chaveDraft = (pageId, origem) => (origem === "roteiro" ? "rot:" : "") + pageId;
+
+  const postComment = async (pageId, who, origem) => {
+    const k = chaveDraft(pageId, origem);
+    const text = (draft[k] || "").trim();
     if (!text) return;
     try {
-      await window.API.addSbComment(sb.token, { pageId, author: who.name, company: who.company, text });
-      setDraft((d) => ({ ...d, [pageId]: "" }));
+      await window.API.addSbComment(sb.token, { pageId, author: who.name, company: who.company, text, origem });
+      setDraft((d) => ({ ...d, [k]: "" }));
       reload();
     } catch (e) { setNote(e.error || "Não foi possível comentar."); }
   };
 
-  const tryComment = (pageId) => {
-    if (!(draft[pageId] || "").trim()) return;
-    if (ident?.name) return postComment(pageId, ident);
-    setAskFor({ kind: "comment", pageId });
+  const tryComment = (pageId, origem) => {
+    if (!(draft[chaveDraft(pageId, origem)] || "").trim()) return;
+    if (ident?.name) return postComment(pageId, ident, origem);
+    setAskFor({ kind: "comment", pageId, origem });
   };
 
   const removeComment = async (cid) => {
@@ -1849,21 +2576,22 @@ const StoryboardSharePage = () => {
     catch (e) { setNote(e.error || "Não foi possível remover."); }
   };
 
-  const submitAll = async () => {
+  const submitAll = async (escopo) => {
     setBusy(true);
     try {
-      const r = await window.API.submitSbComments(sb.token);
-      setNote(`Comentários enviados. O storyboard passou para ${SB_STATUS[r.status]?.label || r.status}.`);
+      const r = await window.API.submitSbComments(sb.token, escopo);
+      const alvo = escopo === "roteiro" ? "O roteiro" : "O storyboard";
+      setNote(`Comentários enviados. ${alvo} passou para ${SB_STATUS[r.status]?.label || r.status}.`);
       reload();
     } catch (e) { setNote(e.error || "Não foi possível enviar."); }
     finally { setBusy(false); }
   };
 
-  const approve = async (who) => {
+  const approve = async (who, escopo) => {
     setBusy(true);
     try {
-      await window.API.approveSb(sb.token, { author: who.name, company: who.company });
-      setNote("Storyboard aprovado. Obrigado!");
+      await window.API.approveSb(sb.token, { author: who.name, company: who.company, escopo });
+      setNote(escopo === "roteiro" ? "Roteiro aprovado. Obrigado!" : "Storyboard aprovado. Obrigado!");
       setAskApprove(false);
       reload();
     } catch (e) { setNote(e.error || "Não foi possível aprovar."); }
@@ -1905,13 +2633,15 @@ const StoryboardSharePage = () => {
   if (!sb) return <div className="sb-share-msg"><style>{SB_CSS}</style><p>Carregando storyboard…</p></div>;
 
   const st = SB_STATUS[sb.status] || SB_STATUS.v1;
-  const pending = (sb.comments || []).filter((c) => !c.submitted);
+  /* Rodada do storyboard consome só o que foi escrito NO storyboard: o que o
+     cliente comentou no roteiro pertence à rodada do roteiro. */
+  const pending = (sb.comments || []).filter((c) => !c.submitted && (c.origem || "deck") !== "roteiro");
   const approved = sb.status === "aprovado";
   const page = sb.pages[current];
   const pageComments = (sb.comments || []).filter((c) => page && c.pageId === page.id);
   /* Numa versão anterior o painel mostra só os comentários feitos enquanto ela
      estava no ar. */
-  const shownComments = verView == null ? pageComments : sbCommentsAtVersion(page, pageComments, verView);
+  const shownComments = sbCommentsVisiveis(page, pageComments, verView);
   const docNote = sbRoundsNote(sb.version || 1, "este storyboard");
   const semRodadas = sbRoundsLeft(sb.version || 1) <= 0;
 
@@ -1926,6 +2656,17 @@ const StoryboardSharePage = () => {
           onChangePage={() => {}} onAddPage={() => {}} onDeletePage={() => {}} onMovePage={() => {}}
           onPickImage={() => {}} onDropImage={() => {}} onUndoImage={() => {}}
           viewVersion={verView} onPickVersion={setVerView}
+          roteiroComComentarios onRoteiroChange={setRoteiroAberto}
+          revisaoRoteiro={{
+            busy,
+            /* Quem sabe qual cena está selecionada é o próprio roteiro, então o
+               rascunho é lido e escrito POR CENA em vez de num campo só. */
+            draftDe: (pageId) => draft[chaveDraft(pageId, "roteiro")] || "",
+            setDraftDe: (pageId, t) => setDraft((d) => ({ ...d, [chaveDraft(pageId, "roteiro")]: t })),
+            onComentar: (pageId) => tryComment(pageId, "roteiro"),
+            onEnviar: () => submitAll("roteiro"),
+            onAprovar: () => (ident?.name ? setAskApprove("roteiro") : setAskFor({ kind: "approve", escopo: "roteiro" })),
+          }}
           railTop={
             <React.Fragment>
               <div className="sb-rail-id">
@@ -1936,7 +2677,7 @@ const StoryboardSharePage = () => {
             </React.Fragment>
           } />
 
-        <div className="sb-sidecol">
+        {!roteiroAberto && <div className="sb-sidecol">
           <div className="sb-sidetop">
             <div className="sb-dl">
               <SBBtn className="sb-ghostbtn" seed={13} disabled={busy}><Icon name="download" size={15} /> Baixar PDF</SBBtn>
@@ -1975,15 +2716,15 @@ const StoryboardSharePage = () => {
                   Para seguir ajustando, fale com a produção; aqui só resta aprovar.
                 </p>
               )}
-              <SBBtn className="sb-ghostbtn sm" seed={14} disabled={busy || !pending.length || semRodadas} onClick={submitAll}>
+              <SBBtn className="sb-ghostbtn sm" seed={14} disabled={busy || !pending.length || semRodadas} onClick={() => submitAll("deck")}>
                 <Icon name="send" size={14} /> Enviar e solicitar revisão
               </SBBtn>
-              <SBBtn className="sb-okbtn sm" seed={15} disabled={busy} onClick={() => (ident?.name ? setAskApprove(true) : setAskFor({ kind: "approve" }))}>
+              <SBBtn className="sb-okbtn sm" seed={15} disabled={busy} onClick={() => (ident?.name ? setAskApprove("deck") : setAskFor({ kind: "approve", escopo: "deck" }))}>
                 <Icon name="check" size={14} /> Aprovar storyboard
               </SBBtn>
             </div>
           )} />
-        </div>
+        </div>}
       </div>
 
       {exportState && (
@@ -2002,19 +2743,25 @@ const StoryboardSharePage = () => {
         <SBIdentModal onCancel={() => setAskFor(null)} onConfirm={(name, company) => {
           const who = saveIdent(name, company);
           const a = askFor; setAskFor(null);
-          if (a.kind === "comment") postComment(a.pageId, who);
-          else setAskApprove(true);
+          if (a.kind === "comment") postComment(a.pageId, who, a.origem);
+          else setAskApprove(a.escopo === "roteiro" ? "roteiro" : "deck");
         }} />
       )}
 
+      {/* Uma trilha de cada vez: `askApprove` guarda QUAL está sendo aprovada,
+          porque aprovar o roteiro não trava o storyboard nem o contrário. */}
       {askApprove && (
         <div className="sb-modal-bg" onClick={() => setAskApprove(false)}>
           <div className="sb-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Aprovar este storyboard?</h3>
-            <p>Depois de aprovado o storyboard fica travado e não será mais possível comentar.</p>
+            <h3>{askApprove === "roteiro" ? "Aprovar este roteiro?" : "Aprovar este storyboard?"}</h3>
+            <p>
+              {askApprove === "roteiro"
+                ? "Depois de aprovado o roteiro fica travado e não será mais possível comentá-lo. O storyboard segue aberto."
+                : "Depois de aprovado o storyboard fica travado e não será mais possível comentar."}
+            </p>
             <div className="sb-modal-acts">
               <button className="sb-ghostbtn" onClick={() => setAskApprove(false)}>Cancelar</button>
-              <button className="sb-okbtn" disabled={busy} onClick={() => approve(ident)}>Confirmar aprovação</button>
+              <button className="sb-okbtn" disabled={busy} onClick={() => approve(ident, askApprove)}>Confirmar aprovação</button>
             </div>
           </div>
         </div>
@@ -2173,6 +2920,52 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-frame.hug .sb-pagewrap{ box-shadow:none; }
 .sb-viewport{ overflow:hidden; min-height:0; height:100%; width:100%; display:flex; align-items:center; justify-content:center; }
 
+/* ── celular: a página REFLUI em vez de encolher ────────────────────────────
+   Tudo aqui pende de .fluido, que só existe na tela. A exportação em PDF clona
+   o .sb-p para um palco de 1280px fora desta árvore, então continua saindo no
+   formato de impressão — inclusive exportando do celular. */
+.sb-frame.fluido{ width:100%; height:auto; align-self:stretch; display:block; }
+.sb-viewport.fluido{ overflow:visible; height:auto; display:block; }
+.sb-viewport.fluido .sb-track{ display:block; width:100%; height:auto; transform:none; transition:none; }
+.sb-viewport.fluido .sb-slide{ display:block; width:100%; height:auto; }
+/* só a página aberta ocupa espaço; as outras seguem montadas (o PDF depende
+   disso) mas fora do fluxo */
+.sb-viewport.fluido .sb-slide[aria-hidden="true"]{ display:none; }
+.sb-pagewrap.fluido{ width:100%; height:auto; border-radius:12px; }
+.sb-pagewrap.fluido .sb-pageclip{ position:static; border-radius:12px; }
+.sb-pagewrap.fluido .sb-pagescale{ width:100%; height:auto; transform:none; }
+.sb-pagewrap.fluido .sb-p{ width:100%; height:auto; min-height:0; }
+
+/* cena: imagem em cima, texto embaixo em tamanho de leitura */
+.sb-pagewrap.fluido .sb-p-scene{ display:flex; flex-direction:column; }
+.sb-pagewrap.fluido .sb-scene-img{ width:100%; height:auto; aspect-ratio:16/9; }
+.sb-pagewrap.fluido .sb-scene-img.empty{ padding:0 20px; }
+.sb-pagewrap.fluido .sb-scene-ph{ font-size:14px; line-height:1.5; }
+.sb-pagewrap.fluido .sb-scene-box{ padding:16px 16px 18px; }
+.sb-pagewrap.fluido .sb-scene-title{ font-size:19px; letter-spacing:.05em; margin:0 0 10px; }
+.sb-pagewrap.fluido .sb-field{ margin-bottom:12px; }
+.sb-pagewrap.fluido .sb-field-lbl{ font-size:9.5px; letter-spacing:.14em; margin-left:0; margin-bottom:2px; }
+.sb-pagewrap.fluido .sb-field-row{ gap:7px; }
+.sb-pagewrap.fluido .sb-field-ico{ font-size:13px; width:17px; }
+.sb-pagewrap.fluido .sb-field-val{ font-size:14.5px; line-height:1.45; }
+/* número e logo saem do canto absoluto e viram um rodapé de verdade */
+.sb-pagewrap.fluido .sb-logo-sm{ position:static; display:block; width:96px; margin:14px 0 0 auto; }
+.sb-pagewrap.fluido .sb-pageno{ right:12px; top:10px; font-size:11px; }
+
+/* assets: mosaico vira uma coluna */
+.sb-pagewrap.fluido .sb-p-assets{ padding:16px 16px 20px; }
+.sb-pagewrap.fluido .sb-assets-title{ font-size:17px; margin-bottom:12px; }
+.sb-pagewrap.fluido .sb-mosaic{ display:flex; flex-direction:column; gap:14px; }
+.sb-pagewrap.fluido .sb-mosaic .sb-mo{ grid-row:auto; }
+.sb-pagewrap.fluido .sb-mo-img{ aspect-ratio:16/9; flex:none; }
+.sb-pagewrap.fluido .sb-mo-cap{ font-size:12px; }
+.sb-pagewrap.fluido .sb-mo-add{ padding:18px; font-size:13px; }
+
+/* capa, disclaimer e contracapa: proporção livre e texto proporcional */
+.sb-pagewrap.fluido .sb-p-cover, .sb-pagewrap.fluido .sb-p-end{ min-height:56vw; padding:26px 18px; }
+.sb-pagewrap.fluido .sb-p-disclaimer{ padding:24px 18px; }
+.sb-pagewrap.fluido .sb-logo-lg{ width:min(62%, 240px); }
+
 /* ── arrastar e soltar imagem ───────────────────────────────────────────────
    O realce vive DENTRO da folha, então some por completo quando não se está
    arrastando — e a exportação em PDF, que acontece fora de um arraste, nunca o
@@ -2194,6 +2987,186 @@ body.sb-appmode .admin-topbar{ display:none; }
   pointer-events:none; padding:8px 14px; border-radius:10px; font-size:12.5px;
   background:rgba(8,8,10,.9); border:1px solid rgba(255,255,255,0.18); color:#e9e9f1;
   box-shadow:0 10px 30px rgba(0,0,0,.55); }
+
+/* ── roteiro (tecla R): as cenas em folhas A4 ─────────────────────────────────
+   Cobre o palco inteiro em vez de trocar a moldura: as páginas do storyboard
+   seguem montadas embaixo, que é do que a exportação em PDF do deck depende.
+
+   Da barra para baixo é um documento de texto, não o deck: folha branca, tinta
+   preta, margens de ~20mm. A barra continua escura porque é ferramenta, não
+   papel — e é o contraste entre as duas que faz a folha parecer folha.
+
+   As medidas em pixel são A4 a 96dpi (210×297mm = 794×1123). Elas existem
+   também no JS (SB_A4_W/H/MARGEM), que é quem decide onde cada folha termina;
+   se as duas saírem de sincronia, a paginação passa a mentir. */
+.sb-roteiro{ position:absolute; inset:0; z-index:60; display:flex; flex-direction:column;
+  background:#2a2a30; border-radius:14px; border:1px solid rgba(255,255,255,0.12);
+  box-shadow:0 24px 70px rgba(0,0,0,.6); overflow:hidden; }
+.sb-rot-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex:none;
+  padding:12px 14px; background:rgba(10,10,12,.96); border-bottom:1px solid rgba(255,255,255,0.12); }
+.sb-rot-tit{ display:flex; align-items:baseline; gap:10px; min-width:0; }
+.sb-rot-tit b{ font-size:14px; letter-spacing:.02em; }
+.sb-rot-tit span{ font-size:11px; color:#9a9aa6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sb-rot-acts{ display:flex; align-items:center; gap:6px; flex:none; }
+.sb-rot-erro{ font-size:11.5px; color:#ff8b93; margin-right:4px; }
+.sb-rot-btn{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; padding:7px 11px;
+  border-radius:9px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.06);
+  color:#d7d7e0; font-size:12px; font-family:inherit; }
+.sb-rot-btn:hover{ background:rgba(255,255,255,0.12); color:#fff; }
+.sb-rot-btn:disabled{ opacity:.45; cursor:default; }
+.sb-rot-btn.destaque{ background:var(--accent,#E63946); border-color:transparent; color:#fff; }
+.sb-rot-btn.destaque:hover{ filter:brightness(1.08); }
+.sb-rot-btn.fechar{ padding:7px 12px; font-size:15px; line-height:1; }
+
+/* a mesa onde as folhas ficam empilhadas */
+.sb-rot-corpo{ flex:1; min-height:0; display:flex; }
+/* "overflow-x:hidden" porque o "scale" encolhe o que se vê mas não o espaço que
+   a folha ocupa no layout: sem isto sobrava uma barra de rolagem lateral para
+   um trecho que já está inteiro na tela. */
+.sb-rot-mesa{ flex:1; min-width:0; overflow-y:auto; overflow-x:hidden; padding:26px 0 40px;
+  display:flex; flex-direction:column; align-items:center; gap:26px; }
+
+/* Régua de medição: os mesmos blocos, na mesma largura útil, fora de vista.
+   "visibility:hidden" e não "display:none" — o que não é exibido não tem
+   altura, e é exatamente a altura que se está medindo. */
+.sb-rot-regua{ position:absolute; left:-99999px; top:0; visibility:hidden;
+  width:642px; pointer-events:none; }
+
+/* Zoom só de exibição: a folha continua com 794px de verdade (é disso que a
+   paginação depende), e o "scale" apenas a faz caber na mesa. "transform-origin"
+   no topo para ela não fugir para cima ao encolher, e a margem negativa devolve
+   à mesa o espaço que o scale deixou sobrando embaixo. */
+.sb-folha{ transform:scale(var(--sb-rot-zoom,1)); transform-origin:top center;
+  margin-bottom:calc((var(--sb-rot-zoom,1) - 1) * 1123px); }
+.sb-folha{ width:794px; min-height:1123px; flex:none; background:#fff; color:#111;
+  padding:76px; box-sizing:border-box; position:relative;
+  box-shadow:0 6px 24px rgba(0,0,0,.45); }
+.sb-folha-corpo{ display:flex; flex-direction:column; gap:0; }
+.sb-folha-pe{ position:absolute; left:76px; right:76px; bottom:34px; text-align:center;
+  font-size:10.5px; color:#888; letter-spacing:.08em; }
+
+/* Corpo do documento — pilha de fontes na ordem do que um Word teria à mão. */
+.sb-roteiro .sb-rot-regua, .sb-roteiro .sb-folha{
+  font-family:Calibri, Carlito, "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+
+.sb-rot-doc-head{ text-align:center; padding:4px 0 0; }
+/* A marca ocupa o lugar que o título ocupava — mesma presença, mesma altura. */
+.sb-rot-logo{ display:block; width:240px; max-width:70%; margin:0 auto 14px; }
+.sb-rot-doc-sub{ font-size:13.5px; letter-spacing:.06em; color:#333; margin:0 0 4px; }
+.sb-rot-doc-meta{ font-size:11.5px; color:#666; margin:0; }
+
+/* VÍDEO/ÁUDIO uma vez só, colado no cabeçalho: a tabela de cada cena começa
+   direto na faixa "CENA NN" e encosta nesta. Só o thead existe aqui. */
+.sb-rot-colunas{ margin-top:20px; }
+
+/* ── edição no papel ──────────────────────────────────────────────────────────
+   O mesmo SBText do deck: o que se digita aqui vai para o campo da cena, e a
+   folha do storyboard mostra a mesma coisa. Os rótulos aparecem porque um campo
+   vazio sem nome não diz onde se escreve o quê — e, vazio, ele precisa existir
+   para haver onde clicar. */
+.sb-rot-campo{ margin-bottom:10px; }
+.sb-rot-campo:last-child{ margin-bottom:0; }
+.sb-rot-campo-lbl{ display:block; font-size:8.5px; letter-spacing:.16em; color:#888;
+  margin-bottom:2px; }
+.sb-rot-campo-val{ font-size:12.5px; line-height:1.5; color:#111; }
+/* textarea que não parece textarea: no papel, o cursor deve cair no texto sem
+   uma caixa cinza anunciando "formulário". A moldura só aparece no foco. */
+.sb-rot-cena .sb-rot-campo-val.sb-edit{ width:100%; display:block; resize:none; overflow:hidden;
+  border:1px solid transparent; border-radius:4px; background:transparent; padding:2px 4px;
+  margin:-2px -4px; font-family:inherit; color:#111; }
+.sb-rot-cena .sb-rot-campo-val.sb-edit:hover{ background:#f4f4f4; }
+.sb-rot-cena .sb-rot-campo-val.sb-edit:focus{ outline:none; background:#fff;
+  border-color:var(--accent,#E63946); }
+.sb-rot-cena.editando{ cursor:text; }
+
+
+.sb-rot-cena{ break-inside:avoid; }
+/* -1px: a borda de baixo de um bloco e a de cima do seguinte viram uma só,
+   em vez de somarem 2px e denunciarem a emenda. O JS conta o mesmo -1
+   (SB_A4_VAO) para medir a folha do jeito que ela é desenhada. */
+.sb-rot-cena + .sb-rot-cena{ margin-top:-1px; }
+.sb-rot-cena:first-child{ margin-top:0; }
+.sb-rot-tab{ width:100%; border-collapse:collapse; table-layout:fixed; }
+.sb-rot-tab col{ width:50%; }
+.sb-rot-tab th, .sb-rot-tab td{ border:1px solid #999; padding:9px 11px;
+  vertical-align:top; }
+.sb-rot-tab th{ background:#f2f2f2; font-size:10.5px; letter-spacing:.14em;
+  font-weight:700; text-align:left; color:#333; }
+.sb-rot-tab td{ font-size:12.5px; line-height:1.5; color:#111; }
+/* "CENA 01" dentro do próprio retângulo, no alto da coluna de vídeo — no lugar
+   da faixa cinza que gastava uma linha inteira por cena só para dizer o número.
+   A célula de áudio ganha o mesmo respiro no topo para as duas colunas
+   começarem na mesma altura. */
+.sb-rot-cena-n{ display:block; font-size:11px; font-weight:700; letter-spacing:.18em;
+  color:#111; margin-bottom:9px; }
+.sb-rot-cena-n.vazia{ visibility:hidden; }
+.sb-rot-tab td p{ margin:0 0 9px; }
+.sb-rot-tab td p:last-child{ margin-bottom:0; }
+.sb-rot-tab td p.vazio{ color:#999; }
+.sb-rot-tab td b{ font-weight:700; letter-spacing:.06em; }
+
+/* Ferramenta dentro do papel: some no PDF (ignoreElements na exportação) e
+   só existe em edição. Tracejado para não se confundir com uma cena. */
+.sb-rot-add{ margin-top:-1px; width:100%; padding:11px; cursor:pointer;
+  border:1px dashed #b0b0b0; background:#fafafa; color:#555;
+  font-family:inherit; font-size:12.5px; letter-spacing:.06em; }
+.sb-rot-add:hover{ background:#f0f0f0; color:#111; border-color:#888; }
+
+
+
+/* ── painel de revisão do roteiro ─────────────────────────────────────────────
+   O comentário é da CENA: leva o pageId e por isso o mesmo comentário aparece
+   na página daquela cena lá no deck. O que muda entre as duas telas é a
+   TRILHA de revisão — o roteiro tem V1..V4 e aprovação próprios, porque na
+   produção ele fecha antes de o storyboard ser desenhado. */
+.sb-rot-side{ flex:none; width:330px; display:flex; flex-direction:column;
+  background:rgba(10,10,12,.96); border-left:1px solid rgba(255,255,255,0.12); }
+.sb-rot-side-top{ padding:12px; border-bottom:1px solid rgba(255,255,255,0.1); }
+.sb-rot-side-sel{ display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:9px 12px; border-bottom:1px solid rgba(255,255,255,0.1);
+  font-size:11.5px; color:#9a9aa6; }
+.sb-rot-side-sel b{ color:#fff; letter-spacing:.1em; font-size:12px; }
+.sb-rot-side-sel button{ background:none; border:none; color:#9a9aa6; cursor:pointer;
+  font-size:11px; text-decoration:underline; font-family:inherit; }
+.sb-rot-side-lista{ flex:1; min-height:0; overflow:auto; padding:10px 12px;
+  display:flex; flex-direction:column; gap:8px; }
+.sb-rot-vazio{ font-size:12px; color:#77777f; margin:6px 2px; }
+
+/* Cada comentário é um botão: clicar leva à cena, que é como se responde
+   "de qual cena é isto?" num documento de várias folhas. */
+.sb-rot-cmt{ display:flex; flex-direction:column; gap:5px; text-align:left; cursor:pointer;
+  padding:10px 11px; border-radius:10px; font-family:inherit;
+  border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); color:#e9e9f1; }
+.sb-rot-cmt:hover{ background:rgba(255,255,255,0.09); }
+.sb-rot-cmt.sel{ border-color:var(--accent,#E63946); background:rgba(230,57,70,.12); }
+.sb-rot-cmt-top{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.sb-rot-cmt-top b{ font-size:10.5px; letter-spacing:.14em; color:#fff; }
+.sb-rot-cmt-orig, .sb-rot-cmt-nov{ font-style:normal; font-size:9.5px; letter-spacing:.08em;
+  padding:2px 6px; border-radius:999px; }
+.sb-rot-cmt-orig{ background:rgba(255,255,255,0.1); color:#a8a8b2; }
+.sb-rot-cmt-nov{ background:rgba(255,183,3,.18); color:#ffd166; }
+.sb-rot-cmt-txt{ font-size:12.5px; line-height:1.5; }
+.sb-rot-cmt-pe{ font-size:10px; color:#77777f; }
+
+.sb-rot-side-novo{ flex:none; padding:10px 12px; border-top:1px solid rgba(255,255,255,0.1);
+  display:flex; flex-direction:column; gap:8px; }
+.sb-rot-side-novo textarea{ width:100%; resize:vertical; padding:9px 10px; border-radius:9px;
+  border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.05); color:#e9e9f1;
+  font-family:inherit; font-size:12.5px; line-height:1.5; }
+.sb-rot-side-novo textarea:disabled{ opacity:.5; }
+.sb-rot-side-acts{ flex:none; padding:10px 12px 12px; border-top:1px solid rgba(255,255,255,0.1);
+  display:flex; flex-direction:column; gap:8px; }
+.sb-rot-pend{ font-size:10.5px; color:#ffd166; text-align:center; }
+
+/* A cena clicável no papel. O realce é uma sombra por fora, não uma borda:
+   borda mudaria a altura do bloco e a folha medida deixaria de bater. */
+.sb-rot-cena.clicavel{ cursor:pointer; }
+.sb-rot-cena.clicavel:hover{ box-shadow:0 0 0 3px rgba(230,57,70,.22); }
+.sb-rot-cena.sel{ box-shadow:0 0 0 3px var(--accent,#E63946); position:relative; z-index:1; }
+/* Quantos comentários a cena tem — ferramenta, não papel: fora do PDF. */
+.sb-rot-nc{ display:inline-flex; align-items:center; justify-content:center; min-width:17px;
+  height:17px; padding:0 5px; margin-left:8px; border-radius:999px; vertical-align:middle;
+  background:var(--accent,#E63946); color:#fff; font-size:10px; letter-spacing:0; }
 
 /* ── grade (tecla G): todas as páginas de uma vez ──────────────────────────
    Não é uma segunda montagem do documento: é a MESMA esteira de páginas, que
@@ -2575,13 +3548,49 @@ body.sb-appmode .admin-topbar{ display:none; }
 @media (max-width:760px){
   .sb-stage{ gap:6px; }
   .sb-nav{ width:34px; height:60px; font-size:20px; }
-  .sb-viewport{ height:46vh; }
   .sb-verbar{ gap:8px; }
-  .sb-verchip{ min-width:38px; height:26px; padding:0 7px; font-size:10.5px; }
-  .sb-verchip.on{ height:30px; }
   .sb-vernote{ font-size:9.5px; padding:3px 8px; }
   .sb-tr{ grid-template-columns:60px 1fr 100px; }
   .sb-tr > .sb-col-proj, .sb-tr > .sb-col-status{ display:none; }
   .sb-capa{ width:60px; height:38px; }
+}
+
+/* Casca do celular. A condição repete a do modo fluido (largura OU altura):
+   o mesmo aparelho deitado tem 812px de largura e 375 de altura, e precisa
+   rolar igual. As regras do hub acima ficam de fora de propósito — colapsar
+   colunas numa janela larga e baixa seria errado. */
+@media (max-width:760px), (max-height:520px){
+  /* ── celular: a tela deixa de ser "app de altura fixa" e passa a rolar ──
+     Com a página refluindo, o documento fica mais alto que a janela; prender
+     tudo em 100dvh com overflow:hidden cortaria o texto. Aqui é uma rolagem
+     só, de cima a baixo: documento e, abaixo dele, os comentários. */
+  .sb-share, .sb-standalone{ height:auto; min-height:100dvh; overflow:visible; padding:8px 10px 20px; }
+  .sb-share > .sb-workspace, .sb-standalone > .sb-editor{ flex:none; min-height:0; }
+  .sb-workspace{ display:block; }
+  .sb-workspace > .sb-stage{ margin-bottom:12px; }
+  .sb-side{ max-height:none; }
+  .sb-sidecol > .sb-side, .sb-sidecol{ min-height:0; }
+  body.sb-appmode .admin-main{ overflow:visible; height:auto; display:block; }
+  .sb-editor{ height:auto; min-height:0; }
+
+  /* calhas viram barras compactas, sem roubar altura do documento */
+  .sb-rail-l, .sb-rail-r{ padding:4px 0; gap:10px; }
+  .sb-rail-id b{ font-size:13px; }
+  .sb-rail-id span{ font-size:9px; }
+  .sb-rail-logo{ height:16px; }
+  .sb-rail-logo img{ height:16px; }
+  /* alvos de toque: o dedo pede ~44px, não 26 */
+  .sb-verchip{ min-width:44px; height:38px; padding:0 10px; font-size:12px; }
+  .sb-verchip.on{ height:38px; }
+  .sb-gradebtn{ flex-direction:row; gap:6px; padding:9px 12px; min-height:40px; }
+  .sb-counter{ font-size:13px; }
+  .sb-railbtn, .sb-railplus{ min-width:38px; min-height:38px; }
+  /* cabeçalho do editor: as ações quebravam em três linhas e comiam 142px */
+  .sb-ed-head{ gap:8px; padding-bottom:8px; margin-bottom:8px; }
+  .sb-ed-acts{ gap:6px; width:100%; justify-content:flex-start; }
+  .sb-ed-meta{ min-width:0; }
+  .sb-ed-in{ min-width:0; flex:1 1 44%; font-size:12.5px; padding:7px 9px; }
+  .sb-versionchip{ padding:6px 10px; }
+  .sb-versionchip b{ font-size:11.5px; }
 }
 `;

@@ -87,6 +87,13 @@
     getLocucoes:   ()      => req('GET',  '/api/locucoes'),
     saveLocucoes:  (data)  => req('POST', '/api/locucoes', data),
 
+    // OS por #SKY — busca o job na planilha do Google
+    lookupOs:      (sky)   => req('GET',  '/api/os/lookup?sky=' + encodeURIComponent(sky)),
+    getSheetStatus:()      => req('GET',  '/api/os/sheet-status'),
+    // Mesma busca pelo link somente-leitura (token próprio, não o do admin).
+    lookupOsWith:  (token, sky) => fetch('/api/os/lookup?sky=' + encodeURIComponent(sky), { headers: { 'x-auth-token': token } })
+      .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw d; return d; }),
+
     // Storyboards — admin
     getStoryboards:   ()      => req('GET',    '/api/storyboards'),
     addStoryboard:    (data)  => req('POST',   '/api/storyboards', data),
@@ -107,9 +114,11 @@
     // caminho legível cliente/produto/projeto virou endereço de edição, e a
     // busca pública por ele foi removida do servidor (ver server.js).
     getSharedStoryboard: (slug)        => req('GET',    `/api/sb/${slug}`),
+    // `origem`/`escopo`: 'deck' (storyboard) ou 'roteiro'. As duas trilhas de
+    // revisão são independentes — ver SB_TRILHAS no server.js.
     addSbComment:        (tok, data)   => req('POST',   `/api/sb/${tok}/comments`, data),
     deleteSbComment:     (tok, cid)    => req('DELETE', `/api/sb/${tok}/comments/${cid}`),
-    submitSbComments:    (tok)         => req('POST',   `/api/sb/${tok}/submit`),
+    submitSbComments:    (tok, escopo) => req('POST',   `/api/sb/${tok}/submit`, { escopo }),
     approveSb:           (tok, data)   => req('POST',   `/api/sb/${tok}/approve`, data),
 
     // Links (short-link redirects)

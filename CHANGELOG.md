@@ -3,6 +3,171 @@
 Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 (tag git). Correções em andamento entram em "Não lançado" até o próximo deploy.
 
+## Não lançado
+
+- **Tecla `R`: as cenas viram roteiro.** Do mesmo jeito que o `G` abre a grade,
+  o `R` abre o roteiro — as mesmas cenas em texto, sem imagem nenhuma, no
+  formato de duas colunas **VÍDEO | ÁUDIO** (o padrão de roteiro publicitário e
+  institucional). `R` de novo, `G` ou `Esc` fecham.
+  - Não existe roteiro digitado à parte: ele sai inteiro dos campos que já estão
+    na folha. `VISUAL` vai para a coluna de vídeo, `LOCUÇÃO EM OFF` e `SFX` para
+    a de áudio, prefixados por `LOC:` e `SFX:`. Assim não há como o roteiro
+    discordar do storyboard.
+  - A descrição da cena sem foto (o `placeholder`) entra na coluna de vídeo — é
+    informação de imagem também — e some sozinha quando a foto chega.
+  - Só páginas do tipo cena entram. Capa, disclaimer, assets e contracapa ficam
+    de fora: o roteiro é para quem vai gravar.
+  - **Cara de documento, não de deck:** folha branca, tinta preta, margens de
+    ~20mm, e o texto composto em **folhas A4 de verdade** (794×1123px, que é
+    210×297mm a 96dpi). A barra de cima segue escura porque é ferramenta, não
+    papel — é o contraste entre as duas que faz a folha parecer folha. Rodapé
+    com "1 / 3" em cada uma.
+  - No alto da primeira folha vai a **marca Framety · Grupo Skyline**, a mesma
+    das outras páginas do documento, no lugar da palavra "ROTEIRO". Variante
+    escura em arquivo próprio (`dual_logo_dark.svg`), não `filter:invert()` — o
+    html2canvas ignora filtros CSS e o logo sairia branco no branco da folha.
+  - **Os blocos se encostam.** "CENA 01" deixou de ser um título solto acima da
+    tabela e virou uma faixa dentro dela; cada bloco puxa 1px para cima, então a
+    borda de baixo de um e a de cima do seguinte viram uma linha só em vez de
+    somarem duas. O documento é uma grade contínua, como uma tabela de Word. O
+    `SB_A4_VAO` da paginação acompanha o mesmo -1: medir com um vão e desenhar
+    com outro é como a folha estoura.
+  - **`+ Nova cena` na última folha.** Cria a cena de verdade no storyboard,
+    pelo mesmo caminho do `+` da calha — entra depois da última cena (antes dos
+    assets e da contracapa), é salva e vira a página atual, então fechar o
+    roteiro deixa você já nela para preencher. Sem cena nenhuma ainda, entra
+    logo após as páginas fixas do documento. O botão é ferramenta dentro do
+    papel: **não sai no PDF** (`ignoreElements` na exportação) e não existe na
+    visão do cliente.
+  - **A paginação mede, não chuta.** Uma régua invisível monta os mesmos blocos
+    na largura útil da folha, mede a altura real de cada um e vai enchendo
+    páginas — sempre por blocos inteiros, então nenhuma cena é cortada ao meio.
+    É o MESMO componente que a folha desenha; medir uma coisa e desenhar outra é
+    como a paginação erra. Uma cena mais alta que a página inteira fica sozinha
+    na sua folha e a folha cresce (`min-height`): melhor uma folha fora de
+    medida do que texto sumido no corte.
+  - **Baixar PDF**, em folhas A4 — uma folha da tela vira uma página do PDF, no
+    mesmo tamanho. Rasteriza cada folha pelo caminho que o projeto já usa, então
+    o arquivo sai igual ao que está na tela, sem uma segunda diagramação para
+    sair de sincronia.
+  - **Copiar texto** e **.txt** continuam, e continuam entregando a versão de
+    colunas por caractere — é ela que sobrevive a um WhatsApp ou a um e-mail sem
+    formatação. As duas saídas leem da mesma função de cenas, então a folha
+    impressa e o texto colado nunca discordam. Sem permissão de área de
+    transferência, o "Copiar" seleciona o conteúdo para o Ctrl+C funcionar, em
+    vez de o botão não fazer nada.
+  - O roteiro **cobre** o palco em vez de substituir a moldura: as páginas
+    seguem montadas embaixo, e é delas que a exportação varre o conteúdo — pedir
+    o PDF com o roteiro aberto continua dando o mesmo documento.
+  - **VÍDEO e ÁUDIO aparecem uma vez só**, no topo do documento. Repetir os dois
+    rótulos em cada cena enchia a folha de linha sem informação nova.
+  - **"CENA 01" mora dentro do próprio retângulo**, no alto da coluna de vídeo.
+    Antes era uma faixa cinza atravessando as duas colunas — uma linha inteira
+    por cena só para dizer um número. Para as duas colunas começarem na mesma
+    altura, a de áudio reserva o espaço com uma cópia **invisível** do rótulo,
+    não com um `padding` fixo: número mágico erraria assim que a fonte ou o
+    corpo do texto mudassem, e a cópia acompanha sozinha (e não vaza para o
+    texto copiado).
+  - **Editável como um Word.** Com o lápis ligado, as células viram campos de
+    texto — sem moldura de formulário, a caixa só aparece no foco. E é o
+    **mesmo campo da cena**: o que se digita aqui vai para `visual`, `locucao` e
+    `sfx` da página, pelo mesmo caminho do editor do deck. Não existe cópia do
+    roteiro em lugar nenhum, então as duas telas não têm como discordar. Os
+    campos ficam rotulados e sempre presentes, mesmo vazios — sem a linha não há
+    onde clicar para escrever o que ainda não existe. A folha se repagina
+    enquanto se escreve. Editando, a cena deixa de ser clicável para comentar:
+    o clique passa a ser para pôr o cursor no texto.
+  - **O cliente comenta por cena, aqui também.** Clica no retângulo da cena e
+    comenta ao lado; o comentário mostra "CENA 03" e, clicado, seleciona e rola
+    até o bloco — é como se responde "de qual cena é isto?" num documento de
+    várias folhas. Cada cena leva a marca de quantos comentários tem (fora do
+    PDF).
+  - **O comentário é da CENA, não da tela.** Ele leva o `pageId`, então o que o
+    cliente escreve no roteiro aparece na página daquela cena no console, junto
+    com os demais. A lista do roteiro mostra os dois e marca "no storyboard" o
+    que veio de lá — esconder faria parecer que a cena não tem conversa nenhuma.
+  - **Trilha de revisão própria: V1..V4 do roteiro**, com "Enviar e solicitar
+    revisão" e "Aprovar roteiro" separados dos do storyboard. É o fluxo real de
+    produção — o roteiro fecha antes de o storyboard ser desenhado —, então
+    aprovar um não trava o outro.
+    O campo `origem` do comentário resolve a tensão entre "comentário
+    compartilhado" e "rodadas separadas": ele guarda em qual das duas telas o
+    comentário nasceu e, portanto, **qual rodada o consome**. Sem isso, comentar
+    no roteiro esvaziaria a rodada do storyboard sem ninguém pedir.
+    ([server.js] `SB_TRILHAS`, `/api/sb/:slug/{comments,submit,approve}` com
+    `origem`/`escopo`; storyboards criados antes disso valem V1)
+  - **Uma lista de comentários por vez.** Com o roteiro aberto, o painel dele
+    substitui a coluna de comentários do deck em vez de somar — duas listas do
+    mesmo assunto lado a lado era ruído, não escolha. O `R` é do teclado, então
+    o estado nasce dentro do deck e sobe por `onRoteiroChange`; fazer o
+    contrário obrigaria as duas telas que montam o deck a repetir o atalho.
+  - Vale nos dois lados, edição e visão do cliente, porque mora no deck. No
+    console o painel mostra os comentários e o status da trilha, mas não compõe
+    nem envia: quem revisa é o cliente.
+  ([storyboard.jsx] `sbRoteiroTexto`, `SBRoteiro`, `SBRotCena`, `SBRotPainel`,
+  `sbRotWrap`)
+
+- **Produções deixou de ser uma lista e virou uma busca por `#SKY`.** A planilha
+  de produção já tem o job inteiro em uma linha — cliente, produto, minutagem,
+  produtora, valor. Manter uma segunda cópia disso no console significava
+  digitar tudo de novo e conviver com duas versões do mesmo job. Agora a tela
+  abre com um campo só: digita-se o `#SKY`, o servidor acha aquela linha na
+  planilha e a OS é montada com o que já está lá.
+  - O código pode ser digitado como vier à cabeça: `#SKY171-B`, `sky 171 b` e
+    `SKY171B` chegam todos na mesma linha (acento, espaço e pontuação são
+    ignorados dos dois lados da comparação).
+  - A OS resultante **vive em memória**. A fonte é a planilha e o entregável é o
+    PDF; o que se ajusta no documento vale para aquele PDF e não volta para a
+    planilha. Por isso não há mais nada para salvar nesta aba.
+  - **As listas antigas continuam no banco**, intactas — elas deixaram de ser a
+    interface, não foram apagadas. E enquanto a planilha não estiver
+    configurada, é justamente nelas que o servidor procura o `#SKY`, com um
+    aviso na tela dizendo de onde veio. A aba fica utilizável antes de a
+    integração ficar de pé.
+  - Um `#SKY` que ainda não entrou na planilha não é um beco sem saída: há um
+    atalho para **abrir uma OS em branco** já com o código preenchido.
+  - Quando a busca falha, o motivo quase sempre está na configuração da
+    planilha, não no código — daí o **"ver o que o servidor enxerga da
+    planilha"** ao lado do erro: diz se a configuração está completa, com qual
+    e-mail compartilhar a planilha, em que linha achou o cabeçalho e quais
+    colunas foram reconhecidas.
+  - O **link somente-leitura** (`/producoes`) acompanha: mesma busca, com o
+    token do compartilhamento em vez do token do admin, e o documento abre
+    fechado para edição (o PDF continua disponível). Como nada mais na tela
+    depende do estado do servidor, a assinatura de "live" e o salvamento de
+    status por ali saíram.
+  - **Traço não é valor.** A planilha marca célula vazia com `-------------` em
+    vez de deixar em branco; sem tratar isso, o valor total da OS sairia
+    `-------------`. Agora uma célula só de traços vira vazia, e o valor cai no
+    `R$ 0,00` de sempre. Atinge 62 das 109 linhas.
+  - **Um `#SKY` pode ocupar mais de uma linha** — entregas diferentes do mesmo
+    job (LANÇAMENTO e TRAJETO, IMERSIVO ESPANHOL e INGLÊS). São 5 casos hoje.
+    Nesses pares a planilha repete cliente, produto e locutor e escreve o valor
+    só na primeira linha; a OS é uma só, do job inteiro, então entre as linhas
+    que casam fica a que tem valor. Hoje ela é sempre a primeira, mas a regra
+    não depende dessa ordem continuar valendo.
+  - **Quebra de linha é diagramação, não nome.** `QUINTA DAS\n MANGUEIRAS` está
+    quebrado na planilha para caber na coluna; sem colapsar, a quebra
+    reapareceria no meio do campo "Projeto" da OS.
+  - **Mapeamento de colunas conferido contra a planilha real:** o cabeçalho é
+    achado na linha 2 (pulando o título "Locuções 2026") e 11 colunas casam sem
+    nenhuma configuração. `empreendimento` e `categoria` não existem lá e não
+    fazem falta — o documento da OS não usa esses dois. Varredura completa: os
+    48 `#SKY` da planilha são encontrados.
+  - A planilha é lida pelo **CSV de exportação público** — ela está
+    compartilhada como "qualquer pessoa com o link pode ver", e a decisão foi
+    manter assim para que o console consiga puxar os dados a qualquer momento
+    sem depender de credencial. Não há chave, token nem conta de serviço no
+    projeto. Em troca, quem tiver a URL da planilha lê os mesmos dados.
+    Se a planilha for fechada, o Google devolve a página de login em HTML com
+    status 200; o módulo detecta e diz isso, em vez de deixar a busca falhar
+    como "nenhum job com esse código". Cache de 60s. Passo a passo em
+    [README-os-sheet.md](README-os-sheet.md).
+  - `os-sheet.config.json` entrou no `.gitignore`: aponta para uma planilha
+    específica e não precisa viajar no repositório.
+  ([sheets.js], [server.js] `/api/os/lookup`, `/api/os/sheet-status`,
+  [admin.jsx] `LocucoesPanel`, [api.js] `lookupOs`, `lookupOsWith`)
+
 ## [1.8.0] — No ar no Render (tag `v1.8`) — 2026-08-06
 
 - **Arrastar a imagem para dentro da página (edição):** soltar um arquivo sobre

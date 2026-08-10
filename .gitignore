@@ -6,6 +6,10 @@ _restore_*/
 _backups/
 .env
 .claude/
+# Planilha de jobs: a config aponta para a chave privada da conta de serviço,
+# e o JSON da conta é a chave em si. Nenhum dos dois entra no repositório.
+os-sheet.config.json
+*service-account*.json
 _sbtest/uploads/
 _sbtest/db.json
 _sbtest/db.json.tmp

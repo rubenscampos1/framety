@@ -423,7 +423,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
               : tab==="parceiros" ? `${partners.length} CADASTROS`
               : tab==="tutorial" ? "SUPORTE"
               : tab==="storyboards" ? `${storyboards.length} STORYBOARDS`
-              : tab==="locucoes" ? `${locucoesPages.reduce((n,p)=>n+p.rows.length,0)} LINHAS`
+              : tab==="locucoes" ? "OS POR #SKY"
               : tab==="links" ? `${redirects.length} LINKS`
               : "DASHBOARD"}
             </span>
@@ -461,7 +461,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
         {tab === "storyboards" && <StoryboardsPanel list={storyboards} setList={setStoryboards} addToast={addToast}
           requestOpen={sbRequestOpen} onOpened={() => setSbRequestOpen(null)}/>}
         {tab === "locucoes" && (producoesUnlocked
-          ? <LocucoesPanel pages={locucoesPages} setPages={setLocucoesPages} activePageId={locucoesActivePageId} setActivePageId={setLocucoesActivePageId} cad={locucoesCad} setCad={setLocucoesCad}
+          ? <LocucoesPanel cad={locucoesCad} setCad={setLocucoesCad}
               onChangePassword={() => setShowProducoesPass(true)}
               onShare={() => {
                 const url = window.location.origin + "/producoes";
@@ -2133,13 +2133,8 @@ function anoOfRow(r) {
   const m2 = r.os && r.os.emissao ? ('' + r.os.emissao).match(/(\d{4})/) : null;
   return m2 ? m2[1] : '';
 }
-function parseBRL(s) {
-  if (!s) return 0;
-  const n = ('' + s).replace(/[^\d,]/g, '').replace(/\./g, '').replace(',', '.');
-  const v = parseFloat(n);
-  return isNaN(v) ? 0 : v;
-}
-function formatBRL(n) { return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+/* O valor vem da planilha já formatado; quem somava e reformatava era o total
+   da lista, que não existe mais — daí parseBRL/formatBRL terem saído daqui. */
 function buildOS(r, over) {
   const parts = (r.locutor || '').split('/');
   const os = {
@@ -2188,86 +2183,69 @@ const cadSectionDefs = [
 ];
 
 /* =========================== Locuções (OS) =========================== */
-const LocucoesPanel = ({ pages, setPages, activePageId, setActivePageId, cad, setCad, readOnly = false, onShare, onChangePassword, onStatusPersist }) => {
-  const [subTab, setSubTab] = React.useState('rows'); // 'rows' | 'cadastros'
-  const [screen, setScreen] = React.useState('rows'); // 'rows' | 'os'
-  const [activeUid, setActiveUid] = React.useState(null);
+/* A aba não guarda mais uma lista. A planilha de produção já tem o job inteiro
+   em uma linha, então aqui só se digita o #SKY: o servidor acha aquela linha e
+   devolve os campos, e a OS é montada com o que já existe.
+
+   A OS resultante vive em memória — a fonte é a planilha e o entregável é o
+   PDF. Ajustes feitos no documento valem para aquele PDF e não voltam para a
+   planilha; por isso não há nada para salvar aqui.
+
+   As páginas de lista que já estavam no banco continuam lá, intactas: elas
+   deixaram de ser a interface, não foram apagadas. Enquanto a planilha não
+   estiver configurada, o servidor busca o #SKY nessas linhas salvas — assim a
+   tela segue utilizável antes da integração ficar de pé. */
+const LocucoesPanel = ({ cad, setCad, readOnly = false, roToken = '', onShare, onChangePassword }) => {
+  const [subTab, setSubTab] = React.useState('busca');   // 'busca' | 'cadastros'
+  const [sky, setSky] = React.useState('');
+  const [buscando, setBuscando] = React.useState(false);
+  const [erro, setErro] = React.useState('');
+  const [fonte, setFonte] = React.useState('');          // 'sheet' | 'local'
+  const [doc, setDoc] = React.useState(null);            // linha da planilha + OS montada
   const [osEdit, setOsEdit] = React.useState(false);
   const [autoDownload, setAutoDownload] = React.useState(false);
-  const [editingPageId, setEditingPageId] = React.useState(null);
-  const [pageTitleDraft, setPageTitleDraft] = React.useState('');
-  const [dragUid, setDragUid] = React.useState(null);
-  const [expandedCards, setExpandedCards] = React.useState(() => new Set());
-  const toggleCard = (uid) => setExpandedCards(s => { const n = new Set(s); n.has(uid) ? n.delete(uid) : n.add(uid); return n; });
+  const [diag, setDiag] = React.useState(null);
   const [cadDraft, setCadDraft] = React.useState({ clientes: '', projetos: '', empreendimentos: '', categorias: '' });
-  const [q, setQ] = React.useState('');
-  const [fCliente, setFCliente] = React.useState('all');
-  const [fAno, setFAno] = React.useState('all');
-  const [fProdutora, setFProdutora] = React.useState('all');
-  const [fProjeto, setFProjeto] = React.useState('all');
-  const [fEmpreendimento, setFEmpreendimento] = React.useState('all');
-  const [fCategoria, setFCategoria] = React.useState('all');
 
-  const activePage = pages.find(p => p.id === activePageId) || pages[0] || { id: null, title: '', rows: [] };
-  const rows = activePage.rows || [];
-
-  const setActivePageRows = (newRows) => {
-    setPages(ps => ps.map(p => p.id === activePage.id ? { ...p, rows: newRows } : p));
-  };
-  const updateCell = (uid, field, value) => setActivePageRows(rows.map(r => {
-    if (r.uid !== uid) return r;
-    const nr = { ...r, [field]: value };
-    // "PAGO" marks the row as concluded (checkbox on).
-    if (field === 'status' && value === 'PAGO') nr.sel = true;
-    return nr;
-  }));
-  const addRow = () => {
-    const row = { uid: 'r' + Date.now(), sel: false, os: null, id: '', data: osToday(), cliente: '', produto: '', projeto: '', empreendimento: '', categoria: '', minutagem: '', veiculacao: '', locutor: '', status: 'RECEBIDO', valor: '', liberado: 'SIM' };
-    setActivePageRows([...rows, row]);
-  };
-  const delRow = (uid) => {
-    const r = rows.find(x => x.uid === uid);
-    window.__adminConfirm?.(`Excluir esta linha?${r?.id ? ' (' + r.id + ')' : ''}`, () => {
-      setActivePageRows(rows.filter(x => x.uid !== uid));
-    });
-  };
-  const generateOS = (uid) => {
-    setActivePageRows(rows.map(r => r.uid === uid ? { ...r, os: r.os || buildOS(r) } : r));
-    setActiveUid(uid); setOsEdit(true); setScreen('os'); setAutoDownload(false);
-  };
-  const openView = (uid) => { setActiveUid(uid); setOsEdit(false); setScreen('os'); setAutoDownload(false); };
-  const openEdit = (uid) => { setActiveUid(uid); setOsEdit(true); setScreen('os'); setAutoDownload(false); };
-  const downloadRowPdf = (uid) => { setActiveUid(uid); setOsEdit(false); setScreen('os'); setAutoDownload(true); };
-  const updateOS = (field, value) => setActivePageRows(rows.map(r => r.uid === activeUid ? { ...r, os: { ...r.os, [field]: value } } : r));
-
-  const addPage = () => {
-    const id = 'pg_' + Date.now();
-    setPages(ps => [...ps, { id, title: 'Nova lista', rows: [] }]);
-    setActivePageId(id);
-    setSubTab('rows'); setScreen('rows');
-    setQ(''); setFCliente('all'); setFAno('all'); setFProdutora('all'); setFProjeto('all'); setFEmpreendimento('all'); setFCategoria('all');
-  };
-  const startEditPageTitle = (id) => { const p = pages.find(x => x.id === id); setEditingPageId(id); setPageTitleDraft(p ? p.title : ''); };
-  const savePageTitle = () => {
-    if (!editingPageId) return;
-    const title = pageTitleDraft.trim();
-    if (title) setPages(ps => ps.map(p => p.id === editingPageId ? { ...p, title } : p));
-    setEditingPageId(null);
+  const abrirDoc = (row, editavel) => {
+    setDoc({ ...row, uid: 'os_' + Date.now(), os: buildOS(row) });
+    setOsEdit(editavel);
+    setAutoDownload(false);
   };
 
-  const onRowDragStart = (uid) => setDragUid(uid);
-  const onRowDragOver = (e, uid) => {
-    e.preventDefault();
-    if (!dragUid || dragUid === uid) return;
-    const a = rows.findIndex(r => r.uid === dragUid);
-    const b = rows.findIndex(r => r.uid === uid);
-    if (a < 0 || b < 0) return;
-    const next = rows.slice();
-    const [m] = next.splice(a, 1);
-    next.splice(b, 0, m);
-    setActivePageRows(next);
+  const buscar = async (e) => {
+    if (e) e.preventDefault();
+    const termo = sky.trim();
+    if (!termo || buscando) return;
+    setBuscando(true); setErro(''); setDiag(null);
+    try {
+      // No link somente-leitura o token é o do compartilhamento, não o do admin.
+      const d = roToken ? await window.API.lookupOsWith(roToken, termo) : await window.API.lookupOs(termo);
+      setFonte(d.source || '');
+      abrirDoc(d.row || {}, !readOnly);
+    } catch (ex) {
+      setErro((ex && ex.error) || 'Não consegui buscar o job. Tente de novo.');
+    } finally {
+      setBuscando(false);
+    }
   };
-  const onRowDragEnd = () => setDragUid(null);
+
+  // Saída para o job que ainda não entrou na planilha — sem isso, um #SKY que
+  // não existe lá seria um beco sem saída.
+  const abrirEmBranco = () => {
+    setErro(''); setDiag(null); setFonte('');
+    abrirDoc({ id: sky.trim(), data: osToday(), cliente: '', produto: '', locutor: '', valor: '' }, true);
+  };
+
+  // Quando a busca falha, o motivo quase sempre está na configuração da
+  // planilha — mostrar o que o servidor enxerga evita adivinhação.
+  const verDiagnostico = () => {
+    window.API.getSheetStatus()
+      .then(setDiag)
+      .catch(ex => setDiag({ configured: false, error: (ex && ex.error) || 'Não consegui ler o diagnóstico.' }));
+  };
+
+  const updateOS = (field, value) => setDoc(d => (d ? { ...d, os: { ...d.os, [field]: value } } : d));
 
   const addCadItem = (key) => {
     const value = (cadDraft[key] || '').trim();
@@ -2279,93 +2257,28 @@ const LocucoesPanel = ({ pages, setPages, activePageId, setActivePageId, cad, se
   };
   const removeCadItem = (key, value) => setCad(c => ({ ...c, [key]: (c[key] || []).filter(v => v !== value) }));
 
-  const uniq = (list) => Array.from(new Set(list.filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  const anoOptions = uniq(rows.map(anoOfRow));
-  const produtoraOptions = uniq(rows.map(r => (r.locutor || '').trim()));
-  const mergeOpt = (list, val) => { const v = (val || '').trim(); if (!v || list.includes(v)) return list; return [v, ...list]; };
-
-  const filtered = rows.filter(r => {
-    if (fCliente !== 'all' && (r.cliente || '').trim() !== fCliente) return false;
-    if (fAno !== 'all' && anoOfRow(r) !== fAno) return false;
-    if (fProdutora !== 'all' && (r.locutor || '').trim() !== fProdutora) return false;
-    if (fProjeto !== 'all' && (r.projeto || '').trim() !== fProjeto) return false;
-    if (fEmpreendimento !== 'all' && (r.empreendimento || '').trim() !== fEmpreendimento) return false;
-    if (fCategoria !== 'all' && (r.categoria || '').trim() !== fCategoria) return false;
-    if (q) {
-      const qq = q.toLowerCase();
-      const hay = [r.id, r.data, r.cliente, r.produto, r.projeto, r.empreendimento, r.categoria, r.minutagem, r.veiculacao, r.locutor, r.status, r.valor, r.liberado].join(' ').toLowerCase();
-      if (!hay.includes(qq)) return false;
-    }
-    return true;
-  });
-
-  let total = 0; filtered.forEach(r => { total += parseBRL(r.valor); });
-  const totalFmt = formatBRL(total);
-  const hasFilters = q || fCliente !== 'all' || fAno !== 'all' || fProdutora !== 'all' || fProjeto !== 'all' || fEmpreendimento !== 'all' || fCategoria !== 'all';
-  const activeRow = rows.find(r => r.uid === activeUid);
-
-  if (screen === 'os' && activeRow) {
+  if (doc) {
     return (
       <OsDocumentView
-        row={activeRow}
+        row={doc}
         osEdit={osEdit}
         setOsEdit={setOsEdit}
         autoDownload={autoDownload}
         readOnly={readOnly}
-        onBack={() => { setScreen('rows'); setActiveUid(null); }}
+        onBack={() => setDoc(null)}
         onUpdateOS={updateOS}
       />
     );
   }
 
-  const cellStyle = (r) => ({ border: 'none', background: 'transparent', font: 'inherit', fontSize: 12.5, color: r.sel ? 'var(--ink-mute)' : 'var(--ink)', textDecoration: r.sel ? 'line-through' : 'none', width: '100%', padding: '6px 4px', outline: 'none' });
-  const roStyle = (r) => ({ fontSize: 12.5, color: r.sel ? 'var(--ink-mute)' : 'var(--ink)', textDecoration: r.sel ? 'line-through' : 'none', padding: '6px 4px', display: 'inline-block', whiteSpace: 'nowrap' });
-  // Text/select cell that becomes a plain label in read-only (shared) mode.
-  const txtCell = (r, field, opts = {}) => readOnly
-    ? <span style={roStyle(r)}>{r[field] || '—'}</span>
-    : <input value={r[field]} onChange={e => updateCell(r.uid, field, e.target.value)} placeholder={opts.placeholder} onBlur={opts.onBlur} style={opts.bold ? { ...cellStyle(r), fontWeight: 700 } : cellStyle(r)}/>;
-  const selCell = (r, field, options, opts = {}) => {
-    const editable = !readOnly || opts.forceEditable;
-    if (!editable) return <span style={roStyle(r)}>{r[field] || '—'}</span>;
-    const handle = (e) => { updateCell(r.uid, field, e.target.value); if (opts.onChange) opts.onChange(r.uid, e.target.value); };
-    return (
-      <select value={r[field]} onChange={handle} style={opts.bold ? { ...cellStyle(r), fontWeight: 700 } : cellStyle(r)}>
-        <option value="">—</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    );
-  };
+  const linkBtn = { background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', textDecoration: 'underline' };
 
   return (
     <>
       <div className="loc-toolbar" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 18 }}>
-        {pages.map(p => (
-          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {editingPageId === p.id ? (
-              <input value={pageTitleDraft} onChange={e => setPageTitleDraft(e.target.value)}
-                onBlur={savePageTitle}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); savePageTitle(); } else if (e.key === 'Escape') { e.preventDefault(); setEditingPageId(null); } }}
-                autoFocus style={{ border: '1px solid var(--accent)', borderRadius: 999, padding: '8px 16px', fontSize: 13, fontWeight: 700 }}/>
-            ) : (
-              <>
-                <button className={"filter-pill " + (activePageId === p.id && subTab === 'rows' ? 'active' : '')}
-                  onClick={() => { setActivePageId(p.id); setSubTab('rows'); setScreen('rows'); }} data-cursor="hover">{p.title}</button>
-                {!readOnly && (
-                  <button onClick={() => startEditPageTitle(p.id)} data-cursor="hover" title="Renomear lista"
-                    style={{ background: 'none', border: '1px solid var(--line)', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--ink-dim)' }}>
-                    <Icon name="edit" size={11}/>
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        ))}
-        {!readOnly && (
-          <button onClick={addPage} data-cursor="hover" title="Nova página de lista"
-            style={{ background: 'none', border: '1px dashed var(--line)', borderRadius: 999, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--ink-dim)' }}>
-            <Icon name="plus" size={14}/>
-          </button>
-        )}
+        <button className={"filter-pill " + (subTab === 'busca' ? 'active' : '')} onClick={() => setSubTab('busca')} data-cursor="hover">
+          <Icon name="search" size={12}/> Ordem de serviço
+        </button>
         <div className="loc-toolbar-actions" style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {!readOnly && onChangePassword && (
             <button className="filter-pill" onClick={onChangePassword} data-cursor="hover" title="Alterar a senha da seção Produções"><Icon name="settings" size={12}/> Senha</button>
@@ -2405,204 +2318,64 @@ const LocucoesPanel = ({ pages, setPages, activePageId, setActivePageId, cad, se
           ))}
         </div>
       ) : (
-        <>
-          <div className="admin-toolbar">
-            <div className="admin-search" style={{ margin: 0 }}>
-              <Icon name="search" size={14}/>
-              <input placeholder="Buscar em tudo…" value={q} onChange={e => setQ(e.target.value)}/>
-            </div>
-            <div className="admin-toolbar-group">
-              <span className="admin-toolbar-label">Cliente</span>
-              <select value={fCliente} onChange={e => setFCliente(e.target.value)} data-cursor="hover">
-                <option value="all">todos</option>
-                {(cad.clientes || []).map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div className="admin-toolbar-group">
-              <span className="admin-toolbar-label">Ano</span>
-              <select value={fAno} onChange={e => setFAno(e.target.value)} data-cursor="hover">
-                <option value="all">todos</option>
-                {anoOptions.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
-            <div className="admin-toolbar-group">
-              <span className="admin-toolbar-label">Produtora</span>
-              <select value={fProdutora} onChange={e => setFProdutora(e.target.value)} data-cursor="hover">
-                <option value="all">todas</option>
-                {produtoraOptions.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
-            <div className="admin-toolbar-group">
-              <span className="admin-toolbar-label">Projeto</span>
-              <select value={fProjeto} onChange={e => setFProjeto(e.target.value)} data-cursor="hover">
-                <option value="all">todos</option>
-                {(cad.projetos || []).map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
-            <div className="admin-toolbar-group">
-              <span className="admin-toolbar-label">Empreend.</span>
-              <select value={fEmpreendimento} onChange={e => setFEmpreendimento(e.target.value)} data-cursor="hover">
-                <option value="all">todos</option>
-                {(cad.empreendimentos || []).map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
-            <div className="admin-toolbar-group">
-              <span className="admin-toolbar-label">Categoria</span>
-              <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} data-cursor="hover">
-                <option value="all">todas</option>
-                {(cad.categorias || []).map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
-            {hasFilters && (
-              <button className="filter-pill" onClick={() => { setQ(''); setFCliente('all'); setFAno('all'); setFProdutora('all'); setFProjeto('all'); setFEmpreendimento('all'); setFCategoria('all'); }} data-cursor="hover" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>limpar</button>
-            )}
-          </div>
+        <div className="loc-busca" style={{ maxWidth: 540, margin: '0 auto', paddingTop: '7vh' }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 27, lineHeight: 1.2, marginBottom: 10, textAlign: 'center' }}>Ordem de serviço</h3>
+          <p style={{ fontSize: 13.5, color: 'var(--ink-dim)', lineHeight: 1.65, marginBottom: 24, textAlign: 'center' }}>
+            Digite o <b>#SKY</b> do job. Os dados vêm da planilha de produção — a OS
+            é montada com o que já está lá.
+          </p>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '14px 0' }}>
-            {readOnly
-              ? <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', letterSpacing: '0.14em', color: 'var(--ink-mute)', textTransform: 'uppercase' }}>Somente leitura</span>
-              : <button className="btn btn-accent" style={{ padding: '9px 18px', fontSize: 13 }} onClick={addRow} data-cursor="hover"><Icon name="plus" size={13}/> Nova linha</button>}
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10.5, fontFamily: 'var(--font-mono)', letterSpacing: '0.12em', color: 'var(--ink-mute)', textTransform: 'uppercase' }}>Valor total · {filtered.length} de {rows.length}</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>{totalFmt}</div>
+          <form onSubmit={buscar} style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+            <div className="admin-search" style={{ margin: 0, flex: 1, minWidth: 0 }}>
+              <Icon name="search" size={15}/>
+              <input value={sky} onChange={e => setSky(e.target.value)} placeholder="#SKY171-B"
+                autoFocus spellCheck={false} autoComplete="off"
+                style={{ fontWeight: 700, letterSpacing: '0.04em' }}/>
             </div>
-          </div>
+            <button type="submit" className="btn btn-accent" disabled={buscando || !sky.trim()} data-cursor="hover"
+              style={{ padding: '0 20px', fontSize: 13, whiteSpace: 'nowrap', opacity: (buscando || !sky.trim()) ? 0.5 : 1 }}>
+              {buscando ? <><span className="blink"/> Buscando…</> : <>Abrir OS <Icon name="arrow-right" size={14}/></>}
+            </button>
+          </form>
 
-          <div className="loc-table-wrap" style={{ overflowX: 'auto', border: '1px solid var(--line)', borderRadius: 16 }}>
-            <table className="loc-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1400, fontSize: 12.5 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                  {(readOnly
-                    ? ['', 'ID', 'DATA', 'CLIENTE', 'PRODUTO', 'PROJETO', 'EMPREEND.', 'CATEGORIA', 'MIN.', 'VEIC.', 'PRODUTORA/LOCUTOR', 'STATUS', 'VALOR', 'LIB.', 'OS']
-                    : ['', '', 'ID', 'DATA', 'CLIENTE', 'PRODUTO', 'PROJETO', 'EMPREEND.', 'CATEGORIA', 'MIN.', 'VEIC.', 'PRODUTORA/LOCUTOR', 'STATUS', 'VALOR', 'LIB.', 'OS', '']
-                  ).map((h, i) => (
-                    <th key={i} style={{ padding: '10px 8px', textAlign: 'left', fontSize: 10, fontFamily: 'var(--font-mono)', letterSpacing: '0.08em', color: 'var(--ink-mute)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(r => {
-                  const clienteOpts = mergeOpt(cad.clientes || [], r.cliente);
-                  const projetoOpts = mergeOpt(cad.projetos || [], r.projeto);
-                  const empreendimentoOpts = mergeOpt(cad.empreendimentos || [], r.empreendimento);
-                  const categoriaOpts = mergeOpt(cad.categorias || [], r.categoria);
-                  const dragProps = readOnly ? {} : { draggable: true, onDragStart: () => onRowDragStart(r.uid), onDragOver: e => onRowDragOver(e, r.uid), onDragEnd: onRowDragEnd };
-                  return (
-                    <tr key={r.uid} {...dragProps}
-                      style={{ borderBottom: '1px solid var(--line)', opacity: dragUid === r.uid ? 0.4 : 1 }}>
-                      {!readOnly && <td style={{ padding: '6px 4px', cursor: 'grab', color: 'var(--ink-mute)' }}><Icon name="grip" size={13}/></td>}
-                      {readOnly
-                        ? <td style={{ padding: '6px 4px', textAlign: 'center' }}>{r.sel ? <Icon name="check" size={12} style={{ color: 'var(--ink-mute)' }}/> : null}</td>
-                        : <td style={{ padding: '6px 4px', textAlign: 'center' }}><input type="checkbox" checked={!!r.sel} onChange={() => updateCell(r.uid, 'sel', !r.sel)}/></td>}
-                      <td>{txtCell(r, 'id', { bold: true })}</td>
-                      <td>{txtCell(r, 'data', { placeholder: 'dd/mm/aaaa' })}</td>
-                      <td>{selCell(r, 'cliente', clienteOpts)}</td>
-                      <td>{txtCell(r, 'produto')}</td>
-                      <td>{selCell(r, 'projeto', projetoOpts)}</td>
-                      <td>{selCell(r, 'empreendimento', empreendimentoOpts)}</td>
-                      <td>{selCell(r, 'categoria', categoriaOpts)}</td>
-                      <td>{txtCell(r, 'minutagem')}</td>
-                      <td>{txtCell(r, 'veiculacao', { placeholder: '—' })}</td>
-                      <td>{txtCell(r, 'locutor')}</td>
-                      <td>{selCell(r, 'status', ['RECEBIDO', 'A RECEBER', 'PAGO', 'PENDENTE', 'CANCELADO'], { bold: true, forceEditable: !!onStatusPersist, onChange: onStatusPersist ? (uid, val) => onStatusPersist(uid, val, activePage.id) : undefined })}</td>
-                      <td>{txtCell(r, 'valor', { placeholder: 'R$ 0,00', onBlur: e => { const raw = e.target.value; if (raw && /\d/.test(raw)) { const f = formatBRL(parseBRL(raw)); if (f !== raw) updateCell(r.uid, 'valor', f); } } })}</td>
-                      <td>{selCell(r, 'liberado', ['SIM', 'NÃO', 'PARCIAL'], { bold: true })}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        {r.os ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                            <button className="btn btn-accent" style={{ padding: '4px 10px', fontSize: 10.5 }} onClick={() => openView(r.uid)} data-cursor="hover">Ver OS</button>
-                            <div style={{ display: 'flex', gap: 6, fontSize: 10.5 }}>
-                              {!readOnly && <a onClick={() => openEdit(r.uid)} style={{ cursor: 'pointer', textDecoration: 'underline', color: 'var(--ink-dim)' }}>Editar</a>}
-                              <a onClick={() => downloadRowPdf(r.uid)} style={{ cursor: 'pointer', textDecoration: 'underline', color: 'var(--ink-dim)' }}>PDF</a>
-                            </div>
-                          </div>
-                        ) : (
-                          readOnly ? <span style={{ fontSize: 11, color: 'var(--ink-mute)' }}>—</span>
-                          : <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 10.5 }} onClick={() => generateOS(r.uid)} data-cursor="hover">Gerar OS</button>
-                        )}
-                      </td>
-                      {!readOnly && (
-                        <td style={{ textAlign: 'center' }}>
-                          <button onClick={() => delRow(r.uid)} data-cursor="hover" style={{ background: 'none', border: 'none', color: 'var(--ink-mute)', cursor: 'pointer' }}><Icon name="trash" size={13}/></button>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {filtered.length === 0 && <div style={{ padding: 34, textAlign: 'center', fontSize: 13, color: 'var(--ink-mute)' }}>Nenhuma locução corresponde aos filtros.</div>}
-          </div>
+          <p style={{ fontSize: 11.5, color: 'var(--ink-mute)', marginTop: 10, textAlign: 'center' }}>
+            Pode digitar do jeito que vier: <code>#SKY171-B</code>, <code>sky 171 b</code> ou <code>SKY171B</code>.
+          </p>
 
-          {/* ── Mobile-only: one card per record (toggled via CSS ≤720px) ── */}
-          <div className="loc-cards">
-            {filtered.map(r => {
-              const clienteOpts = mergeOpt(cad.clientes || [], r.cliente);
-              const projetoOpts = mergeOpt(cad.projetos || [], r.projeto);
-              const empreendimentoOpts = mergeOpt(cad.empreendimentos || [], r.empreendimento);
-              const categoriaOpts = mergeOpt(cad.categorias || [], r.categoria);
-              const field = (label, node) => (
-                <div className="loc-card-field">
-                  <span className="loc-card-label">{label}</span>
-                  <div className="loc-card-value">{node}</div>
+          {erro && (
+            <div style={{ marginTop: 18, padding: '13px 16px', borderRadius: 12, border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 13, lineHeight: 1.55 }}>
+              {erro}
+              {!readOnly && (
+                <div style={{ marginTop: 9 }}>
+                  <button onClick={verDiagnostico} data-cursor="hover" style={{ ...linkBtn, fontSize: 12, color: 'var(--ink-dim)' }}>
+                    ver o que o servidor enxerga da planilha
+                  </button>
                 </div>
-              );
-              const isOpen = expandedCards.has(r.uid);
-              return (
-                <div key={r.uid} className={"loc-card" + (r.sel ? " done" : "") + (isOpen ? " expanded" : "")}>
-                  <div className="loc-card-head" onClick={(e) => { if (e.target.closest('input,select,button,a')) return; toggleCard(r.uid); }}>
-                    {readOnly
-                      ? <span className="loc-card-check">{r.sel ? <Icon name="check" size={13}/> : null}</span>
-                      : <input type="checkbox" className="loc-card-check" checked={!!r.sel} onChange={() => updateCell(r.uid, 'sel', !r.sel)}/>}
-                    <div className="loc-card-headmain">
-                      <span className="loc-card-id">{txtCell(r, 'id', { bold: true })}</span>
-                      <span className="loc-card-summary">{[r.cliente, formatBRL(parseBRL(r.valor)) !== 'R$ 0,00' ? formatBRL(parseBRL(r.valor)) : (r.valor || '')].filter(Boolean).join(' · ') || 'Sem dados'}</span>
-                    </div>
-                    <span className="loc-card-status">{selCell(r, 'status', ['RECEBIDO', 'A RECEBER', 'PAGO', 'PENDENTE', 'CANCELADO'], { bold: true, forceEditable: !!onStatusPersist, onChange: onStatusPersist ? (uid, val) => onStatusPersist(uid, val, activePage.id) : undefined })}</span>
-                    <button className="loc-card-toggle" onClick={() => toggleCard(r.uid)} data-cursor="hover" aria-label={isOpen ? 'Recolher' : 'Expandir'}>
-                      <Icon name="chevron-down" size={16}/>
-                    </button>
-                  </div>
-                  {isOpen && (
-                    <>
-                      <div className="loc-card-grid">
-                        {field('Data', txtCell(r, 'data', { placeholder: 'dd/mm/aaaa' }))}
-                        {field('Cliente', selCell(r, 'cliente', clienteOpts))}
-                        {field('Produto', txtCell(r, 'produto'))}
-                        {field('Projeto', selCell(r, 'projeto', projetoOpts))}
-                        {field('Empreend.', selCell(r, 'empreendimento', empreendimentoOpts))}
-                        {field('Categoria', selCell(r, 'categoria', categoriaOpts))}
-                        {field('Min.', txtCell(r, 'minutagem'))}
-                        {field('Veíc.', txtCell(r, 'veiculacao', { placeholder: '—' }))}
-                        {field('Produtora / Locutor', txtCell(r, 'locutor'))}
-                        {field('Liberado', selCell(r, 'liberado', ['SIM', 'NÃO', 'PARCIAL'], { bold: true }))}
-                      </div>
-                      <div className="loc-card-foot">
-                        <div className="loc-card-valor">
-                          <span className="loc-card-label">Valor</span>
-                          {txtCell(r, 'valor', { placeholder: 'R$ 0,00', onBlur: e => { const raw = e.target.value; if (raw && /\d/.test(raw)) { const f = formatBRL(parseBRL(raw)); if (f !== raw) updateCell(r.uid, 'valor', f); } } })}
-                        </div>
-                        <div className="loc-card-actions">
-                          {r.os ? (
-                            <>
-                              <button className="btn btn-accent" style={{ padding: '6px 12px', fontSize: 11 }} onClick={() => openView(r.uid)} data-cursor="hover">Ver OS</button>
-                              {!readOnly && <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 11 }} onClick={() => openEdit(r.uid)} data-cursor="hover">Editar</button>}
-                              <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 11 }} onClick={() => downloadRowPdf(r.uid)} data-cursor="hover">PDF</button>
-                            </>
-                          ) : (
-                            !readOnly && <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 11 }} onClick={() => generateOS(r.uid)} data-cursor="hover">Gerar OS</button>
-                          )}
-                          {!readOnly && <button onClick={() => delRow(r.uid)} data-cursor="hover" className="loc-card-del" title="Excluir"><Icon name="trash" size={14}/></button>}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-            {filtered.length === 0 && <div style={{ padding: 34, textAlign: 'center', fontSize: 13, color: 'var(--ink-mute)' }}>Nenhuma locução corresponde aos filtros.</div>}
-          </div>
-        </>
+              )}
+            </div>
+          )}
+
+          {diag && (
+            <pre style={{ marginTop: 12, fontSize: 11, lineHeight: 1.6, border: '1px solid var(--line)', borderRadius: 12, padding: 14, overflowX: 'auto', color: 'var(--ink-dim)' }}>
+              {JSON.stringify(diag, null, 2)}
+            </pre>
+          )}
+
+          {fonte === 'local' && !erro && (
+            <p style={{ marginTop: 16, fontSize: 12, color: 'var(--ink-mute)', lineHeight: 1.6, textAlign: 'center' }}>
+              A planilha ainda não está configurada — a última busca veio das linhas salvas no banco.
+            </p>
+          )}
+
+          {!readOnly && (
+            <p style={{ marginTop: 28, fontSize: 12.5, color: 'var(--ink-mute)', textAlign: 'center' }}>
+              O job ainda não está na planilha?{' '}
+              <button onClick={abrirEmBranco} data-cursor="hover" style={{ ...linkBtn, fontSize: 12.5, color: 'var(--ink-dim)' }}>
+                abrir uma OS em branco
+              </button>
+            </p>
+          )}
+        </div>
       )}
     </>
   );
@@ -2975,8 +2748,6 @@ const ProducoesShareApp = () => {
   const [err, setErr] = React.useState('');
   const [shake, setShake] = React.useState(false);
   const [loading, setLoading] = React.useState(!!token);
-  const [pages, setPages] = React.useState([]);
-  const [activePageId, setActivePageId] = React.useState(null);
   const [cad, setCad] = React.useState({ clientes: [], projetos: [], empreendimentos: [], categorias: [] });
   const [toasts, setToasts] = React.useState([]);
 
@@ -2990,33 +2761,23 @@ const ProducoesShareApp = () => {
     return () => { delete window.__adminToast; };
   }, []);
 
+  /* A tela não mostra mais uma lista, então isto não é o carregamento do
+     conteúdo: é a checagem do token guardado na sessão. Se ele expirou, o
+     visitante volta para a senha em vez de descobrir isso só ao buscar um
+     #SKY. Pelo mesmo motivo não há mais assinatura de "live": nada aqui
+     depende do estado do servidor até que se busque um job. */
   const load = React.useCallback((tk) => {
     setLoading(true);
     window.API.getLocucoesWith(tk).then(d => {
-      setPages(d.pages || []);
-      setActivePageId(d.activePageId || (d.pages && d.pages[0] && d.pages[0].id) || null);
       setCad(d.cad || { clientes: [], projetos: [], empreendimentos: [], categorias: [] });
       setLoading(false);
     }).catch(() => {
-      // token invalid/expired → clear and show the password gate again
       sessionStorage.removeItem(RO_KEY);
       setToken(''); setLoading(false);
     });
   }, []);
 
   React.useEffect(() => { if (token) load(token); }, []);
-
-  // Live: refresh the read-only view when Produções changes on the server (silent,
-  // keeps the viewer's current page — no loading flash, no active-page reset).
-  React.useEffect(() => {
-    if (!token || !window.FRAMETY_LIVE) return;
-    return window.FRAMETY_LIVE.on('locucoes', () => {
-      window.API.getLocucoesWith(token).then(d => {
-        setPages(d.pages || []);
-        setCad(d.cad || { clientes: [], projetos: [], empreendimentos: [], categorias: [] });
-      }).catch(() => {});
-    });
-  }, [token]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -3059,10 +2820,6 @@ const ProducoesShareApp = () => {
     return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',fontFamily:'var(--font-mono)',fontSize:12,letterSpacing:'0.2em',color:'var(--ink-dim)'}}><span className="blink"/> Carregando…</div>;
   }
 
-  const onStatusPersist = (uid, status, pageId) => {
-    window.API.setProducoesStatus(token, pageId, uid, status).catch(() => window.__adminToast?.("Não foi possível salvar o status."));
-  };
-
   return (
     <div className="admin-shell page-enter" style={{ gridTemplateColumns: '1fr' }}>
       <main className="admin-main">
@@ -3076,11 +2833,9 @@ const ProducoesShareApp = () => {
           </a>
         </div>
         <LocucoesPanel
-          pages={pages} setPages={setPages}
-          activePageId={activePageId} setActivePageId={setActivePageId}
           cad={cad} setCad={setCad}
           readOnly={true}
-          onStatusPersist={onStatusPersist}
+          roToken={token}
         />
       </main>
       {toasts.length > 0 && (

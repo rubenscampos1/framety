@@ -7,6 +7,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { scryptSync, timingSafeEqual } = crypto;
 const { Pool } = require('pg');
+const sheets = require('./sheets');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -947,6 +948,47 @@ app.post('/api/locucoes', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── OS por #SKY — busca o job na planilha do Google ──────────────────────────
+// A aba Produções não guarda mais uma lista: o operador digita o #SKY e o
+// servidor busca aquela linha na planilha. Enquanto a planilha não estiver
+// configurada, caímos nas linhas já salvas no banco, para a tela seguir usável.
+function osRowFromLocalDb(sky) {
+  const key = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '').toUpperCase();
+  const wanted = key(sky);
+  if (!wanted) return null;
+  for (const page of (db.locucoesPages || [])) {
+    for (const r of (page.rows || [])) {
+      if (key(r.id) === wanted) return r;
+    }
+  }
+  return null;
+}
+
+app.get('/api/os/lookup', requireLocucoesRead, async (req, res) => {
+  const sky = String(req.query.sky || '').trim();
+  if (!sky) return res.status(400).json({ error: 'Informe o #SKY do job.' });
+
+  if (!sheets.isConfigured()) {
+    const local = osRowFromLocalDb(sky);
+    if (!local) return res.status(404).json({ error: `Nenhum job com o código "${sky}".`, source: 'local' });
+    return res.json({ row: local, source: 'local' });
+  }
+
+  try {
+    const row = await sheets.lookup(sky);
+    if (!row) return res.status(404).json({ error: `Nenhum job com o código "${sky}" na planilha.`, source: 'sheet' });
+    res.json({ row, source: 'sheet' });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// Diagnóstico da integração (o console mostra isso quando a busca falha).
+app.get('/api/os/sheet-status', requireAuth, async (req, res) => {
+  try { res.json(await sheets.status()); }
+  catch (e) { res.status(500).json({ configured: false, error: e.message }); }
+});
+
 // ── Storyboards ───────────────────────────────────────────────────────────────
 // Admin builds the deck; the client reviews it through a public share slug.
 // Client-facing routes are unauthenticated by design (the slug IS the secret),
@@ -958,6 +1000,33 @@ const SB_MAX_VERSION = 4;
 const SB_ROUNDS = SB_MAX_VERSION - 1;
 const SB_STATUSES = ['v1', 'v2', 'v3', 'v4', 'aprovado'];
 const SB_DISCLAIMER = 'Todo o conteúdo apresentado neste material consiste em representações e projeções baseadas no roteiro, não refletindo necessariamente o resultado final. Alguns elementos poderão sofrer alterações ao longo do desenvolvimento. Este material pode incluir conteúdos gerados por computação gráfica e/ou inteligência artificial.';
+
+// ── Duas trilhas de revisão: o storyboard e o roteiro ────────────────────────
+// Mecânica idêntica (V1 + SB_ROUNDS rodadas, depois aprovação), campos
+// distintos: na produção o roteiro é fechado ANTES de o storyboard ser
+// desenhado, então aprovar um não pode travar o outro.
+//
+// O comentário, porém, é UM SÓ: ele é da cena, e aparece nas duas telas. O que
+// o campo `origem` diz é em qual das duas ele foi escrito — e, portanto, qual
+// rodada o consome quando o cliente envia. Sem isso, comentar no roteiro
+// esvaziaria a rodada do storyboard sem ninguém pedir.
+const SB_TRILHAS = {
+  deck: {
+    chave: 'deck', nome: 'storyboard',
+    ver: 'version', st: 'status',
+    aprovEm: 'approvedAt', aprovPor: 'approvedBy', aprovEmp: 'approvedCompany',
+  },
+  roteiro: {
+    chave: 'roteiro', nome: 'roteiro',
+    ver: 'roteiroVersion', st: 'roteiroStatus',
+    aprovEm: 'roteiroApprovedAt', aprovPor: 'roteiroApprovedBy', aprovEmp: 'roteiroApprovedCompany',
+  },
+};
+const sbTrilha = (escopo) => SB_TRILHAS[escopo === 'roteiro' ? 'roteiro' : 'deck'];
+// Storyboards criados antes da trilha do roteiro não têm os campos: valem V1.
+const sbVer = (sb, t) => sb[t.ver] || 1;
+const sbSt  = (sb, t) => sb[t.st] || ('v' + sbVer(sb, t));
+const sbOrigem = (c) => (c.origem === 'roteiro' ? 'roteiro' : 'deck');
 
 const sbId = (p) => p + crypto.randomBytes(5).toString('hex');
 const sbNow = () => new Date().toISOString();
@@ -1054,6 +1123,9 @@ function sbPublic(sb) {
   return {
     id: sb.id, cliente: sb.cliente, projeto: sb.projeto, categoria: sb.categoria,
     produto: sb.produto, status: sb.status, version: sb.version,
+    // Trilha do roteiro, com o padrão de quem foi criado antes dela existir.
+    roteiroStatus: sbSt(sb, SB_TRILHAS.roteiro), roteiroVersion: sbVer(sb, SB_TRILHAS.roteiro),
+    roteiroApprovedAt: sb.roteiroApprovedAt || null, roteiroApprovedBy: sb.roteiroApprovedBy || '',
     pages: sb.pages, comments: sb.comments, pathSlug: sb.pathSlug,
     lastCommentAt: sb.lastCommentAt, updatedAt: sb.updatedAt,
     // Token de ação: o caminho amigável tem barras e não cabe num parâmetro de
@@ -1087,6 +1159,7 @@ app.post('/api/storyboards', requireAuth, async (req, res) => {
     cliente: trim(b.cliente, 120), projeto: trim(b.projeto, 120),
     categoria: trim(b.categoria, 120), produto: trim(b.produto, 120),
     status: 'v1', version: 1,
+    roteiroStatus: 'v1', roteiroVersion: 1,
     shareSlug: sbNewSlug(),
     pages: sbDefaultPages(),
     comments: [],
@@ -1273,15 +1346,18 @@ app.get('/api/sb/:slug', (req, res) => {
 app.post('/api/sb/:slug/comments', (req, res) => {
   const sb = sbBySlug(req.params.slug);
   if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
-  if (sb.status === 'aprovado') return res.status(409).json({ error: 'Storyboard já aprovado.' });
   const { pageId, author, company, text } = req.body || {};
+  // Quem trava o comentário é a trilha em que ele está sendo escrito: com o
+  // roteiro aprovado ainda se comenta o storyboard, e vice-versa.
+  const t = sbTrilha((req.body || {}).origem);
+  if (sbSt(sb, t) === 'aprovado') return res.status(409).json({ error: `O ${t.nome} já foi aprovado.` });
   if (!trim(text, 4000)) return res.status(400).json({ error: 'Comentário vazio.' });
   if (!(sb.pages || []).some(p => p.id === pageId)) return res.status(400).json({ error: 'Página inválida.' });
   const c = {
-    id: sbId('c_'), pageId,
+    id: sbId('c_'), pageId, origem: t.chave,
     author: trim(author, 80) || 'Cliente', company: trim(company, 80),
     text: trim(text, 4000),
-    version: sb.version, createdAt: sbNow(), submitted: false,
+    version: sbVer(sb, t), createdAt: sbNow(), submitted: false,
   };
   sb.comments.push(c);
   sb.lastCommentAt = c.createdAt;
@@ -1306,35 +1382,40 @@ app.delete('/api/sb/:slug/comments/:cid', (req, res) => {
 app.post('/api/sb/:slug/submit', (req, res) => {
   const sb = sbBySlug(req.params.slug);
   if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
-  if (sb.status === 'aprovado') return res.status(409).json({ error: 'Storyboard já aprovado.' });
-  if ((sb.version || 1) >= SB_MAX_VERSION) {
-    return res.status(409).json({ error: `As ${SB_ROUNDS} rodadas de alteração deste storyboard já foram usadas.` });
+  const t = sbTrilha((req.body || {}).escopo);
+  if (sbSt(sb, t) === 'aprovado') return res.status(409).json({ error: `O ${t.nome} já foi aprovado.` });
+  if (sbVer(sb, t) >= SB_MAX_VERSION) {
+    return res.status(409).json({ error: `As ${SB_ROUNDS} rodadas de alteração deste ${t.nome} já foram usadas.` });
   }
-  const pending = (sb.comments || []).filter(c => !c.submitted);
+  // Só os comentários escritos NESTA trilha entram na rodada dela. Os da outra
+  // continuam visíveis nas duas telas, esperando a rodada a que pertencem.
+  const pending = (sb.comments || []).filter(c => !c.submitted && sbOrigem(c) === t.chave);
   if (!pending.length) return res.status(400).json({ error: 'Nenhum comentário para enviar.' });
   pending.forEach(c => { c.submitted = true; });
-  sb.version = Math.min(sb.version + 1, SB_MAX_VERSION);
-  sb.status = 'v' + sb.version;
+  sb[t.ver] = Math.min(sbVer(sb, t) + 1, SB_MAX_VERSION);
+  sb[t.st] = 'v' + sb[t.ver];
   sb.lastCommentAt = sbNow();
   sb.unread = (sb.unread || 0) + pending.length;
   sb.updatedAt = sbNow();
   save();
-  res.json({ ok: true, status: sb.status, version: sb.version });
+  res.json({ ok: true, escopo: t.chave, status: sb[t.st], version: sb[t.ver] });
 });
 
 app.post('/api/sb/:slug/approve', (req, res) => {
   const sb = sbBySlug(req.params.slug);
   if (!sb) return res.status(404).json({ error: 'Storyboard não encontrado.' });
   const { author, company } = req.body || {};
-  (sb.comments || []).forEach(c => { c.submitted = true; });
-  sb.status = 'aprovado';
-  sb.approvedAt = sbNow();
-  sb.approvedBy = trim(author, 80) || 'Cliente';
-  sb.approvedCompany = trim(company, 80);
+  const t = sbTrilha((req.body || {}).escopo);
+  // Fecha só os comentários desta trilha: os da outra ainda têm rodada aberta.
+  (sb.comments || []).forEach(c => { if (sbOrigem(c) === t.chave) c.submitted = true; });
+  sb[t.st] = 'aprovado';
+  sb[t.aprovEm] = sbNow();
+  sb[t.aprovPor] = trim(author, 80) || 'Cliente';
+  sb[t.aprovEmp] = trim(company, 80);
   sb.unread = (sb.unread || 0) + 1;
   sb.updatedAt = sbNow();
   save();
-  res.json({ ok: true, status: sb.status });
+  res.json({ ok: true, escopo: t.chave, status: sb[t.st] });
 });
 
 // ── Links (short-link redirects) ──────────────────────────────────────────────
