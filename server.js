@@ -989,6 +989,33 @@ app.get('/api/os/sheet-status', requireAuth, async (req, res) => {
   catch (e) { res.status(500).json({ configured: false, error: e.message }); }
 });
 
+/* Endereço da planilha, guardado no BANCO e editado no console. Fica aqui, e
+   não no código, porque o repositório é público: publicar o link entregaria
+   cachê e fornecedor de todos os jobs a quem passasse pelo GitHub. E fica no
+   banco, e não numa variável do Render, para poder ser trocado sem deploy. */
+app.get('/api/os/sheet-config', requireAuth, (req, res) => {
+  const cfg = db.settings.osSheet || {};
+  res.json({ spreadsheetId: cfg.spreadsheetId || '', gid: cfg.gid || '' });
+});
+
+app.post('/api/os/sheet-config', requireAuth, async (req, res) => {
+  const bruto = trim((req.body || {}).spreadsheetId, 400);
+  const gid = trim((req.body || {}).gid, 40);
+  // Aceita o ID puro ou a URL inteira colada da barra do navegador.
+  const id = bruto ? sheets.normalizeSpreadsheetId(bruto) : '';
+  if (bruto && !/^[a-zA-Z0-9-_]{20,}$/.test(id)) {
+    return res.status(400).json({ error: 'Endereço de planilha inválido. Cole a URL inteira ou só o ID.' });
+  }
+  db.settings.osSheet = id ? { spreadsheetId: id, gid } : null;
+  sheets.usarConfig(db.settings.osSheet);
+  try { await saveDB(db); }
+  catch (e) { return res.status(500).json({ error: 'Não foi possível salvar.' }); }
+  // Devolve o diagnóstico já com a planilha nova: quem salvou vê na hora se
+  // colou o endereço certo, em vez de descobrir na primeira busca que falha.
+  try { res.json({ ok: true, status: await sheets.status() }); }
+  catch (e) { res.json({ ok: true, status: { configured: false, error: e.message } }); }
+});
+
 // ── Storyboards ───────────────────────────────────────────────────────────────
 // Admin builds the deck; the client reviews it through a public share slug.
 // Client-facing routes are unauthenticated by design (the slug IS the secret),
@@ -1527,6 +1554,10 @@ setInterval(() => {
     if (v.aiGenerated === undefined) { v.aiGenerated = false; _backfilled = true; }
   });
   if (_backfilled) await saveDB(db);
+
+  // Planilha de jobs: o endereço salvo pelo console tem precedência sobre o
+  // arquivo local e as variáveis de ambiente. Ver sheets.js.
+  sheets.usarConfig(db.settings.osSheet);
 
   app.listen(PORT, () => {
     console.log(`\n  Framety  →  http://localhost:${PORT}/Framety.html\n`);

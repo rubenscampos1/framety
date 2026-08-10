@@ -20,7 +20,26 @@ const CONFIG_FILE = path.join(DIR, 'os-sheet.config.json');
 // cada #SKY digitado sem deixar o dado velho o suficiente para atrapalhar.
 const CACHE_MS = 60 * 1000;
 
-/* ── Configuração ─────────────────────────────────────────────────────────── */
+/* ── Configuração ─────────────────────────────────────────────────────────────
+   Três origens, nesta ordem de precedência:
+
+   1. o BANCO — o endereço colado no console, em Produções. É o único que o
+      operador troca sozinho, sem deploy e sem mexer no Render, e por isso ganha
+      dos outros dois;
+   2. os-sheet.config.json, para quem roda o projeto na própria máquina;
+   3. variáveis de ambiente, para uma instalação que prefira configurar por ali.
+
+   O endereço da planilha NÃO mora no código: o repositório é público, e a
+   planilha está aberta para leitura — publicar o link ali entregaria cachê e
+   fornecedor de todos os jobs a quem passasse pelo GitHub. */
+let doBanco = null;
+
+// Chamado pelo servidor no boot e a cada vez que o console salva.
+function usarConfig(cfg) {
+  doBanco = cfg && cfg.spreadsheetId ? { ...cfg } : null;
+  clearCache();   // a planilha pode ter mudado; não servir a anterior
+}
+
 function readConfig() {
   let file = {};
   if (fs.existsSync(CONFIG_FILE)) {
@@ -28,11 +47,11 @@ function readConfig() {
     catch (e) { throw new Error('os-sheet.config.json inválido: ' + e.message); }
   }
   return {
-    spreadsheetId: file.spreadsheetId || process.env.GSHEET_ID || '',
+    spreadsheetId: (doBanco && doBanco.spreadsheetId) || file.spreadsheetId || process.env.GSHEET_ID || '',
     // A exportação em CSV identifica a aba pelo gid, não pelo nome — ele está
     // na própria URL da planilha, depois de "#gid=".
-    gid: String(file.gid == null ? (process.env.GSHEET_GID || '') : file.gid).trim(),
-    columns: file.columns || null,
+    gid: String((doBanco && doBanco.gid) || (file.gid == null ? (process.env.GSHEET_GID || '') : file.gid) || '').trim(),
+    columns: (doBanco && doBanco.columns) || file.columns || null,
   };
 }
 
@@ -198,7 +217,7 @@ async function lookup(sky) {
 
   const cfg = readConfig();
   if (!normalizeSpreadsheetId(cfg.spreadsheetId)) {
-    throw new Error('NOT_CONFIGURED: falta o endereço da planilha em os-sheet.config.json.');
+    throw new Error('NOT_CONFIGURED: nenhuma planilha conectada.');
   }
 
   const values = await fetchValues(cfg);
@@ -257,7 +276,7 @@ async function status() {
     error: '',
   };
   if (!id) {
-    out.error = 'Falta o endereço da planilha em os-sheet.config.json.';
+    out.error = 'Nenhuma planilha conectada. Cole o endereço dela no campo abaixo.';
     return out;
   }
   try {
@@ -274,4 +293,4 @@ async function status() {
   return out;
 }
 
-module.exports = { lookup, status, isConfigured, clearCache, normalizeSpreadsheetId };
+module.exports = { lookup, status, isConfigured, clearCache, normalizeSpreadsheetId, usarConfig };

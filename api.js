@@ -90,6 +90,10 @@
     // OS por #SKY — busca o job na planilha do Google
     lookupOs:      (sky)   => req('GET',  '/api/os/lookup?sky=' + encodeURIComponent(sky)),
     getSheetStatus:()      => req('GET',  '/api/os/sheet-status'),
+    // Endereço da planilha: guardado no banco, editado no console — não vai
+    // para o repositório (que é público) nem depende de variável no Render.
+    getSheetConfig:()      => req('GET',  '/api/os/sheet-config'),
+    saveSheetConfig:(data) => req('POST', '/api/os/sheet-config', data),
     // Mesma busca pelo link somente-leitura (token próprio, não o do admin).
     lookupOsWith:  (token, sky) => fetch('/api/os/lookup?sky=' + encodeURIComponent(sky), { headers: { 'x-auth-token': token } })
       .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw d; return d; }),

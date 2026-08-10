@@ -2245,6 +2245,38 @@ const LocucoesPanel = ({ cad, setCad, readOnly = false, roToken = '', onShare, o
       .catch(ex => setDiag({ configured: false, error: (ex && ex.error) || 'Não consegui ler o diagnóstico.' }));
   };
 
+  /* Endereço da planilha, editado aqui e guardado no banco. Fora do código de
+     propósito: o repositório é público, e o link dá leitura a cachê e
+     fornecedor de todos os jobs. Fora do Render também, para trocar de planilha
+     não exigir um deploy. */
+  const [cfgAberta, setCfgAberta] = React.useState(false);
+  const [cfgUrl, setCfgUrl] = React.useState('');
+  const [cfgSalvando, setCfgSalvando] = React.useState(false);
+  const [cfgAviso, setCfgAviso] = React.useState(null);
+  const [temPlanilha, setTemPlanilha] = React.useState(null);   // null = ainda perguntando
+
+  React.useEffect(() => {
+    if (readOnly) return;
+    window.API.getSheetConfig()
+      .then(c => { setCfgUrl(c.spreadsheetId || ''); setTemPlanilha(!!c.spreadsheetId); })
+      .catch(() => setTemPlanilha(false));
+  }, [readOnly]);
+
+  const salvarPlanilha = async () => {
+    setCfgSalvando(true); setCfgAviso(null);
+    try {
+      const r = await window.API.saveSheetConfig({ spreadsheetId: cfgUrl.trim() });
+      const st = r.status || {};
+      setTemPlanilha(!!cfgUrl.trim());
+      setCfgAviso(st.configured
+        ? { ok: true, txt: `Planilha conectada: ${st.rows} linhas, cabeçalho na linha ${st.headerRow}.` }
+        : { ok: false, txt: st.error || 'Salvei, mas não consegui ler a planilha.' });
+      if (st.configured) { setErro(''); setDiag(null); }
+    } catch (ex) {
+      setCfgAviso({ ok: false, txt: (ex && ex.error) || 'Não foi possível salvar.' });
+    } finally { setCfgSalvando(false); }
+  };
+
   const updateOS = (field, value) => setDoc(d => (d ? { ...d, os: { ...d.os, [field]: value } } : d));
 
   const addCadItem = (key) => {
@@ -2374,6 +2406,45 @@ const LocucoesPanel = ({ cad, setCad, readOnly = false, roToken = '', onShare, o
                 abrir uma OS em branco
               </button>
             </p>
+          )}
+
+          {/* Conectar a planilha. Aberto de saída enquanto não houver nenhuma —
+              sem ela a aba busca nas linhas velhas do banco, e o operador
+              precisa saber onde resolver isso. */}
+          {!readOnly && temPlanilha !== null && (
+            <div style={{ marginTop: 30, paddingTop: 18, borderTop: '1px solid var(--line)' }}>
+              {(cfgAberta || !temPlanilha) ? (
+                <div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-dim)', marginBottom: 8, lineHeight: 1.6 }}>
+                    <b style={{ color: 'var(--ink)' }}>Planilha de produção.</b>{' '}
+                    Cole o endereço da planilha (a URL inteira serve). Ela precisa estar
+                    compartilhada como <i>qualquer pessoa com o link pode ver</i>.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={cfgUrl} onChange={e => setCfgUrl(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); salvarPlanilha(); } }}
+                      placeholder="https://docs.google.com/spreadsheets/d/…"
+                      spellCheck={false} style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}/>
+                    <button className="btn btn-accent" onClick={salvarPlanilha} data-cursor="hover"
+                      disabled={cfgSalvando} style={{ padding: '0 16px', fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                      {cfgSalvando ? 'Conferindo…' : 'Conectar'}
+                    </button>
+                  </div>
+                  {cfgAviso && (
+                    <p style={{ marginTop: 9, fontSize: 12, lineHeight: 1.55,
+                      color: cfgAviso.ok ? 'var(--ink-dim)' : 'var(--accent)' }}>
+                      {cfgAviso.ok ? '✓ ' : ''}{cfgAviso.txt}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p style={{ fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', margin: 0 }}>
+                  Planilha conectada.{' '}
+                  <button onClick={() => { setCfgAberta(true); setCfgAviso(null); }} data-cursor="hover"
+                    style={{ ...linkBtn, fontSize: 12, color: 'var(--ink-dim)' }}>trocar</button>
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}
