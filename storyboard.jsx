@@ -1008,14 +1008,28 @@ const SBRoteiro = ({ sb, onClose, editable = false, onAddCena = null, onEditarCe
     if (!mesa) return;
     const medir = () => {
       const disp = mesa.clientWidth - 32;          // respiro dos lados
-      setZoom(Math.min(1, Math.max(0.35, disp / SB_A4_W)));
+      /* Numa tela larga a folha CRESCE um pouco em vez de boiar num vão de
+         cinza — é o que um editor de texto faz com o zoom. O teto de 1,25 é
+         para o documento não virar um cartaz; o piso de 0,35 é para caber num
+         celular sem sumir. */
+      setZoom(Math.max(0.35, Math.min(1.25, disp / SB_A4_W)));
     };
     medir();
+    /* A primeira medida sai antes de o layout assentar: a coluna do painel de
+       comentários ainda está saindo da tela e as folhas ainda estão nascendo,
+       então a folha abria menor do que cabia. Um quadro não basta — o assentar
+       leva mais de um. Remedir algumas vezes logo depois custa nada e sempre
+       chega no valor certo; o ResizeObserver cobre o resto da vida da tela. */
+    const raf = requestAnimationFrame(medir);
+    const tempos = [120, 400].map((ms) => setTimeout(medir, ms));
     const ro = new ResizeObserver(medir);
     ro.observe(mesa);
     window.addEventListener("resize", medir);
-    return () => { ro.disconnect(); window.removeEventListener("resize", medir); };
-  }, [comComentarios]);
+    return () => {
+      cancelAnimationFrame(raf); tempos.forEach(clearTimeout); ro.disconnect();
+      window.removeEventListener("resize", medir);
+    };
+  }, [comComentarios, paginas]);
 
   const porCena = React.useMemo(() => {
     const m = {};
@@ -1165,13 +1179,13 @@ const SBRoteiro = ({ sb, onClose, editable = false, onAddCena = null, onEditarCe
         <div className="sb-rot-acts">
           {erro && <span className="sb-rot-erro">{erro}</span>}
           <button className="sb-rot-btn" onClick={copiar}>
-            <Icon name="copy" size={13} /> {copiado ? "Copiado" : "Copiar texto"}
+            <Icon name="copy" size={13} /> <span className="sb-rot-btn-txt">{copiado ? "Copiado" : "Copiar texto"}</span>
           </button>
           <button className="sb-rot-btn" onClick={baixarTxt}>
-            <Icon name="download" size={13} /> .txt
+            <Icon name="download" size={13} /> <span className="sb-rot-btn-txt">.txt</span>
           </button>
           <button className="sb-rot-btn destaque" onClick={baixarPdf} disabled={pdfBusy || !total}>
-            <Icon name="download" size={13} /> {pdfBusy ? "Gerando…" : "Baixar PDF"}
+            <Icon name="download" size={13} /> <span className="sb-rot-btn-txt">{pdfBusy ? "Gerando…" : "Baixar PDF"}</span>
           </button>
           <button className="sb-rot-btn fechar" onClick={onClose} title="Fechar o roteiro (R ou Esc)">×</button>
         </div>
@@ -2247,7 +2261,7 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
         </div>
       </header>
 
-      <div className="sb-workspace">
+      <div className={`sb-workspace ${roteiroAberto ? "comroteiro" : ""}`}>
         {/* A tarja flutua sobre o documento em vez de ser uma linha da coluna.
             Entrando e saindo do fluxo a cada tecla, ela mudava a altura do palco
             e a folha era reescalada junto — o documento "pulava" enquanto se
@@ -2649,7 +2663,7 @@ const StoryboardSharePage = () => {
     <div className="sb-share">
       <style>{SB_CSS}</style>
 
-      <div className="sb-workspace">
+      <div className={`sb-workspace ${roteiroAberto ? "comroteiro" : ""}`}>
         {/* A identificação do documento vai de pé, na calha do palco: é o que
             libera a altura inteira da janela para a folha. */}
         <SBDeck sb={sb} editable={false} current={current} setCurrent={setCurrent}
@@ -2901,6 +2915,10 @@ body.sb-appmode .admin-topbar{ display:none; }
    sem entrar no fluxo (ver .sb-dirty). */
 .sb-workspace{ position:relative; display:grid; grid-template-columns:minmax(0,1fr) clamp(260px,21vw,370px); gap:14px; align-items:stretch;
   flex:1; min-height:0; }
+/* Com o roteiro aberto o painel de comentários do deck sai da tela, mas a
+   COLUNA dele continuava reservada aqui — um vão morto de até 370px à direita
+   do documento. Uma coluna só enquanto o roteiro estiver no ar. */
+.sb-workspace.comroteiro{ grid-template-columns:minmax(0,1fr); }
 /* As setas deixaram de ser colunas do grid e passaram a flutuar sobre as
    bordas do palco: são ~96px de largura que voltam para o documento. */
 /* Palco = calha vertical + folha. Nada de faixa horizontal: a folha é limitada
@@ -3592,5 +3610,65 @@ body.sb-appmode .admin-topbar{ display:none; }
   .sb-ed-in{ min-width:0; flex:1 1 44%; font-size:12.5px; padding:7px 9px; }
   .sb-versionchip{ padding:6px 10px; }
   .sb-versionchip b{ font-size:11.5px; }
+}
+
+/* ── roteiro no celular: reflui, não encolhe ──────────────────────────────────
+   Uma folha A4 tem 794px. Num retrato de 375px ela caberia com 0,43 de escala,
+   e o texto de 12,5px viraria 5px — ilegível em qualquer arranjo. E com o
+   painel de comentários lado a lado sobravam 23px de mesa. Aqui a folha para de
+   ser papel em miniatura: solta a largura fixa, a tabela empilha e o painel
+   desce para baixo do documento.
+
+   A exportação em PDF continua saindo em A4 porque ela clona a folha para um
+   palco preso ao <body>, fora de .sb-roteiro — nenhuma regra daqui alcança o
+   clone. Vale a mesma condição do deck (largura OU altura): o mesmo aparelho
+   deitado tem 812px de largura e 375 de altura. */
+@media (max-width:760px), (max-height:520px) {
+  /* No celular o palco é baixo (a folha do deck reflui e ocupa pouca altura), e
+     a sobreposição, presa a ele por inset:0, nascia com a altura do palco — uns
+     40px de mesa. Aqui ela solta do palco e toma a tela: ler um documento no
+     telefone é uma coisa de tela cheia, e o × fecha. */
+  .sb-roteiro{ position:fixed; inset:0; z-index:200; border-radius:0; border:none; }
+  /* documento em cima, comentários embaixo */
+  .sb-rot-corpo{ flex-direction:column; }
+  .sb-rot-side{ width:100%; flex:none; max-height:46vh; border-left:none;
+    border-top:1px solid rgba(255,255,255,0.12); }
+  .sb-rot-side-lista{ padding:8px 10px; }
+
+  /* cabeçalho: alvos de toque de ~40px e sem texto que não cabe */
+  .sb-rot-head{ padding:8px 10px; gap:8px; }
+  .sb-rot-tit span{ display:none; }
+  .sb-rot-acts{ gap:5px; }
+  .sb-rot-btn{ padding:9px 10px; min-height:38px; }
+  .sb-rot-btn .sb-rot-btn-txt{ display:none; }
+
+  .sb-rot-mesa{ padding:12px 0 24px; gap:14px; }
+  /* a folha deixa de ser A4 em miniatura */
+  .sb-roteiro .sb-folha { width:100%; min-height:0; padding:24px 16px 34px;
+    transform:none; margin-bottom:0; box-shadow:0 3px 12px rgba(0,0,0,.4); }
+  .sb-roteiro .sb-folha-pe { position:static; margin-top:18px; left:auto; right:auto; bottom:auto; }
+  .sb-roteiro .sb-rot-logo { width:180px; }
+  .sb-roteiro .sb-rot-doc-head { padding-bottom:14px; }
+
+  /* a tabela vira uma pilha: VÍDEO e, embaixo, ÁUDIO */
+  .sb-roteiro .sb-rot-tab, .sb-roteiro .sb-rot-tab tbody, .sb-roteiro .sb-rot-tab tr, .sb-roteiro .sb-rot-tab td { display:block; width:auto; }
+  .sb-roteiro .sb-rot-tab colgroup, .sb-roteiro .sb-rot-tab col { display:none; }
+  /* Depois da regra acima, de propósito: ".sb-rot-tab" acabou de mandar todas
+     as tabelas serem "block", inclusive esta. Os rótulos de coluna do topo não
+     servem a uma tabela empilhada — quem diz o que é cada bloco agora é o
+     ::before de cada célula. */
+  .sb-roteiro .sb-rot-tab.sb-rot-colunas { display:none; }
+  .sb-roteiro .sb-rot-tab td { border-top:none; }
+  .sb-roteiro .sb-rot-tab tr > td:first-child { border-top:1px solid #999; }
+  /* empilhado, cada bloco precisa dizer o que é — no papel isso vinha do
+     cabeçalho de colunas, que aqui não existe mais */
+  .sb-roteiro .sb-rot-tab tbody td::before { display:block; font-size:8.5px; letter-spacing:.16em;
+    color:#888; margin-bottom:4px; }
+  .sb-roteiro .sb-rot-tab tbody td:first-child::before { content:"VÍDEO"; }
+  .sb-roteiro .sb-rot-tab tbody td:last-child::before { content:"ÁUDIO"; }
+  /* a cópia invisível de "CENA NN" existia só para alinhar duas colunas */
+  .sb-roteiro .sb-rot-cena-n.vazia { display:none; }
+  .sb-roteiro .sb-rot-cena-n { font-size:12px; }
+  .sb-roteiro .sb-rot-add { padding:14px; }
 }
 `;
