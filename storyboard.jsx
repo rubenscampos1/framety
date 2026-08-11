@@ -245,6 +245,97 @@ const sbSlugDaUrl = () => {
 };
 
 /* Carrega um script externo uma única vez (libs de PDF sob demanda). */
+/* ── Reduzir a imagem antes de enviar ─────────────────────────────────────────
+   A folha do storyboard tem 1280px de largura e o PDF sai dela. Uma foto de
+   câmera chega com 6000px e 20MB: o excedente não aparece em lugar nenhum —
+   só pesa no envio, no armazenamento e no carregamento da página do cliente.
+
+   E existe um teto real do outro lado: o plano do Cloudinary recusa imagem
+   acima de 10MB, e nenhuma linha aqui levanta esse limite. Reduzir antes de
+   enviar é o que permite arrastar uma foto de 20MB (ou 50) e ela entrar.
+
+   2560px é o dobro da folha — sobra para o cliente dar zoom e para a
+   rasterização do PDF, que captura em `scale: 2`. Abaixo dos limites, o arquivo
+   sobe intacto: reencodar uma imagem que já cabe só tiraria qualidade à toa. */
+const SB_IMG_MAX_LADO  = 2560;
+const SB_IMG_MAX_BYTES = 8 * 1024 * 1024;
+
+const sbMB = (b) => (b / 1024 / 1024).toFixed(1).replace(".", ",") + " MB";
+
+/* Decodifica sem prender a aba: createImageBitmap quando existe, senão <img>. */
+const sbDecodificar = async (file) => {
+  if (window.createImageBitmap) {
+    try { return await createImageBitmap(file); } catch (e) { /* cai no <img> */ }
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    return await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("não consegui ler a imagem"));
+      img.src = url;
+    });
+  } finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
+};
+
+/* Devolve { arquivo, reduzida, de, para }. Nunca lança: se algo falhar no
+   caminho, manda o original e deixa o servidor decidir — perder o envio por
+   causa da otimização seria pior do que enviar grande. */
+async function sbPrepararImagem(file) {
+  const tipo = file.type || "";
+  /* SVG é vetor (não tem pixel para reduzir) e GIF perderia a animação ao
+     passar pelo canvas. Os dois são pequenos na prática. */
+  if (/svg|gif/.test(tipo)) return { arquivo: file, reduzida: false };
+
+  let img = null;
+  try {
+    img = await sbDecodificar(file);
+    const ladoMaior = Math.max(img.width, img.height);
+    const cabe = file.size <= SB_IMG_MAX_BYTES && ladoMaior <= SB_IMG_MAX_LADO;
+    if (cabe) return { arquivo: file, reduzida: false };
+
+    const escala = Math.min(1, SB_IMG_MAX_LADO / ladoMaior);
+    const w = Math.max(1, Math.round(img.width * escala));
+    const h = Math.max(1, Math.round(img.height * escala));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, w, h);
+
+    /* PNG continua PNG: pode ter transparência, e virar JPEG poria fundo preto
+       onde havia recorte. O resto vira JPEG, que é o formato das fotos. */
+    const png = /png/.test(tipo);
+    let blob = await new Promise((r) => canvas.toBlob(r, png ? "image/png" : "image/jpeg", png ? undefined : 0.9));
+    let virouJpeg = false;
+
+    /* PNG guarda pixel a pixel: uma foto salva em PNG continua enorme mesmo
+       depois de reduzida, e voltaria a esbarrar no teto do armazenamento.
+       Nesse caso vale mais entregar a imagem em JPEG do que falhar o envio —
+       com fundo branco, senão o que era transparente sairia preto. */
+    if (blob && png && blob.size > SB_IMG_MAX_BYTES) {
+      ctx.globalCompositeOperation = "destination-over";
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w, h);
+      const jpeg = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.9));
+      if (jpeg && jpeg.size < blob.size) { blob = jpeg; virouJpeg = true; }
+    }
+    if (!blob) return { arquivo: file, reduzida: false };
+
+    // Reduzir e ficar maior acontece com PNG de pouca cor: nesse caso, original.
+    if (blob.size >= file.size) return { arquivo: file, reduzida: false };
+
+    const nome = (file.name || "imagem").replace(/\.[^.]+$/, "") + (png && !virouJpeg ? ".png" : ".jpg");
+    const arquivo = new File([blob], nome, { type: blob.type, lastModified: Date.now() });
+    return { arquivo, reduzida: true, de: file.size, para: blob.size, largura: w, altura: h };
+  } catch (e) {
+    return { arquivo: file, reduzida: false };
+  } finally {
+    if (img && img.close) img.close();   // libera o ImageBitmap
+  }
+}
+
 const sbLoadScript = (src) => new Promise((resolve, reject) => {
   if ([...document.scripts].some((s) => s.src === src)) return resolve();
   const el = document.createElement("script");
@@ -2117,9 +2208,16 @@ const SBEditor = ({ sb: initial, onBack, onPatch, addToast, startInEdit = false,
     }
     setEnviando(true);
     try {
-      const { url, publicId } = await window.API.uploadStoryboardImage(sb.id, file);
+      /* Reduz antes de subir. Uma foto de câmera tem muito mais pixel do que a
+         folha usa, e o armazenamento recusa acima de 10MB — sem isto, arrastar
+         uma foto de 20MB simplesmente falhava. */
+      const prep = await sbPrepararImagem(file);
+      const { url, publicId } = await window.API.uploadStoryboardImage(sb.id, prep.arquivo);
       const novo = sbBumpSlot(antes, { url, publicId });
       setSlot(pageIdx, slotIdx, novo);
+      if (prep.reduzida) {
+        addToast(`Imagem otimizada para o envio: ${sbMB(prep.de)} → ${sbMB(prep.para)} (${prep.largura}×${prep.altura}).`, "success");
+      }
       if (novo.version > 1) addToast(`Nova versão enviada: esta cena está na V${novo.version}.`, "success");
     } catch (err) { addToast(err.error || "Falha no envio da imagem.", "error"); }
     finally { setEnviando(false); }
