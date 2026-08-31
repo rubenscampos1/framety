@@ -2488,15 +2488,7 @@ async function exportOsPdf(rootEl, filename) {
     return;
   }
 
-  // Capture the pipefy link's on-screen position before cloning, so we can
-  // overlay a clickable link area in the PDF.
-  let linkRect = null;
-  const linkEl = rootEl.querySelector('textarea[data-field="pipefyLink"]');
-  if (linkEl && /^https?:\/\//i.test(linkEl.value.trim())) {
-    const srcRect = rootEl.getBoundingClientRect();
-    const elRect = linkEl.getBoundingClientRect();
-    linkRect = { url: linkEl.value.trim(), x: elRect.left - srcRect.left, y: elRect.top - srcRect.top, w: elRect.width, h: elRect.height };
-  }
+  const pipefyUrl = (rootEl.querySelector('textarea[data-field="pipefyLink"]')?.value || '').trim();
 
   // Clone off-screen and swap textareas/inputs for plain wrapped text nodes:
   // html2canvas doesn't render multi-line textarea values correctly.
@@ -2526,8 +2518,38 @@ async function exportOsPdf(rootEl, filename) {
     div.style.width = orig.offsetWidth + 'px';
     div.style.flex = cs.flex;
     div.style.padding = cs.padding;
+    // Wrap the pipefy URL so we can measure exactly where it lands *in the clone*.
+    // Measuring it on screen doesn't work: these divs replace bordered textareas, so the
+    // clone's layout drifts a couple of px per field and the link ends up way off.
+    if (orig.dataset.field === 'pipefyLink' && /^https?:\/\//i.test(pipefyUrl)) {
+      div.textContent = '';
+      const span = document.createElement('span');
+      span.textContent = orig.value;
+      span.setAttribute('data-pdf-link', '1');
+      div.appendChild(span);
+    }
     el.replaceWith(div);
   });
+
+  // Now that the clone is laid out, take the link's box from the span itself, so the
+  // clickable area matches the text as rendered into the PDF image.
+  let linkRect = null;
+  const linkSpan = clone.querySelector('span[data-pdf-link]');
+  if (linkSpan) {
+    const cloneRect = clone.getBoundingClientRect();
+    const spanRect = linkSpan.getBoundingClientRect();
+    // The span box hugs the glyphs; grow it to the line box (plus a hair) and centre it
+    // on the text so the hotspot is comfortable to hit without drifting off the line.
+    const lineH = parseFloat(getComputedStyle(linkSpan.parentNode).lineHeight) || spanRect.height;
+    const h = Math.max(spanRect.height, lineH) + 4;
+    linkRect = {
+      url: pipefyUrl,
+      x: spanRect.left - cloneRect.left,
+      y: spanRect.top - cloneRect.top - (h - spanRect.height) / 2,
+      w: spanRect.width,
+      h,
+    };
+  }
 
   try {
     const canvas = await window.html2canvas(clone, { backgroundColor: '#ffffff', scale: 1.5, useCORS: true });
