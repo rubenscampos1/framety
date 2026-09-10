@@ -1,7 +1,7 @@
 /* app.jsx — root + routing + global search */
 const FRAMETY_TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "accent": "#E63946",
-  "accentMode": "neon-red",
+  "accent": "#2E86C1",
+  "accentMode": "skyline-blue",
   "showCursor": false,
   "glassIntensity": 18,
   "showAdminHint": false
@@ -41,6 +41,15 @@ const parseUrl = () => {
   // Tutorial / suporte ao cliente — but NOT /console/tutorial (that's admin)
   if (p === "/tutorial" || p.startsWith("/tutorial/") || p.startsWith("/tutorial?")) {
     return { page: "tutorial", catId: null, tab: null };
+  }
+  // Novidades — o mini blog, montado no console
+  if (p === "/novidades" || p.startsWith("/novidades/") || p.startsWith("/novidades?")) {
+    return { page: "novidades", catId: null, tab: null };
+  }
+
+  // Minigame escondido: /play, ou digitando "play" em qualquer lugar do site
+  if (p === "/play" || p.startsWith("/play?")) {
+    return { page: "play", catId: null, tab: null };
   }
 
   // Presentation Mode
@@ -98,7 +107,7 @@ const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, admi
   // foi carregado antes serve de partida, e a lista é atualizada ao abrir.
   const [sbs, setSbs] = React.useState(() => window.FRAMETY_SB || []);
   React.useEffect(() => {
-    if (!window.API?.getToken?.()) return;
+    if (!storyboardsOnly || !window.API?.getToken?.()) return;
     window.API.getStoryboards()
       .then((l) => { window.FRAMETY_SB = l; setSbs(l); })
       .catch(() => {});
@@ -114,7 +123,9 @@ const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, admi
   const q = query.toLowerCase().trim();
 
   const matchSb = window.sbMatchesStoryboard || (() => false);
-  const matchedSbs = !q ? [] : sbs.filter((s) => matchSb(s, q)).slice(0, 9);
+  // Só a página /storyboards busca storyboards: o console não tem mais essa seção,
+  // e um resultado clicável que não abre nada seria pior do que resultado nenhum.
+  const matchedSbs = (!storyboardsOnly || !q) ? [] : sbs.filter((s) => matchSb(s, q)).slice(0, 9);
 
   const matchedCats = storyboardsOnly || !q ? [] : data.categories.filter(c =>
     c.name.toLowerCase().includes(q) || c.desc?.toLowerCase().includes(q)
@@ -334,6 +345,8 @@ const App = () => {
       fetch('/api/data').then(r => r.json()).then(d => {
         window.FRAMETY_DATA = d;
         window.getStoredReelUrl = () => (d.reel && d.reel.url) || '';
+        window.FRAMETY_APPLY_CONTENT?.(d.content);
+        window.FRAMETY_APPLY_ACCENT?.(d.theme?.accent);
         window.dispatchEvent(new CustomEvent('framety:reel-updated'));
         setDataVersion(v => v + 1);
       }).catch(() => {});
@@ -342,6 +355,11 @@ const App = () => {
    const [initialLoading, setInitialLoading] = React.useState(true);
    const [fadeOut, setFadeOut] = React.useState(false);
    const [contentVisible, setContentVisible] = React.useState(false);
+   /* A marca no <body> destrava as entradas em cascata (ver WhisperText): antes
+      disso a página está em opacity 0 e a animação passaria sem ser vista. */
+   React.useEffect(() => {
+     document.body.classList.toggle("home-pronta", contentVisible);
+   }, [contentVisible]);
    const [logoRipples, setLogoRipples] = React.useState([]);
    const clickTimes = React.useRef([]);
    const initialHashRef = React.useRef(window.location.hash.slice(1) || "");
@@ -363,12 +381,13 @@ const App = () => {
   const tweaks  = _tw ? _tw[0] : FRAMETY_TWEAK_DEFAULTS;
   const setTweak = _tw ? _tw[1] : () => {};
 
-  // Apply tweak vars
+  // Apply tweak vars. A cor de destaque publicada no console é a fonte da
+  // verdade; o tweak local (painel de edição) só vale quando não há uma salva.
+  // --accent-glow e as outras derivadas saem de --accent-rgb no styles.css.
   React.useEffect(() => {
-    document.documentElement.style.setProperty("--accent", tweaks.accent);
-    document.documentElement.style.setProperty("--accent-glow", tweaks.accent + "73");
+    window.FRAMETY_APPLY_ACCENT?.(window.FRAMETY_DATA?.theme?.accent || tweaks.accent);
     document.body.style.cursor = "auto";
-  }, [tweaks.accent, tweaks.showCursor]);
+  }, [tweaks.accent, tweaks.showCursor, dataVersion]);
 
   // Browser back/forward + pushState sync
   React.useEffect(() => {
@@ -436,6 +455,39 @@ const App = () => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [page]);
+
+  /* Digitar "play" em qualquer lugar abre o jogo. A janelinha de 1,2s entre
+     teclas evita que letras soltas de sessões diferentes formem a palavra por
+     acaso, e campos de texto ficam de fora — ninguém quer o jogo abrindo no
+     meio de um formulário. */
+  React.useEffect(() => {
+    let buffer = "";
+    let ultimo = 0;
+    const onTecla = (ev) => {
+      const alvo = ev.target;
+      if (alvo && (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable)) return;
+      if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (!/^[a-zA-Z]$/.test(ev.key)) return;
+      const agora = Date.now();
+      buffer = (agora - ultimo > 1200 ? "" : buffer) + ev.key.toLowerCase();
+      ultimo = agora;
+      if (buffer.length > 8) buffer = buffer.slice(-8);
+      if (buffer.endsWith("play")) {
+        buffer = "";
+        window.history.pushState(null, "", "/play");
+        setPage("play");
+        window.scrollTo(0, 0);
+      }
+    };
+    window.addEventListener("keydown", onTecla);
+    return () => window.removeEventListener("keydown", onTecla);
+  }, []);
+
+  const abrirNovidades = () => {
+    window.history.pushState(null, "", "/novidades");
+    setPage("novidades");
+    window.scrollTo(0, 0);
+  };
 
   // Section navigation
   const navTo = (id) => {
@@ -515,12 +567,16 @@ const App = () => {
   React.useEffect(() => {
     if (page !== "home") return;
     const onScroll = () => {
-      const ids = ["home","categorias","trabalhos","sobre","contato"];
-      let cur = "home";
+      /* Quem acende é a seção mais abaixo que já passou pela linha de leitura.
+         Antes o laço confiava na ordem do array e bastava reordenar a página
+         para o menu mentir: com Projetos acima de Categorias, estar em
+         Categorias acendia Projetos. Agora a decisão é pela posição real. */
+      const ids = ["home","trabalhos","categorias","sobre","contato"];
+      let cur = "home", maisAbaixo = -1;
       const y = window.scrollY + 200;
       for (const id of ids) {
         const el = document.getElementById(id);
-        if (el && el.offsetTop <= y) cur = id;
+        if (el && el.offsetTop <= y && el.offsetTop >= maisAbaixo) { maisAbaixo = el.offsetTop; cur = id; }
       }
       setActive(cur);
       window.history.replaceState(null, "", cur === "home" ? "/framety" : "/framety#" + cur);
@@ -553,15 +609,35 @@ const App = () => {
       {page === "home" && (
         <main className="page-enter">
           <Hero onNav={navTo} />
+          <FeaturedSection onOpenVideo={openVideo} />
           <CategoriesSection onOpenCategory={openCategory} />
           <ClientsMarquee onOpenVideo={openVideo}/>
           <AISection />
-          <FeaturedSection onOpenVideo={openVideo} />
           <AboutSection />
           <ProcessSection />
           <ContactSection onSecretClick={() => setPage("admin-login")} />
           <SiteFooter />
+          {/* Cartão de novidades: entra na abertura da home. */}
+          <window.NovidadesPopup onAbrir={abrirNovidades} />
+          {/* Celular do Instagram: sobe quando a página chega ao fim. */}
+          <window.InstaFone />
         </main>
+      )}
+
+      {page === "novidades" && (
+        <window.NovidadesPage onVoltar={() => {
+          window.history.pushState(null, "", "/framety");
+          setPage("home");
+          window.scrollTo(0, 0);
+        }} />
+      )}
+
+      {page === "play" && (
+        <window.MiniGame onSair={() => {
+          window.history.pushState(null, "", "/framety");
+          setPage("home");
+          window.scrollTo(0, 0);
+        }} />
       )}
 
       {page === "category" && (

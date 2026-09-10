@@ -668,7 +668,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
             <Magnetic>
               <button className="btn btn-accent"
                 onClick={() => { onClose(); onContactNav && onContactNav(); }}>
-                Quero um vídeo assim <Icon name="arrow-up-right" size={14}/>
+                {window.FRAMETY_CONTENT.video.ctaButton} <Icon name="arrow-up-right" size={14}/>
               </button>
             </Magnetic>
           </div>

@@ -2931,7 +2931,7 @@ const SB_CSS = `
   border:1px solid rgba(255,255,255,0.2); background:#22222a; color:#c9c9d2; font-size:12px; line-height:1; padding:0;
   display:none; align-items:center; justify-content:center; }
 .sb-col-capa:hover .sb-capa-x{ display:flex; }
-.sb-capa-x:hover{ background:var(--accent,#E63946); border-color:transparent; color:#fff; }
+.sb-capa-x:hover{ background:var(--accent,#2E86C1); border-color:transparent; color:#fff; }
 .sb-th{ font-family:var(--font-mono); font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-mute,#9a9aa6); padding-bottom:2px; }
 /* Cards de verdade: superfície mais clara que o fundo, borda visível e uma
    sombra rasa que dá elevação. Antes eram quase invisíveis sobre o preto. */
@@ -2941,12 +2941,12 @@ const SB_CSS = `
 .sb-row:hover{ background:#1e1e25; border-color:rgba(255,255,255,0.20);
   transform:translateY(-1px); box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 10px 26px rgba(0,0,0,.44); }
 /* pendência do cliente: faixa de acento na borda esquerda, sem tingir o card */
-.sb-row.has-unread{ border-color:rgba(230,57,70,0.42); box-shadow:inset 3px 0 0 var(--accent,#E63946), 0 6px 18px rgba(0,0,0,.34); }
-.sb-row.has-unread:hover{ box-shadow:inset 3px 0 0 var(--accent,#E63946), 0 10px 26px rgba(0,0,0,.44); }
+.sb-row.has-unread{ border-color:rgba(var(--accent-rgb),0.42); box-shadow:inset 3px 0 0 var(--accent,#2E86C1), 0 6px 18px rgba(0,0,0,.34); }
+.sb-row.has-unread:hover{ box-shadow:inset 3px 0 0 var(--accent,#2E86C1), 0 10px 26px rgba(0,0,0,.44); }
 .sb-c-strong{ font-weight:600; display:flex; align-items:center; gap:8px; }
 .sb-c-strong em{ color:var(--ink-mute,#9a9aa6); font-weight:400; }
 .sb-c-dim{ color:var(--ink-mute,#9a9aa6); font-family:var(--font-mono); font-size:11.5px; }
-.sb-bell{ background:var(--accent,#E63946); color:#fff; border-radius:20px; padding:1px 8px; font-size:10.5px; font-family:var(--font-mono); white-space:nowrap; }
+.sb-bell{ background:var(--accent,#2E86C1); color:#fff; border-radius:20px; padding:1px 8px; font-size:10.5px; font-family:var(--font-mono); white-space:nowrap; }
 .sb-pill{ font-family:var(--font-mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:4px 9px; border-radius:20px; white-space:nowrap; }
 .sb-pill.wait{ background:rgba(255,183,3,0.14); color:#ffb703; }
 .sb-pill.ok{ background:rgba(46,196,132,0.14); color:#2ec484; }
@@ -2955,9 +2955,9 @@ const SB_CSS = `
 .sb-ico{ background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.09); color:inherit; width:32px; height:32px; border-radius:9px;
   display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:.15s; text-decoration:none; }
 .sb-ico:hover{ background:rgba(255,255,255,0.12); }
-.sb-ico.danger:hover{ background:rgba(230,57,70,0.9); border-color:transparent; color:#fff; }
-.sb-ico.accent{ background:rgba(230,57,70,0.14); border-color:rgba(230,57,70,0.4); color:#ff6b76; }
-.sb-ico.accent:hover{ background:var(--accent,#E63946); border-color:transparent; color:#fff; }
+.sb-ico.danger:hover{ background:rgba(var(--accent-rgb),0.9); border-color:transparent; color:#fff; }
+.sb-ico.accent{ background:rgba(var(--accent-rgb),0.14); border-color:rgba(var(--accent-rgb),0.4); color:#7fc0ea; }
+.sb-ico.accent:hover{ background:var(--accent,#2E86C1); border-color:transparent; color:#fff; }
 
 /* ── console: editor ────────────────────────────────────────────────────── */
 /* Aplicativo de revisão, não página de blog: com o storyboard aberto o
@@ -2981,7 +2981,7 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-ed-meta{ display:flex; gap:8px; flex-wrap:wrap; flex:1; min-width:280px; }
 .sb-ed-in{ background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:9px; padding:8px 11px; color:inherit; font-size:13px; min-width:120px; flex:1; }
 .sb-ed-in.strong{ font-weight:600; }
-.sb-ed-in:focus{ outline:none; border-color:var(--accent,#E63946); }
+.sb-ed-in:focus{ outline:none; border-color:var(--accent,#2E86C1); }
 /* Em leitura o cabeçalho tem só o voltar à esquerda e as ações à direita — a
    identificação mora na calha, como no cliente. */
 .sb-ed-acts{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-left:auto; }
@@ -3086,7 +3086,7 @@ body.sb-appmode .admin-topbar{ display:none; }
    O realce vive DENTRO da folha, então some por completo quando não se está
    arrastando — e a exportação em PDF, que acontece fora de um arraste, nunca o
    encontra. */
-.sb-p.soltando, .sb-mo.soltando{ outline:3px dashed var(--accent,#E63946); outline-offset:-6px; }
+.sb-p.soltando, .sb-mo.soltando{ outline:3px dashed var(--accent,#2E86C1); outline-offset:-6px; }
 .sb-p.soltando{ outline-offset:-10px; }
 .sb-solta-aviso{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:12;
   padding:10px 18px; border-radius:12px; white-space:nowrap; pointer-events:none;
@@ -3097,7 +3097,7 @@ body.sb-appmode .admin-topbar{ display:none; }
    âmbar gasta uma rodada, vermelho não vai acontecer */
 .sb-solta-aviso.ok{ border-color:rgba(46,196,132,.55); color:#7ff0bf; }
 .sb-solta-aviso.aviso{ border-color:rgba(255,183,3,.55); color:#ffd166; }
-.sb-solta-aviso.bloq{ border-color:rgba(230,57,70,.6); color:#ff8b93; }
+.sb-solta-aviso.bloq{ border-color:rgba(var(--accent-rgb),.6); color:#93cbee; }
 /* enviando: faixa discreta sobre o documento, sem mexer no fluxo */
 .sb-enviando{ position:absolute; top:8px; left:0; right:0; z-index:41; margin:0 auto; width:max-content;
   pointer-events:none; padding:8px 14px; border-radius:10px; font-size:12.5px;
@@ -3124,13 +3124,13 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-rot-tit b{ font-size:14px; letter-spacing:.02em; }
 .sb-rot-tit span{ font-size:11px; color:#9a9aa6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .sb-rot-acts{ display:flex; align-items:center; gap:6px; flex:none; }
-.sb-rot-erro{ font-size:11.5px; color:#ff8b93; margin-right:4px; }
+.sb-rot-erro{ font-size:11.5px; color:#93cbee; margin-right:4px; }
 .sb-rot-btn{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; padding:7px 11px;
   border-radius:9px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.06);
   color:#d7d7e0; font-size:12px; font-family:inherit; }
 .sb-rot-btn:hover{ background:rgba(255,255,255,0.12); color:#fff; }
 .sb-rot-btn:disabled{ opacity:.45; cursor:default; }
-.sb-rot-btn.destaque{ background:var(--accent,#E63946); border-color:transparent; color:#fff; }
+.sb-rot-btn.destaque{ background:var(--accent,#2E86C1); border-color:transparent; color:#fff; }
 .sb-rot-btn.destaque:hover{ filter:brightness(1.08); }
 .sb-rot-btn.fechar{ padding:7px 12px; font-size:15px; line-height:1; }
 
@@ -3192,7 +3192,7 @@ body.sb-appmode .admin-topbar{ display:none; }
   margin:-2px -4px; font-family:inherit; color:#111; }
 .sb-rot-cena .sb-rot-campo-val.sb-edit:hover{ background:#f4f4f4; }
 .sb-rot-cena .sb-rot-campo-val.sb-edit:focus{ outline:none; background:#fff;
-  border-color:var(--accent,#E63946); }
+  border-color:var(--accent,#2E86C1); }
 .sb-rot-cena.editando{ cursor:text; }
 
 
@@ -3254,7 +3254,7 @@ body.sb-appmode .admin-topbar{ display:none; }
   padding:10px 11px; border-radius:10px; font-family:inherit;
   border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); color:#e9e9f1; }
 .sb-rot-cmt:hover{ background:rgba(255,255,255,0.09); }
-.sb-rot-cmt.sel{ border-color:var(--accent,#E63946); background:rgba(230,57,70,.12); }
+.sb-rot-cmt.sel{ border-color:var(--accent,#2E86C1); background:rgba(var(--accent-rgb),.12); }
 .sb-rot-cmt-top{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .sb-rot-cmt-top b{ font-size:10.5px; letter-spacing:.14em; color:#fff; }
 .sb-rot-cmt-orig, .sb-rot-cmt-nov{ font-style:normal; font-size:9.5px; letter-spacing:.08em;
@@ -3277,12 +3277,12 @@ body.sb-appmode .admin-topbar{ display:none; }
 /* A cena clicável no papel. O realce é uma sombra por fora, não uma borda:
    borda mudaria a altura do bloco e a folha medida deixaria de bater. */
 .sb-rot-cena.clicavel{ cursor:pointer; }
-.sb-rot-cena.clicavel:hover{ box-shadow:0 0 0 3px rgba(230,57,70,.22); }
-.sb-rot-cena.sel{ box-shadow:0 0 0 3px var(--accent,#E63946); position:relative; z-index:1; }
+.sb-rot-cena.clicavel:hover{ box-shadow:0 0 0 3px rgba(var(--accent-rgb),.22); }
+.sb-rot-cena.sel{ box-shadow:0 0 0 3px var(--accent,#2E86C1); position:relative; z-index:1; }
 /* Quantos comentários a cena tem — ferramenta, não papel: fora do PDF. */
 .sb-rot-nc{ display:inline-flex; align-items:center; justify-content:center; min-width:17px;
   height:17px; padding:0 5px; margin-left:8px; border-radius:999px; vertical-align:middle;
-  background:var(--accent,#E63946); color:#fff; font-size:10px; letter-spacing:0; }
+  background:var(--accent,#2E86C1); color:#fff; font-size:10px; letter-spacing:0; }
 
 /* ── grade (tecla G): todas as páginas de uma vez ──────────────────────────
    Não é uma segunda montagem do documento: é a MESMA esteira de páginas, que
@@ -3300,11 +3300,11 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-gridpick{ position:absolute; inset:0; z-index:8; cursor:pointer; padding:0; background:none;
   border:2px solid transparent; border-radius:14px; display:flex; align-items:flex-end; justify-content:flex-start;
   transition:border-color .14s, background .14s; }
-.sb-gridpick:hover{ border-color:var(--accent,#E63946); background:rgba(230,57,70,0.10); }
+.sb-gridpick:hover{ border-color:var(--accent,#2E86C1); background:rgba(var(--accent-rgb),0.10); }
 .sb-gridpick span{ margin:6px; font-family:var(--font-mono); font-size:10.5px; font-weight:600; line-height:1;
   padding:3px 6px; border-radius:6px; background:rgba(8,8,10,.82); color:#f2f2f4; }
-.sb-slide.atual .sb-gridpick{ border-color:var(--accent,#E63946); }
-.sb-slide.atual .sb-gridpick span{ background:var(--accent,#E63946); }
+.sb-slide.atual .sb-gridpick{ border-color:var(--accent,#2E86C1); }
+.sb-slide.atual .sb-gridpick span{ background:var(--accent,#2E86C1); }
 
 /* ── calhas verticais ───────────────────────────────────────────────────── */
 .sb-rail{ display:flex; flex-direction:column; align-items:center; min-height:0; }
@@ -3369,7 +3369,7 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-gradebtn{ display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; padding:6px 5px;
   border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); color:#9a9aa6; border-radius:9px; transition:.15s; }
 .sb-gradebtn:hover{ background:rgba(255,255,255,0.12); color:#fff; }
-.sb-gradebtn.on{ background:rgba(230,57,70,0.16); border-color:rgba(230,57,70,0.42); color:#ff6b76; }
+.sb-gradebtn.on{ background:rgba(var(--accent-rgb),0.16); border-color:rgba(var(--accent-rgb),0.42); color:#7fc0ea; }
 .sb-gradebtn i{ font-style:normal; font-family:var(--font-mono); font-size:9px; letter-spacing:.06em; }
 /* ── abas de versão da página (os quadradinhos acima da folha) ───────────────
    Aceso = versão que está na tela. Apagado = versão anterior, clicável para
@@ -3385,15 +3385,15 @@ body.sb-appmode .admin-topbar{ display:none; }
   display:inline-flex; align-items:center; justify-content:center; flex:none;
   border:1px solid rgba(255,255,255,0.3); background:rgba(255,255,255,0.12); color:#e9e9f1; }
 .sb-verchip.past:hover:not(:disabled){ background:rgba(255,255,255,0.24); border-color:rgba(255,255,255,0.55); color:#fff; }
-.sb-verchip.on{ width:46px; height:30px; font-size:12px; background:var(--accent,#E63946); border-color:transparent; color:#fff;
-  box-shadow:0 5px 16px rgba(230,57,70,.5), inset 0 1px 0 rgba(255,255,255,.25); }
+.sb-verchip.on{ width:46px; height:30px; font-size:12px; background:var(--accent,#2E86C1); border-color:transparent; color:#fff;
+  box-shadow:0 5px 16px rgba(var(--accent-rgb),.5), inset 0 1px 0 rgba(255,255,255,.25); }
 .sb-verchip.free{ border-style:dashed; border-color:rgba(255,255,255,0.24); background:rgba(255,255,255,0.03);
   color:rgba(255,255,255,0.4); font-weight:400; cursor:default; }
 .sb-verchip:disabled{ cursor:default; }
 .sb-vernote{ font-family:var(--font-mono); font-size:11px; letter-spacing:.02em; color:#b6b6c4;
   border:1px solid transparent; border-radius:20px; padding:4px 11px; }
 .sb-vernote.warn{ color:#ffb703; background:rgba(255,183,3,.1); border-color:rgba(255,183,3,.3); }
-.sb-vernote.stop{ color:#ff6b76; background:rgba(230,57,70,.12); border-color:rgba(230,57,70,.34); }
+.sb-vernote.stop{ color:#7fc0ea; background:rgba(var(--accent-rgb),.12); border-color:rgba(var(--accent-rgb),.34); }
 /* tarja de "isto é a versão antiga" — mora fora da folha, então não vai no PDF */
 .sb-pastflag{ position:absolute; left:0; right:0; top:0; z-index:5; text-align:center;
   background:rgba(255,183,3,.94); color:#241a00; font-family:var(--font-mono); font-size:11px;
@@ -3404,9 +3404,9 @@ body.sb-appmode .admin-topbar{ display:none; }
   background:rgba(255,255,255,0.05); color:inherit; cursor:pointer; font-size:15px; line-height:1; }
 .sb-railbtn:hover:not(:disabled), .sb-railplus:hover{ background:rgba(255,255,255,0.13); }
 .sb-railbtn:disabled{ opacity:.28; cursor:default; }
-.sb-railbtn.danger:hover:not(:disabled){ background:#e63946; border-color:transparent; color:#fff; }
+.sb-railbtn.danger:hover:not(:disabled){ background:#2e86c1; border-color:transparent; color:#fff; }
 .sb-railadd{ position:relative; }
-.sb-railplus{ background:var(--accent,#E63946); border-color:transparent; color:#fff; font-size:19px; }
+.sb-railplus{ background:var(--accent,#2E86C1); border-color:transparent; color:#fff; font-size:19px; }
 .sb-railmenu{ position:absolute; left:38px; bottom:0; background:#17171c; border:1px solid rgba(255,255,255,0.12); border-radius:10px;
   padding:5px; display:none; flex-direction:column; min-width:200px; z-index:20; box-shadow:0 12px 30px rgba(0,0,0,.5); }
 .sb-railadd:hover .sb-railmenu{ display:flex; }
@@ -3449,14 +3449,14 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-mo-tools, .sb-scene-tools{ position:absolute; left:8px; top:8px; display:flex; gap:6px; z-index:5; }
 .sb-minibtn{ background:rgba(0,0,0,.72); color:#fff; border:none; border-radius:7px; padding:6px 11px; font-size:12px; cursor:pointer; font-family:inherit; }
 .sb-minibtn:hover{ background:#000; }
-.sb-minibtn.danger:hover{ background:#e63946; }
-.sb-minibtn.accent{ background:var(--accent,#E63946); }
+.sb-minibtn.danger:hover{ background:#2e86c1; }
+.sb-minibtn.accent{ background:var(--accent,#2E86C1); }
 .sb-minibtn.accent:hover:not(:disabled){ background:#ff5763; }
 .sb-minibtn:disabled{ opacity:.45; cursor:not-allowed; }
 .sb-mo-add{ border:2px dashed #ccccd4; background:#fafafc; color:#8a8a93; border-radius:6px; cursor:pointer; font-family:inherit;
   font-size:15px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; min-height:120px; }
 .sb-mo-add span{ font-size:30px; line-height:1; }
-.sb-mo-add:hover{ border-color:#e63946; color:#e63946; }
+.sb-mo-add:hover{ border-color:#2e86c1; color:#2e86c1; }
 
 /* cena */
 .sb-p-scene{ display:flex; flex-direction:column; }
@@ -3475,9 +3475,9 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-ph{ color:#c2c2ca; font-style:italic; }
 
 /* edição in-place */
-.sb-edit{ background:rgba(230,57,70,.05); border:1px dashed rgba(230,57,70,.45); border-radius:4px; padding:2px 6px;
+.sb-edit{ background:rgba(var(--accent-rgb),.05); border:1px dashed rgba(var(--accent-rgb),.45); border-radius:4px; padding:2px 6px;
   font:inherit; color:inherit; letter-spacing:inherit; line-height:inherit; text-align:inherit; width:100%; resize:none; overflow:hidden; display:block; }
-.sb-edit:focus{ outline:none; background:rgba(230,57,70,.09); border-style:solid; }
+.sb-edit:focus{ outline:none; background:rgba(var(--accent-rgb),.09); border-style:solid; }
 .sb-scene-ph.sb-edit{ color:#fff; background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.4); }
 
 /* ── painel de comentários ──────────────────────────────────────────────── */
@@ -3496,7 +3496,7 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-cmt{ background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.09); border-radius:11px; padding:11px 12px; font-size:13px; }
 .sb-cmt.draft{ border-color:rgba(255,183,3,0.4); background:rgba(255,183,3,0.07); }
 .sb-cmt-who{ display:flex; align-items:center; gap:8px; margin-bottom:7px; }
-.sb-cmt-av{ width:26px; height:26px; border-radius:50%; background:var(--accent,#E63946); color:#fff; flex:none;
+.sb-cmt-av{ width:26px; height:26px; border-radius:50%; background:var(--accent,#2E86C1); color:#fff; flex:none;
   display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; }
 .sb-cmt-who b{ display:block; font-size:12.5px; line-height:1.25; }
 .sb-cmt-co{ display:block; font-size:10.5px; color:var(--ink-mute,#9a9aa6); }
@@ -3505,8 +3505,8 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-cmt-foot time{ font-family:var(--font-mono); font-size:10px; color:var(--ink-mute,#9a9aa6); }
 .sb-cmt-tag{ font-family:var(--font-mono); font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:#ffb703; }
 .sb-cmt-del{ margin-left:auto; background:none; border:none; color:var(--ink-mute,#9a9aa6); font-size:11px; cursor:pointer; text-decoration:underline; padding:0; }
-.sb-cmt-del:hover{ color:#e63946; }
-.sb-cmt-del.armed{ color:#e63946; font-weight:600; text-decoration:none; }
+.sb-cmt-del:hover{ color:#2e86c1; }
+.sb-cmt-del.armed{ color:#2e86c1; font-weight:600; text-decoration:none; }
 /* de qual rodada é este comentário — some a dúvida ao comparar V1 com V2 */
 .sb-cmt-ver{ margin-left:auto; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em;
   color:var(--ink-mute,#9a9aa6); border:1px solid rgba(255,255,255,0.14); border-radius:20px; padding:2px 7px; flex:none; }
@@ -3515,7 +3515,7 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-cmt-new{ display:flex; flex-direction:column; gap:7px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.08); }
 .sb-cmt-new textarea{ background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:9px 11px;
   color:inherit; font-family:inherit; font-size:13px; min-height:70px; resize:vertical; }
-.sb-cmt-new textarea:focus{ outline:none; border-color:var(--accent,#E63946); }
+.sb-cmt-new textarea:focus{ outline:none; border-color:var(--accent,#2E86C1); }
 
 /* ── visão pública do cliente ───────────────────────────────────────────── */
 /* Mesma regra do console: a tela do cliente é um app de revisão. Altura fixa
@@ -3577,8 +3577,8 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-gate-box p{ margin:0 0 6px; font-size:13px; color:#9a9aa6; line-height:1.55; }
 .sb-gate-box input{ background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:10px;
   padding:11px 13px; color:#f2f2f4; font-size:15px; text-align:center; letter-spacing:.2em; font-family:inherit; }
-.sb-gate-box input:focus{ outline:none; border-color:var(--accent,#E63946); }
-.sb-gate-err{ color:#e63946; font-size:11.5px; font-family:var(--font-mono); }
+.sb-gate-box input:focus{ outline:none; border-color:var(--accent,#2E86C1); }
+.sb-gate-err{ color:#2e86c1; font-size:11.5px; font-family:var(--font-mono); }
 /* ── /storyboards: o painel do console sozinho na página ────────────────────
    Mesma moldura de app da visão do cliente: a página não rola, quem rola é a
    lista (ou, com um storyboard aberto, só o painel de comentários). */
@@ -3593,14 +3593,14 @@ body.sb-appmode .admin-topbar{ display:none; }
 /* barra de busca da tela exclusiva */
 .sb-searchbox{ display:flex; align-items:center; gap:8px; flex:1; min-width:180px; max-width:420px;
   border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.05); border-radius:11px; padding:0 11px; color:#9a9aa6; }
-.sb-searchbox:focus-within{ border-color:var(--accent,#E63946); color:#e9e9f1; }
+.sb-searchbox:focus-within{ border-color:var(--accent,#2E86C1); color:#e9e9f1; }
 .sb-searchbox input{ flex:1; min-width:0; background:none; border:none; outline:none; color:#f2f2f4;
   font-family:inherit; font-size:13px; padding:10px 0; }
 .sb-searchbox input::placeholder{ color:#77778a; }
 .sb-searchclear{ background:none; border:none; color:inherit; cursor:pointer; font-size:17px; line-height:1; padding:0 2px; }
 .sb-searchclear:hover{ color:#fff; }
 .sb-toasts{ position:fixed; right:18px; bottom:18px; z-index:200; display:flex; flex-direction:column; gap:8px; }
-.sb-toast{ background:#17171c; border:1px solid rgba(255,255,255,0.14); border-left:3px solid var(--accent,#E63946);
+.sb-toast{ background:#17171c; border:1px solid rgba(255,255,255,0.14); border-left:3px solid var(--accent,#2E86C1);
   border-radius:10px; padding:11px 15px; font-size:13px; max-width:340px; box-shadow:0 12px 30px rgba(0,0,0,.5); }
 .sb-toast.success{ border-left-color:#2ec484; }
 
@@ -3613,7 +3613,7 @@ body.sb-appmode .admin-topbar{ display:none; }
   box-shadow:inset 0 1px 2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.05); }
 .sb-prog-rail{ position:relative; height:9px; overflow:hidden; border-radius:3px; }
 .sb-prog-fill{ position:absolute; inset:0; display:block; border-radius:3px; transform-origin:left center;
-  background:var(--accent,#E63946); box-shadow:inset 0 1px 0 rgba(255,255,255,.3);
+  background:var(--accent,#2E86C1); box-shadow:inset 0 1px 0 rgba(255,255,255,.3);
   transition:transform .45s cubic-bezier(.32,.72,0,1); }
 .sb-prog-fill.shimmer{ inset:0 auto 0 0; width:40%; transform:none; animation:sb-prog-slide 1.25s ease-in-out infinite; }
 @keyframes sb-prog-slide{ from{ transform:translateX(-100%);} to{ transform:translateX(250%);} }
@@ -3635,7 +3635,7 @@ body.sb-appmode .admin-topbar{ display:none; }
 .sb-modal p{ margin:0 0 16px; font-size:13.5px; line-height:1.6; color:#b8b8c2; }
 .sb-lbl{ display:flex; flex-direction:column; gap:5px; font-size:12px; color:#9a9aa6; margin-bottom:12px; }
 .sb-lbl input{ background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:9px; padding:9px 11px; color:#f2f2f4; font-size:13.5px; font-family:inherit; }
-.sb-lbl input:focus{ outline:none; border-color:var(--accent,#E63946); }
+.sb-lbl input:focus{ outline:none; border-color:var(--accent,#2E86C1); }
 .sb-modal-acts{ display:flex; gap:9px; justify-content:flex-end; margin-top:6px; }
 
 /* Telas estreitas: a calha deita e vira faixa horizontal outra vez. */

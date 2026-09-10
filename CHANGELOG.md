@@ -5,6 +5,685 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Celular do Instagram no fim da home.** Chegando ao pé da página, um aparelho
+  sobe do canto esquerdo, inclinado, mostrando o feed e um botão "Seguir";
+  clicar leva ao perfil em aba nova. Sobe e desce conforme o visitante vai e
+  volta do fim da página, e tem um X para dispensar.
+  - **A tela é um print do perfil de verdade** (@frametyfilmes), tirado com o
+    Chrome headless falando CDP: o `--screenshot` puro não servia porque o
+    Instagram cobre o perfil com o modal "veja no app" e uma camada que escurece
+    tudo. Pelo protocolo dá para remover as duas coisas e só então disparar a
+    foto, com a tela emulada em 440×940. O print é trocável no console — e
+    envelhece: é uma foto, não uma janela.
+  - **As fotos são enviadas no console**, não puxadas do Instagram. O feed
+    oficial exige conta Business ligada a uma página do Facebook, app na Meta e
+    um token que expira a cada 60 dias — sem renovação, o mural quebra sozinho
+    quando ninguém está olhando. Raspar também não é caminho: a página do perfil
+    devolve só a casca para quem não está logado, e as imagens ficam em URLs
+    assinadas que vencem.
+  - O celular **não aparece** sem endereço de perfil válido (https://) ou sem
+    print nem fotos: melhor ausente do que um aparelho de tela vazia convidando
+    a lugar nenhum.
+  - Abaixo de 900px ele some. Num celular de verdade, um celular desenhado no
+    canto é estorvo em cima do conteúdo, e o rodapé já leva ao perfil.
+  - O anel do retrato usa a cor de destaque do site, não o degradê do Instagram:
+    o aparelho é nosso, não uma imitação da interface deles.
+
+- **Minigame escondido em `/play`.** Pong na vertical: a barrinha de baixo é o
+  carro da Skyline, a de cima é o computador, e a bola é um play azul. Cada
+  rebatida vale um ponto; a cada ponto o adversário anda mais rápido atrás da
+  bola e devolve mais forte. Perde-se de um jeito só — deixando a bola passar
+  por baixo. Se o computador errar, ela bate no teto e volta.
+  - Abre digitando **play** em qualquer lugar do site, ou pelo endereço direto.
+    O atalho ignora campos de texto (ninguém quer o jogo abrindo no meio de um
+    formulário) e zera o que já foi digitado depois de 1,2s sem tecla, para
+    letras soltas não formarem a palavra por acaso.
+  - **O carro é preparado no carregamento, em quatro passos.** O PNG enviado no
+    console vira sprite sem que ninguém precise abrir um editor:
+    1. **balde a partir das bordas**, não corte por limiar — o carro é branco no
+       capô e no teto, e apagar "todo pixel claro" comeria o próprio carro; o que
+       é fundo é o branco LIGADO à borda;
+    2. **segunda passada só na base**, para a sombra sob as rodas: cinza sem cor
+       na faixa 188–242. A faixa de tom sozinha não bastava — reflexo de capô e
+       de vidro caem nela, e a passada entrou pelo para-brisa e abriu buracos na
+       lataria; quem segura é a altura;
+    3. **esfumar a franja** que sobra na fronteira do balde (o antisserrilhado do
+       arquivo original) — era ela o chuvisco branco em volta do carro;
+    4. **cortar na medida** e **reduzir pela metade a cada passo**, uma vez só.
+       Ir de 640px para 168px num único desenho, a cada quadro, era o que deixava
+       a imagem chiada. E a margem vazia do PNG fazia o carro sair menor do que a
+       área que rebate — a bola voltava sem encostar em nada visível.
+    Se a leitura dos pixels falhar (imagem de outro domínio sem CORS, que suja o
+    canvas), a imagem é usada como veio: melhor um carro num quadrado branco do
+    que um jogo sem carro.
+  - **O campo tem tamanho lógico fixo (720×960)**, esticado por CSS. A física
+    não muda de comportamento conforme a tela: a bola atravessa sempre os mesmos
+    960 pixels, no celular ou no monitor grande. O passo de tempo é travado em
+    1/30s — voltando de uma aba em segundo plano, um quadro gigante faria a bola
+    atravessar a barrinha sem tocá-la.
+  - O estado da partida mora num `ref`, não em `useState`: sessenta quadros por
+    segundo mexendo em estado do React re-renderizariam a árvore sessenta vezes.
+    Só pontos e fase são estado de verdade.
+  - **Placar dos 20 últimos jogos**, guardado no servidor e mostrado do maior
+    para o menor. Gravar é público — quem joga não tem login —, então a entrada
+    é validada com rigor (nome curto e sem marcação, pontos inteiros com teto) e
+    limitada a 20 registros por hora por IP.
+  - **Ponto em cima do computador vale 20.** Quando ele não alcança a bola e ela
+    bate no teto, o placar sobe vinte de uma vez, com um "+20" subindo na tela e
+    um clarão na linha que o play atravessou.
+  - **A dificuldade acompanha as rebatidas, não os pontos.** Com o bônus de 20
+    entrando na conta da velocidade, um único ponto em cima do computador
+    jogaria o jogo direto para o teto de velocidade — o prêmio viraria castigo.
+    O aperto continua gradual; o bônus é só placar.
+  - No console, aba **Minigame**: trocar o carro e zerar o placar.
+
+- **Ícone da aba e prévia de link agora saem do console.** Nova aba "Marca &
+  prévia": o favicon, e o cartão que WhatsApp, Telegram e Facebook montam quando
+  alguém cola o link — título, descrição e imagem.
+  - **Quem monta a prévia é o servidor, não o site.** O robô dessas redes não
+    roda JavaScript: ele lê o HTML que sai do `/framety` e vai embora. As meta
+    tags já eram injetadas na rota da SPA; o que mudou é que os valores vêm do
+    banco em vez de estarem escritos no código.
+  - **Prévia por página** para as rotas fixas (home, novidades, tutorial,
+    cadastro de parceiro, configurador de sala); campo em branco herda o padrão.
+    Só essas cinco são aceitas — categoria e vídeo já montavam a prévia com a
+    capa do próprio conteúdo, e aceitar caminho livre deixaria pendurar meta tag
+    em qualquer endereço do site.
+  - **Seção da home não tem prévia própria**, e o painel diz isso: a prévia é por
+    endereço, e destaques/sobre/contato não têm um.
+  - `limparBranding` **não usa o `cleanContent`** do resto do conteúdo: aquele
+    descarta qualquer chave fora de `[A-Za-z0-9_]`, e as chaves de "paginas" são
+    caminhos (`/novidades`) — passavam por ele e sumiam. A limpeza é campo a
+    campo, cortando tamanho e tirando tags.
+  - O `type="image/png"` sai do `<link rel="icon">` quando o ícone vem do
+    console: o arquivo enviado pode ser png, webp ou svg, e declarar o tipo
+    errado é pior do que não declarar nenhum.
+
+- **A cascata do lettering agora espera o texto entrar na tela** — e o título do
+  contato ("Transforme seu próximo empreendimento…") passou a usá-la.
+  - Antes bastava `body.home-pronta`. Na capa isso funcionava porque o texto já
+    está visível quando a página abre; num título lá embaixo, a cascata rodaria
+    inteira no primeiro segundo, longe dos olhos, e quem rolasse até lá acharia
+    o texto parado. Agora são duas condições: página pronta **e** texto na tela.
+  - A checagem é uma leitura de posição a cada 140ms, que morre quando o texto
+    entra — não um IntersectionObserver, pela mesma razão do cartão de
+    novidades: a página rola dentro de um contêiner e o evento nem sempre chega
+    ao `window`.
+
+- **Quadro de contato: horário comercial e botão para o WhatsApp.** Entrou a
+  linha "Horário comercial — Segunda a sexta, das 8h às 18h" e, no pé do quadro,
+  um botão "Entre em contato" que abre a conversa no WhatsApp já com a mensagem
+  escrita.
+  - O rótulo e o endereço do botão saem no console. Endereço em branco (ou
+    inválido) esconde o botão em vez de renderizar um link quebrado.
+  - **A página só monta o link se ele for http(s), mailto ou tel.** O campo é
+    digitado no painel, e um href começando com `javascript:` viraria código
+    rodando na home de quem visita. O botão abre em aba nova, com
+    `rel="noopener noreferrer"`.
+
+- **Quarta etapa no processo: "Entrega".** Entrou com o mesmo cartão das
+  outras e a seta que vem da pós-produção.
+  - **O recuo do zigue-zague deixou de ser um índice fixo.** Ele valia só para a
+    segunda etapa (`i === 1`), então a quarta nasceria alinhada com a terceira e
+    a seta ligaria dois cartões na mesma coluna. Agora alterna por índice ímpar,
+    para qualquer quantidade de etapas criada no console.
+  - As três tags da etapa nova ("Revisão final", "Arquivos finais", "Versões e
+    formatos") são um recheio provisório — não foram ditadas, e saem no console.
+
+- **Abertura do "Processo" em duas colunas, com um baralho de diferenciais.** O
+  texto virou bloco de leitura à esquerda e cinco cartões empilhados ocupam a
+  direita.
+  - **O parágrafo saiu de dentro do `<h2>`.** Ele morava lá junto do título,
+    separado só por um `<br/>` e uma cor apagada — herdava o corpo do título e
+    virava um bloco de letra grande e cinza em vez de um texto para ler. Agora é
+    um `<p>` de 15,5px com medida de 52ch; o título ganhou corpo próprio
+    (`clamp(26px, 2.4vw, 36px)`), que ele nunca teve — vinha do `1.5em` que o
+    navegador dá a qualquer `h2`.
+  - **Os cartões são um porte do DisplayCards**, que chegou em React + Tailwind
+    + shadcn com `lucide-react`. Nada disso existe aqui, então veio a ideia:
+    cartões inclinados 8°, empilhados numa única célula do grid, cada um
+    deslocado do anterior, apagados em cinza até o ponteiro chegar. O
+    deslocamento vai na propriedade `translate`, separada do `transform`, para
+    não brigar com o `skewY`.
+  - Três desvios do original, cada um por um motivo: **z-index no hover** (com
+    cinco cartões, levantar um de trás não adianta se ele continua pintado por
+    baixo); **a máscara da direita sai no hover** (no original ela é fixa porque
+    o texto é curto — aqui a linha de apoio é uma frase inteira); e **sem
+    backdrop-filter** (desfocar o canvas do fundo animado foi o que engasgou a
+    página de clientes).
+  - **Cada cartão tem luz própria**: um respingo da cor de destaque no canto de
+    cima, um fio claro na borda superior e um halo baixo em volta; o ícone
+    acende junto e dobra o brilho no hover. O cinza de repouso caiu de 1 para
+    0,25 — o filtro lava também as sombras coloridas, então cinza demais
+    apagava justamente o brilho que ele deveria deixar passar.
+  - **A caixa do baralho vem da contagem, não de um número escrito à mão.** Os
+    deslocamentos vivem em `translate`, que não ocupa espaço: a altura reservada
+    é calculada a partir de quantos cartões existem, e a largura de cada um cede
+    quando são muitos. Assim ninguém adiciona um cartão no console e ele vaza
+    por cima das etapas ou sai da coluna.
+  - Abaixo de 980px o baralho vira lista: sem passar o mouse, uma pilha é um
+    monte de cartão que ninguém abre.
+  - Texto e cartões são editáveis no console, em Home → Processo.
+
+- **Novidades: um mini blog dentro do site, montado no console.** Na abertura da
+  home, um cartão entra no canto superior direito com etiqueta, título, texto,
+  mídia e um botão que leva a `/novidades`.
+  - **O cartão aceita foto, gif ou vídeo curto.** O upload já servia os três; o
+    que mudou foi a página: URL de vídeo vira `<video>` mudo, em laço e sem
+    controles — é um banner, não um player. Com "menos movimento" ligado no
+    sistema ele fica parado e ganha controles. Gif continua sendo `<img>`.
+  - O console barra arquivo acima de **20MB** antes de sair do navegador. O
+    servidor aceita até 600MB, mas isso é teto de reel, não de um cartão que
+    abre por cima da home; para um filme inteiro existe o bloco de YouTube.
+  - **A página é feita de blocos** — texto, imagem ou vídeo do YouTube — na
+    ordem definida no console. Cada tipo carrega só os campos que usa, então não
+    existe bloco meio preenchido: um vídeo não guarda imagem, uma imagem não
+    guarda HTML.
+  - **O YouTube entra por id, não por URL.** O servidor extrai os 11 caracteres
+    do endereço colado (`watch?v=`, `youtu.be`, `shorts`, `embed`) e guarda só
+    isso; a página monta o player com o id. Nenhum endereço digitado no console
+    vira `src` de iframe.
+  - O texto dos blocos passa pelo mesmo `sanitizeHtml` do resto do site, e o
+    conteúdo inteiro pelo `cleanContent` — os mesmos limites de tamanho e de
+    profundidade dos textos da home. Ler é público; gravar exige o login.
+  - **A entrada não usa IntersectionObserver.** O cartão espera `body.home-pronta`
+    (o fim da animação de abertura) e entra 400ms depois — nascer antes seria um
+    cartão por cima da abertura. A espera é uma leitura de classe a cada 120ms,
+    que morre assim que o cartão entra: observers e eventos de scroll não são
+    confiáveis aqui, porque a página rola dentro de um contêiner.
+  - **Fechar vale só para a carga atual da página**: recarregar traz o cartão de
+    volta. A primeira versão guardava em `sessionStorage`, e aí o X calava o
+    aviso pelo resto da sessão — um aviso que some no primeiro clique não é
+    visto por quem volta. Para tirá-lo do ar de vez existe o botão no console.
+
+- **A frase do "Sobre" reorganizada.** "O frame mais importante do seu
+  empreendimento em um vídeo." saía em três linhas, com "seu" sozinho no meio.
+  - A culpada era uma quebra manual (`<br/>`) escrita para outro corpo de letra:
+    o texto já quebrava sozinho antes de chegar nela. Tirada a quebra, a medida
+    virou **30ch** e o `text-wrap: balance` distribui — agora são duas linhas
+    parecidas, com o "empreendimento" em itálico abrindo a segunda.
+  - Peso de 400 para 500 e corpo de até 88px para até 68px: no corpo grande da
+    Albert Sans o 400 ficava esguio demais para a afirmação da seção, e 88px
+    empurrava a frase para mais linhas do que ela precisa.
+
+- **Parágrafo da capa reorganizado.** A primeira frase ("Somos o audiovisual do
+  Grupo Skyline.") passou a carregar o peso — 500 e branco quase pleno — e o
+  resto explica em tom mais baixo. Mesma família e mesmo tamanho: a hierarquia
+  vem do peso e do brilho, não de outro corpo de letra.
+  - Corpo de 14.5 para 15.5px, entrelinha de 1.6 para 1.68, e a medida agora é
+    **56ch** em vez de 520px fixos — a linha de leitura acompanha o tamanho da
+    letra em vez de ser um número solto. Com `text-wrap: balance` as três linhas
+    saem equilibradas, em vez da última com duas palavras soltas.
+  - Para o `<strong>` funcionar dentro da animação, o WhisperText teve de mudar:
+    ele fatiava a string por espaços, o que partiria `<strong>duas palavras</strong>`
+    no meio da tag. Agora lê o HTML como DOM e reconstrói, animando cada palavra
+    DENTRO das tags. Reconstruir também descarta qualquer atributo — mais
+    restrito do que o `dangerouslySetInnerHTML` que estava ali.
+
+- **Albert Sans no lugar da Gibson/Outfit.** A tipografia do site inteiro passou
+  a ser Albert Sans, nos mesmos pesos que o CSS já usava (300 a 800) e sem
+  mexer em cor nenhuma.
+  - Vem do **Google Fonts, não da Adobe**: o CSP do `server.js` já libera
+    `fonts.googleapis`/`gstatic`, enquanto a Adobe Fonts exigiria abrir
+    `use.typekit.net` no CSP e um kit próprio — para chegar na mesma família.
+  - Saiu junto um `@font-face` morto: a Gibson era declarada só com `local()`,
+    isto é, funcionava apenas em máquinas que tivessem a fonte instalada; todo o
+    resto caía na Outfit. E o itálico do destaque do título pedia Space Grotesk,
+    que nunca chegou a ser carregada (caía numa serifada do sistema) — agora é o
+    itálico da própria Albert Sans.
+  - **A JetBrains Mono ficou** nas etiquetas técnicas (REC · 00:00:19, ATUAL.
+    22/05, as etiquetas de seção). Não é teimosia: com fonte proporcional os
+    dígitos têm larguras diferentes e o cronômetro do REC dança a cada segundo.
+
+- **O texto da capa entra em cascata, palavra a palavra.** Cada palavra aparece
+  80ms depois da anterior, em 0.4s, com a curva do power2.out — o mesmo efeito do
+  componente de referência.
+  - Ele veio em GSAP + ScrollTrigger + Tailwind, e aqui não há nenhum dos três.
+    Além disso o texto fica no topo da página: o gatilho de rolagem dispararia no
+    primeiro quadro de qualquer jeito. Portado para CSS, o efeito não custa uma
+    biblioteca e, sendo só opacidade, roda no compositor.
+  - **A cascata espera a página aparecer** (`body.home-pronta`): a home entra com
+    um fade de 1.2s que começa em 1.8s, e sem essa trava a animação toda
+    aconteceria atrás da cortina.
+  - A divisão em palavras respeita o HTML do campo: `<br>` vira uma peça própria
+    (senão ficaria grudado na palavra vizinha) e uma tag aberta segura as
+    palavras seguintes, para `<em>duas palavras</em>` não virar duas metades de
+    tag. O subtexto usa cascata mais rápida (18ms) e começa depois do título — a
+    80ms por palavra, um parágrafo de 20 palavras levaria quase dois segundos
+    pingando na tela.
+  - Entre as palavras vai um espaço de verdade, não margem: com margem o texto
+    do `<h1>` sai "Audiovisualquetransforma" para quem copia, para o leitor de
+    tela e para o buscador — parece certo na tela e está errado no conteúdo.
+  - Com `prefers-reduced-motion` o texto aparece inteiro, sem cascata.
+
+- **A capa ganhou texto.** No canto de baixo à esquerda entrou a frase
+  "Audiovisual que transforma empreendimentos em experiências." com o parágrafo
+  sobre o Grupo Skyline embaixo.
+  - O `h1` da capa existia mas vivia escondido (servia só a buscador e leitor de
+    tela, com um texto que não era o da tela). Agora ele é o texto de verdade,
+    num corpo bem menor que o antigo (48px no lugar de até 132px): a frase é
+    longa e divide a tela com o vídeo. No celular ele passou a aparecer — antes
+    era `display: none`, porque não havia texto nenhum na capa.
+  - O rodapé da capa subiu de 80px para 116px: a última linha do subtexto
+    encostava na barra do REC, que é absoluta no rodapé da seção. Agora sobram
+    28px entre as duas.
+  - Título e subtexto são editáveis no console, no mesmo bloco da capa.
+
+- **A marca do Grupo Skyline no topo virou link** para skylineip.com.br, em nova
+  aba — no cabeçalho e na barrinha compacta das páginas de categoria. O clique
+  para nela (`stopPropagation`), senão contaria também para o atalho de três
+  cliques no logo que abre o login do console.
+
+- **Capa mais direta.** As duas linhas de texto sobre o vídeo (Demo Reel /
+  Director's cut e Studio / Go-Sp-Brasil) saíram, e entrou um segundo botão,
+  **Fale com um especialista**, que leva à seção de contato — ao lado do
+  "Conheça mais vídeos", que continua indo para os projetos. Os dois textos
+  também saíram do painel de textos do console, onde agora só existem os dois
+  botões; no celular eles ficam lado a lado em vez de empilhados.
+  - Os dois têm o mesmo tamanho (240×51): a coluna passou a esticar os botões até
+    o mais largo, e o `.btn-accent` ganhou uma borda transparente de 1px para ter
+    a mesma caixa do `.btn-ghost`, que sempre teve borda — sem isso, dois botões
+    lado a lado saem 2px diferentes em qualquer lugar do site.
+
+- **Modo Apresentação com texto legível.** Os cinzas de 20–40% que funcionam num
+  monitor somem no projetor, que é onde essa tela é usada. Subida geral, mantendo
+  a hierarquia (rótulo < item < ativo): itens da coluna de 0.38 para 0.72,
+  rótulos dos grupos de 0.20 para 0.42, contagens de 0.18 para 0.50, meta dos
+  cards de 0.30 para 0.60, título do card para branco puro. As opções sem vídeo
+  continuam apagadas, mas de 0.42 para 0.62 — apagado o bastante para ceder
+  atenção, não para sumir.
+
+- **Padrão e formato saíram do site e viraram filtro na Apresentação.** A
+  classificação do empreendimento é conversa comercial, não informação de
+  visitante: ela sumiu da ficha do vídeo no site aberto e virou **dois grupos a
+  mais na coluna do modo Apresentação**, ao lado de Categorias e Ordenar.
+  - Eles **não filtram por cima da categoria**: são outra maneira de recortar o
+    acervo, no mesmo nível dela. As três listas dividem uma seleção só, então
+    escolher "Altíssimo" mostra uma faixa chamada Altíssimo com os vídeos daquele
+    padrão, de qualquer categoria — e desmarca a categoria que estava escolhida.
+    Em "Todos os vídeos" o acervo continua vindo separado por categoria.
+  - As listas ficam sempre à vista, com a contagem ao lado; as opções zeradas
+    ficam apagadas, mas continuam clicáveis e levam ao aviso de lista vazia. O
+    destaque do topo só aparece em "Todos os vídeos" — em qualquer recorte ele
+    exibiria um vídeo de fora.
+  - Onde continua visível: o formulário de vídeo (que é onde se preenche) e a
+    linha da lista no console, que também é tela interna.
+
+- **O salto das thumbs era eu quem causava.** Para deixar o card em destaque
+  reto, eu desligava a animação de inclinação (`animation-name: none`) — e ao
+  sair do hover ela **recomeçava do próprio início**, com o atraso negativo
+  levando o card para uma fase que não era a dele. Daí o pulo do nada.
+  - Agora a animação nunca para. O card ganhou uma **face interna** que gira o
+    contrário do ângulo em que o card está: o ângulo é lido da matriz no quadro
+    seguinte ao hover (a pausa vem do mousemove da faixa, e ler no mesmo quadro
+    pegava o valor ainda andando). Resultado medido: inclinação do card −10,83°,
+    giro da face +10,83°, **resultante 0** — reta, sem interromper nada.
+  - O nascimento também ficou mais gradual (a entrada passou de 5% para 16% do
+    trajeto), para o card não brotar no meio da cena.
+
+- **Passo do destaque mais contido**, agora que são poucos cards: 11cqw para
+  5cqw, e a transição de 0.18s para 0.32s.
+
+- **A faixa perdeu o limite visível.** Em vez de uma segunda camada de máscara
+  (que custaria a cada quadro), o próprio fundo termina transparente em cima e
+  embaixo. Os dois fios de 1px saíram — eram justamente a linha que denunciava a
+  borda.
+
+- **Quatro cards por trilho, e a faixa deixou de ser preta chapada.**
+  - O tamanho aparente cresce em progressão geométrica, então cortar de 13 para 4
+    cards abriria vãos enormes entre eles. Para os quatro caberem numa faixa de
+    tamanhos mais curta, o nascimento subiu de 1.4 para 4.4cqw — cada card fica
+    ~1,45x o anterior (93 · 136 · 199 · 291px numa tela de 1200) e a fita segue
+    contínua: a linha do eixo continua clicável de ponta a ponta.
+  - O fundo do palco caiu de 86–97% para **42–66% de opacidade**: ainda separa o
+    corredor do fundo animado, mas agora deixa o site aparecer por trás em vez de
+    virar uma tarja preta.
+
+- **Corredor liso: a animação estava presa na thread principal.** Os keyframes
+  animavam `pointer-events` junto com `transform`/`opacity` — e basta uma
+  propriedade que o compositor não saiba animar para a animação INTEIRA cair na
+  thread principal. Eram 26 rodando assim, o que aparecia exatamente como
+  engasgo. Agora só entram `transform` e `opacity`; quem ignora o clique num
+  card quase invisível é o próprio manipulador, que lê a opacidade na hora.
+  - Cuidado que isso trouxe: os contêineres do palco têm `pointer-events: none`
+    (para não roubarem o clique dos cards do fundo) e isso é **herdado** — era o
+    keyframe que devolvia `auto` ao card. Sem ele, nada era clicável; o `auto`
+    passou para a regra do card.
+  - Junto: a máscara do palco virou uma camada em vez de duas compostas, e o
+    palco ganhou `contain: layout paint`.
+  - **O maior peso da página não era o corredor:** o fundo animado tinha um
+    `blur(18px)` de tela cheia refeito a cada quadro, porque o canvas redesenha
+    sempre. Caiu para `blur(9px)` com metade da resolução — o desfoque esconde a
+    diferença.
+
+- **Os cards saem apagando.** A opacidade voltou ao fim do trajeto (últimos 12%):
+  antes o card sumia de um quadro para o outro quando a volta reiniciava.
+
+- **A pausa do corredor agora tem uma faixa própria.** Antes qualquer canto do
+  palco segurava a animação; o palco é alto por causa dos cards da frente, mas a
+  fita de vídeos ocupa só uma tira no meio — então o corredor travava com o
+  ponteiro longe de qualquer vídeo. A zona sensível passou a ser 40%–68% da
+  altura, centrada no eixo de fuga, medida pela posição do ponteiro (o CSS não
+  sabe recortar :hover). Fora dela o corredor segue andando; o destaque e a
+  legenda também só valem lá dentro.
+
+- **Menu do topo acertado com a nova ordem das seções.** Os links passaram a ser
+  Início · Projetos · Categorias · Sobre · Contato, seguindo a página.
+  - Junto, um bug que a reordenação expôs: o item aceso saía de um laço que
+    confiava na ORDEM DO ARRAY de ids, e não na posição das seções. Com Projetos
+    acima de Categorias, estar em Categorias acendia Projetos. Agora vence a
+    seção mais abaixo que já passou pela linha de leitura — reordenar a página de
+    novo não quebra mais o menu.
+
+- **Destaque do card de vídeo agora é instantâneo**: as transições voltaram de
+  0.45–0.5s para 0.14–0.18s. O movimento do corredor segue calmo (30s); o que
+  ficou rápido é só a resposta ao cursor.
+
+- **Corredor mais calmo, e sobre uma faixa preta.**
+  - **Ritmo:** a travessia passou de 20s para 30s e os keyframes de 28 para 20
+    amostras; as transições do destaque foram de 0.3s para 0.45–0.5s com uma
+    curva sem repique. O movimento acompanha o cursor em vez de estalar.
+  - **Leveza de verdade:** o corredor **para de desenhar quando a seção sai da
+    tela** (IntersectionObserver com 120px de folga). São 26 cards em 3D girando
+    o tempo todo; sem isso eles seguiam custando GPU enquanto o visitante lia o
+    resto da página. Se o navegador não tiver o observer, o padrão é seguir
+    animando — nunca ficar parado por engano.
+  - **Faixa preta ao fundo:** um radial quase preto atrás do corredor, com dois
+    fios de luz de 1px em cima e embaixo. Como a máscara do palco dissolve as
+    quatro bordas, a faixa não tem contorno — ela simplesmente some no fundo
+    animado do site em vez de brigar com ele.
+
+- **Corredor: pontas que somem, cards do meio clicáveis e salto no destaque.**
+  - **O clique no meio não funcionava por um motivo de geometria, não de código
+    de evento:** um card com tamanho aparente menor que o próprio tem `z`
+    NEGATIVO — ele fica atrás do plano z=0 dos contêineres do palco, e uma caixa
+    transparente que cobre o palco inteiro continua valendo no teste de clique.
+    Só os cards da frente (z positivo) respondiam. `pointer-events: none` nos
+    dois contêineres resolve; quem volta a receber o ponteiro é o card. Medido:
+    a linha do eixo saiu de "clicável só nos 15% de cada ponta" para clicável
+    inteira.
+  - **O corredor inteiro se dissolve no fundo da página**, por máscara no palco:
+    forte nas laterais, onde os cards sairiam cortados pelo limite, e suave em
+    cima e embaixo, para a seção não ter borda. A máscara fica fora do contexto
+    3D (que vive nos contêineres internos) — aplicada no meio dele, achataria a
+    cena. Nos keyframes sobrou só o nascimento translúcido, para o card não
+    pipocar no ponto de fuga; enquanto está assim ele solta o ponteiro (a
+    propriedade `pointer-events` anima em degrau), para não roubar o clique de
+    quem está atrás.
+  - **Trilhos mais fechados** (afastamento do eixo de 42 para 30cqw): os cards
+    vêm mais por dentro e os da frente não escapam pelas laterais antes de dar
+    para vê-los.
+  - **O card sob o cursor desliza para o lado e fica reto.** Só isso: um passo
+    lateral de 11cqw em direção ao miolo do corredor (para a esquerda se estiver
+    no trilho da direita e vice-versa), sem crescer e sem avançar em profundidade.
+    - Para o card poder ficar **reto** foi preciso partir a animação em duas: uma
+      leva o invólucro pelo corredor (posição, opacidade, ponteiro) e outra só
+      inclina o card dentro dele. A inclinação vive no `transform`, que pertence
+      à animação e não pode ser sobrescrito por regra nenhuma — com ela numa
+      animação própria, basta desligá-la no hover e o card se endireita sozinho,
+      sem perder o lugar no corredor. Medido no card em destaque: matriz
+      identidade, ou seja, zero perspectiva.
+    - O nome dessa animação vai numa variável CSS, não em `animation-name`
+      inline: estilo inline vence a folha, e a regra do destaque precisa poder
+      desligá-la (foi o mesmo tropeço do atalho `animation`, algumas rodadas
+      atrás).
+  - **Escala geral menor**: a altura aparente na saída caiu de 30 para 20cqw (e o
+    nascimento de 1.7 para 1.4), o número que governa o tamanho do corredor
+    inteiro. Na prática o maior card foi de 922px para 504px numa tela de 1200.
+  - A fita passou de 9 para 13 cards por trilho: ela só fica sólida enquanto
+    cards vizinhos se sobrepõem, e com poucos cards sobravam vãos no meio.
+
+- **Destaques viraram um corredor 3D, e subiram na página.** A seção *Vídeos em
+  destaque* passou para antes de *Categorias* (as etiquetas trocaram de número
+  junto: 02 para projetos, 03 para categorias) e trocou a galeria empilhada por
+  um corredor em perspectiva — dois trilhos de cards vindo do fundo em direção a
+  quem olha.
+  - O componente de referência é React+Tailwind+TS e depende de `cn`/`@/lib/utils`;
+    aqui virou JSX simples com CSS. O que veio inteiro é a **geometria**, que é o
+    miolo dele: profundidade escrita como tamanho aparente em progressão
+    geométrica (espaçar z linearmente descola os cards da frente), trilhos que
+    abrem forte e depois seguram, e o card nascendo do outro lado do eixo para a
+    garganta do corredor nunca abrir um buraco. Os números foram reajustados de
+    card retrato para 16:9.
+  - **As três diferenças pedidas:** passar o mouse **para** o corredor; o card sob
+    o cursor acende enquanto os outros recuam, com o nome do vídeo numa legenda
+    parada no rodapé do palco (legível, já que o card está inclinado); e os dois
+    trilhos **não repetem vídeo entre si** — a lista de destaques é partida ao
+    meio, cada metade corre de um lado.
+  - A pausa exigiu separar as propriedades de animação: o atalho `animation`
+    carrega `play-state: running` embutido e, aplicado inline, vencia a regra do
+    `:hover`. Card sem capa mostra o gradiente da categoria com o título por
+    cima, em vez de um retângulo vazio. No celular o corredor sai de cena — 18
+    cards em 3D não valem a bateria — e a faixa horizontal que já existia
+    continua no lugar dele.
+
+- **Descrição da pasta não corta mais.** Duas causas empilhadas. A primeira: o
+  recorte de duas linhas nunca chegou a valer, porque `.folder-panel` é flex e
+  item de flex blockifica o `display:-webkit-box` de que o `-webkit-line-clamp`
+  depende — o clamp mudou para um `<span>` dentro do `<p>` e o `max-height`
+  virou 2.9em, exatamente duas linhas de 1.45 de entrelinha.
+  - A segunda, que era a de verdade: **a altura do painel era uma porcentagem do
+    card**. Card estreito, painel curto — e a descrição, que tem altura em pixels,
+    não cabia. O painel passou a ser ancorado embaixo com altura do próprio
+    conteúdo (`bottom: 0; top: auto`), então ele cresce o quanto o texto precisar
+    e nunca corta. A aba mudou para dentro do painel, pendurada em `bottom: 100%`,
+    para acompanhar a borda de cima que agora se move. O `--folder-lip` deixou de
+    existir.
+  - De quebra, a pasta fechada ficou igual em todo card (uma faixa de ~52px em vez
+    de 36% da altura), o que dá ainda mais capa à mostra nos cards maiores. O
+    rodapé, ao sumir no hover, devolve o espaço dele para a descrição em vez de
+    só ficar invisível.
+
+- **Pasta aberta fica limpa e ganha um botão de compartilhar.** Ao passar o
+  mouse, a contagem de vídeos e a data de atualização somem e a frente da pasta
+  desce 24px em vez de subir — a área de foto salta de 42% para **59% do card**,
+  sobrando na tela só o nome e a descrição.
+  - No canto de cima aparece um **botão pequeno de compartilhar** que copia o
+    link daquela categoria (`/assistir/<id>`, o mesmo endereço que o botão da
+    própria página de categoria usa) e mostra um **"Link copiado."** no rodapé da
+    tela — o primeiro aviso desse tipo no site público; o console já tinha o seu.
+  - O clique no botão não abre a categoria junto, e o Enter/Espaço no card só
+    vale quando o foco está no card, não no botão.
+  - A cópia tenta três caminhos: a API moderna, um `textarea` + `execCommand`
+    (que cobre o site aberto pelo IP da rede no celular, onde `navigator.clipboard`
+    não existe, e a janela sem foco) e, por último, o prompt.
+
+- **A capa dissolve no fundo animado.** O `.hero` era preto opaco e terminava
+  numa linha reta contra o fundo animado. Agora ele é transparente e quem fecha a
+  capa é uma máscara no `.hero-bg`: vídeo, véu e grão somem aos poucos no último
+  terço, então existe um trecho onde a capa e o fundo convivem em vez de uma
+  borda entre os dois. Os dois gradientes que terminavam em `var(--bg)` passaram
+  a terminar em preto translúcido — o encerramento agora é da máscara.
+
+- **A roleta de clientes para no hover.** Passar o mouse sobre um logo segura a
+  fita; ao sair, ela volta a andar. Feito em CSS puro com `:has(.mq-item:hover)`,
+  para o vão entre os logos não parar a rolagem por engano — e sem re-render.
+
+- **Página de projetos por cliente: mais leve e sem baralho.** Ela abria um
+  `backdrop-filter` de tela cheia por cima do canvas que redesenha todo quadro —
+  o navegador refazia o desfoque da tela inteira a cada frame, e era daí que vinha
+  o engasgo. Virou fundo quase opaco, que custa zero e esconde o mesmo tanto.
+  Junto: enquanto qualquer overlay de tela cheia está aberto, o fundo animado
+  para de desenhar (o próprio `_scrollLock` avisa o `wave-bg`). Os cards ficaram
+  menores (5 colunas no desktop) e pararam de se sobrepor: o `-38px` de margem
+  que cria o efeito de baralho na página de categoria não vale aqui, e o hover
+  passou a ser um passo curto em vez do salto de 42px.
+
+- **Mais capa à mostra na pasta.** A dobra desceu de 56% para 64%, a aba ficou
+  6px mais baixa e o card ficou mais alto (proporção de 1.38 para 1.15) — a
+  frente da pasta tem altura fixa em pixels, então esticar o card sobra tudo para
+  a foto. A área de imagem saiu de ~25% para **42% da altura do card**, quase o
+  dobro em pixels. A capa também clareou: 0.5 → 0.8 em repouso e 1.0 no hover,
+  com o véu do topo e o facho azul mais leves (eram eles que lavavam a foto).
+
+- **Pasta de categoria menor, com a foto saindo dela.** Fechada, a frente da
+  pasta ocupa só o rodapé (a dobra desceu de 42% para 56%) — o miolo agora é a
+  capa. No hover a frente desce 26px e a foto sobe 16px, como quem puxa a
+  fotografia de dentro da pasta; a dobra volta a 46% para caber a descrição que
+  se abre.
+
+- **Storyboards e Produções saíram do console.** As duas abas, com tudo que as
+  sustentava dentro do painel: estados, carregamento, salvamento automático das
+  locuções, assinaturas de live-update, o modo foco do deck, o sino de
+  comentários novos, o portão de senha da seção e o modal que trocava essa senha.
+  A busca global (Ctrl+Espaço) também parou de oferecer storyboards no console —
+  um resultado clicável que não abre nada é pior do que resultado nenhum; na
+  página `/storyboards`, que continua existindo, a busca segue igual.
+  - **O que continua no ar, de propósito:** `/storyboards` (índice protegido),
+    `/sb/<código>` (o link que o cliente já recebeu para revisar) e
+    `/producoes` (a visão somente-leitura), com as respectivas rotas da API. O
+    `LocucoesPanel` continua no arquivo porque a visão compartilhada o usa.
+  - **Efeito colateral a saber:** a senha da seção Produções não tem mais tela
+    para ser trocada — o link `/producoes` continua pedindo ela, mas mudá-la só
+    pela API. Se a ideia é aposentar também esses links, é outra remoção.
+
+- **O vermelho da abertura virou azul.** A animação do preloader é um `.lottie`
+  de quadros webp e o quadrado vermelho dos primeiros frames está assado nas
+  imagens — não há cor para trocar por variável. A saída foi girar a matiz no
+  próprio player: `hue-rotate(220deg) saturate(.7) brightness(1.2)` leva o
+  `rgb(255,23,81)` original a `rgb(32,122,190)`, o azul do site, e não toca no
+  resto — preto e branco não têm matiz para girar. Os valores saíram de uma
+  varredura medindo o pixel em canvas, não de chute.
+
+- **Vidro escuro com contorno azul em tudo.** O padrão do `SpotlightCard` deixou
+  de ser branco a 4% e passou a ser `rgba(8,9,13,0.72)` com borda na cor de
+  destaque — como ele desenha os cards do console, os cards de vídeo do site, a
+  busca global e o modo apresentação, a mudança vale em todos de uma vez. As
+  linhas da lista do console, os cards em grade e os destaques da home ganharam a
+  mesma caixa. As pastas de categoria receberam o mesmo contorno e mostram mais
+  da capa já fechadas (opacidade de 0.34 para 0.5).
+
+- **Fundo animado com o brilho de volta.** O escurecimento do ajuste anterior foi
+  desfeito (feixe em 0.6, sem fator final, esferas como eram). O desfoque e a
+  rolagem continuam.
+
+- **Fundo animado: mais escuro, desfocado e preso à rolagem.** O campo perdeu
+  cerca de 40% de brilho (feixe de 0.6 para 0.45 e um fator final de 0.62; as
+  esferas ficaram mais discretas) e ganhou `filter: blur(18px)`. O canvas é
+  escalado em 1.12 por causa do desfoque: sem essa sobra o blur puxaria o vazio
+  de fora e deixaria uma moldura clara na borda da tela. Como o desfoque cobre
+  qualquer serrilhado, a cena passou a ser desenhada a 1x — no fim ficou mais
+  barata do que antes.
+  - **Rola junto com a página:** o campo desliza no eixo Y e as esferas sobem
+    conforme a rolagem, sempre mais devagar que o conteúdo. A posição é lida no
+    próprio quadro em vez de num listener de `scroll`: com o `body` como
+    container de rolagem, o evento não chega à `window` e o fundo ficaria
+    parado. Ler no rAF ainda dispensa debounce — já roda uma vez por quadro.
+    A vinheta continua presa à tela, para as bordas não clarearem no meio da
+    página.
+
+- **Azul Skyline no lugar do vermelho.** A cor de destaque padrão do site passou
+  a ser o azul da referência da marca (`#2E86C1`) — mesmo peso visual do vermelho
+  antigo sobre o fundo escuro (contraste com o branco praticamente idêntico), só
+  que azul. Como o CSS já era todo `rgba(var(--accent-rgb), …)`, bastou trocar o
+  `:root`; os literais que sobravam no storyboard e no screendimension foram
+  junto. O seletor de cor do console continua valendo por cima, e ganhou o azul
+  como primeira opção.
+  - No desenho 3D do screendimension o acento virou um azul mais claro
+    (`0x5EC8F2`): no azul do site ele ficaria idêntico ao `blue` que já existia
+    ali e as duas peças do desenho não se distinguiriam.
+
+- **Fundo animado novo: campo dimensional.** O `wave-bg.js` — que desenhava onda
+  pixel a pixel em canvas 2D — deu lugar a feixes de luz em ruído simplex com
+  esferas de vidro (fresnel) em WebGL, com paralaxe do ponteiro.
+  - O componente veio embrulhado num `<iframe srcdoc>` que busca three.js e
+    tailwind no cdnjs. Não dava para usar assim: o CSP do site só libera script
+    de `self` e unpkg, e `frame-src` apenas YouTube/Vimeo — o iframe carregaria
+    em branco. O shader foi portado para o canvas que já existia; o three.js vem
+    do unpkg, que o CSP já permitia por causa do React.
+  - Rodando na própria página, o fundo ganha o que o iframe não teria: **segue a
+    cor de destaque publicada no console** (o feixe usa `--accent`) e para de
+    desenhar quando a aba está escondida. Com `prefers-reduced-motion` a cena
+    congela num quadro. Sem three.js, cai num gradiente estático em vez de preto.
+
+- **A pasta abre no hover.** A descrição da categoria agora fica fechada: em
+  repouso o card mostra só o nome e a contagem. Ao passar o mouse (ou focar pelo
+  teclado) a frente desce 22px em vez de 12px — mais capa à mostra — e a
+  descrição se abre junto. O card deixou de recortar o próprio conteúdo para a
+  frente poder descer para fora da caixa; quem arredonda a capa agora é o
+  `.folder-cover-wrap`, e a pasta aberta sobe de camada para passar por cima das
+  vizinhas.
+
+- **Cor de destaque trocável pelo console.** Aba Home → *Cor de destaque*: nove
+  cores prontas, seletor livre e campo hex. A escolha já repinta a tela enquanto
+  você decide; só o que é publicado vale para quem abre o site.
+  - Funciona porque o `styles.css` inteiro passou a escrever o vermelho como
+    `rgba(var(--accent-rgb), …)` — eram 45 lugares com `rgba(230,57,70,…)` fixo.
+    Publicar reescreve quatro variáveis no `<html>` (`--accent`, `--accent-rgb`,
+    `--accent-hue` e `--accent-deep`) e o resto acompanha sozinho, inclusive o
+    tom escuro e o brilho que segue o cursor nos cards (que é montado em `hsl`
+    a partir da matiz).
+  - O servidor só aceita `#RRGGBB`: o valor vira variável CSS na página de
+    quem visita, então nada além de cor pode entrar por ali. Vazio = volta ao
+    vermelho padrão. O painel de tweaks local virou reserva: a cor publicada
+    ganha dele.
+  - O deck de storyboard e o screendimension seguem no vermelho fixo — são
+    ferramenta interna e o PDF exportado não entende variável CSS.
+
+- **Categorias viraram pastas.** Os chips retangulares deram lugar a um card de
+  pasta: a capa da categoria fica *dentro* dela, fraca em repouso; ao passar o
+  mouse a frente desce alguns pixels — como quem abre a pasta — e a capa acende.
+  Cada pasta mostra o nome na aba, a descrição, **quantos vídeos tem dentro** e a
+  data da última publicação.
+  - A silhueta da aba sai de dois raios: o convexo do próprio canto e um filete
+    côncavo (máscara radial em `.folder-tab::after`) que emenda a aba na borda
+    da frente — sem SVG, então o card estica em qualquer largura.
+  - Sem capa enviada, o miolo é o gradiente da própria categoria, com um facho
+    da cor de destaque por cima.
+  - Um clique entra na categoria. O comportamento antigo — expandir no hover,
+    tocar duas vezes no celular e o preview em vídeo do YouTube dentro do chip —
+    saiu junto com os chips.
+
+- **Textos da home que o console prometia e não entregava.** Os cabeçalhos de
+  *Categorias* e *Projetos em destaque* e o botão do player estavam escritos
+  direto no JSX — editar no console não mudava nada, e o `content.js` guardava
+  um texto que já não era o da tela. Agora saem do console de verdade, e os
+  padrões do `content.js` foram acertados para o que está no ar. Os campos que
+  não existiam em lugar nenhum da página (rótulo e nome do grupo no rodapé,
+  sufixo de projetos, botão do card de categoria) saíram do painel.
+
+- **Padrão e formato do empreendimento na ficha do vídeo.** Duas listas novas no
+  formulário de vídeo (valem tanto para criar quanto para editar): **padrão** —
+  Baixo, Médio, Alto, Altíssimo — e **formato** — condomínio vertical, condomínio
+  horizontal, business. São listas fechadas de propósito: texto livre viraria
+  "Alto"/"alto"/"ALTO" no mesmo relatório. Ficam vazias ("não informado") nos
+  vídeos antigos e aparecem na linha da lista do console e na ficha do vídeo
+  aberto no site, só quando preenchidas.
+
+- **Cards de categoria visíveis.** O contorno do card vinha do SpotlightCard, que
+  usa a mesma cor do fundo translúcido para a borda — branco a 4%, invisível
+  sobre a home escura. O chip agora passa `--backdrop` (base escura própria) e
+  `--backup-border` (branco a 24%) para o componente, e o CSS cuida do que não é
+  inline: brilho no topo, sombra embaixo e um anel claro no hover. O contador de
+  vídeos saiu do cinza mais apagado, e as categorias sem vídeo (ou fora do hover)
+  não caem mais para 28% de opacidade — ficam em 62%, discretas mas legíveis.
+
+- **Os textos da home viraram campo no console.** A aba do demoreel virou
+  **Home**: em cima continua o vídeo de capa, embaixo entrou todo o texto escrito
+  na página inicial — menu, capa, categorias, destaques, clientes, sobre (com os
+  números e a faixa rolante), processo, contato, rodapé e o botão do player.
+  Cada seção é um bloco que abre; listas (números, palavras da faixa, etapas,
+  linhas de contato, telefones, cidades) ganham e perdem itens ali mesmo.
+  - O `content.js` continua sendo a fonte do texto **padrão**. O que é publicado
+    no console fica no banco (`settings.siteContent`), volta em `/api/data` e
+    entra por cima do padrão em `FRAMETY_APPLY_CONTENT` — listas são trocadas
+    inteiras, não item a item, senão apagar um item não apagaria de verdade.
+    "Restaurar padrão" apaga a versão salva e a home volta ao `content.js`.
+  - Publicar vale na hora para quem já está com o site aberto: o `POST` entra no
+    domínio `content` do live-update, o mesmo que já avisava sobre vídeos e reel.
+  - Os campos `*Html` (título da capa, frase do sobre, título do contato,
+    direitos autorais) passam pelo sanitizador — que agora aceita `class`, senão
+    o `<span class="strike">` do texto padrão perderia o tachado.
+  - **Painel longo não some mais no fim da tela.** A linha do grid do console
+    crescia com o conteúdo em vez de rolar dentro da área principal; com
+    `grid-template-rows: 100%` + `min-height: 0` a rolagem volta para o `main`
+    e a barra de publicar fica sempre alcançável.
+
+- **Vídeo da capa mais visível.** As três camadas que escureciam o demoreel
+  (filtro do vídeo, vinheta e gradiente do `.hero-bg`) foram aliviadas —
+  `brightness` de 0.6 para 0.92 e os pretos de 0.55 para ~0.30. O fade para o
+  fundo na base continua, então o texto da capa e a próxima seção seguem legíveis.
+
 - **Tecla `R`: as cenas viram roteiro.** Do mesmo jeito que o `G` abre a grade,
   o `R` abre o roteiro — as mesmas cenas em texto, sem imagem nenhuma, no
   formato de duas colunas **VÍDEO | ÁUDIO** (o padrão de roteiro publicitário e

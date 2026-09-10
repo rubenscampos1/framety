@@ -1,3 +1,5 @@
+/* O documento da OS e a exportação em PDF moram em os-doc.jsx — carregado
+   antes deste arquivo no Framety.html e reaproveitado pelo app de desktop. */
 /* admin.jsx — console admin com persistência via API */
 
 const AdminLogin = ({ onClose, onSuccess }) => {
@@ -105,9 +107,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
       seguranca: "seguranca",
       parceiros: "parceiros",
       tutorial: "tutorial",
-      locucoes: "locucoes",
       links: "links",
-      storyboards: "storyboards",
     };
     const slug = slugMap[tab] || "visao-geral";
     const newPath = `/console/${slug}`;
@@ -128,39 +128,12 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
     return () => window.removeEventListener('framety-admin-edit', onEdit);
   }, []);
 
-  // Busca global (Ctrl+Espaço) → abre o storyboard escolhido. O id fica guardado
-  // porque o painel só existe depois que a aba troca — ele lê o pedido ao montar.
-  const [sbRequestOpen, setSbRequestOpen] = React.useState(null);
-  React.useEffect(() => {
-    const onOpenSb = (e) => { setTab("storyboards"); setSbRequestOpen(e.detail?.id || null); };
-    window.addEventListener('framety-open-storyboard', onOpenSb);
-    return () => window.removeEventListener('framety-open-storyboard', onOpenSb);
-  }, []);
-
   const [vids, setVids] = React.useState([]);
   const [cats, setCats] = React.useState([]);
   const [clients, setClients] = React.useState([]);
   const [reelName, setReelName] = React.useState("");
   const [partners, setPartners] = React.useState([]);
-  const [storyboards, setStoryboards] = React.useState([]);
-  const [locucoesPages, setLocucoesPages] = React.useState([]);
-  const [locucoesActivePageId, setLocucoesActivePageId] = React.useState(null);
-  const [locucoesCad, setLocucoesCad] = React.useState({ clientes: [], projetos: [], empreendimentos: [], categorias: [] });
   const [redirects, setRedirects] = React.useState([]);
-  const [producoesUnlocked, setProducoesUnlocked] = React.useState(false);
-  const [showProducoesPass, setShowProducoesPass] = React.useState(false);
-  // Modo foco do storyboard: recolhe o menu do console para o deck (1280px de
-  // página) ganhar largura. A preferência persiste entre sessões, mas só tem
-  // efeito na aba de storyboards — sair dela sempre devolve o menu.
-  const [sbFocus, setSbFocus] = React.useState(() => {
-    try { return localStorage.getItem("framety.sbFocus") === "1"; } catch { return false; }
-  });
-  const toggleSbFocus = () => setSbFocus((v) => {
-    const next = !v;
-    try { localStorage.setItem("framety.sbFocus", next ? "1" : "0"); } catch {}
-    return next;
-  });
-  const navHidden = tab === "storyboards" && sbFocus;
 
   // ── Toast & confirm system ────────────────────────────────────────────────────
   const [toasts, setToasts] = React.useState([]);
@@ -198,15 +171,10 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
       setReelName(data.reel?.name || "");
       window.FRAMETY_DATA = data;
       window.getStoredReelUrl = () => data.reel?.url || '';
+      window.FRAMETY_APPLY_CONTENT?.(data.content);
 
       window.API.getPartners().then(setPartners).catch(() => {});
-      window.API.getLocucoes().then(d => {
-        setLocucoesPages(d.pages || []);
-        setLocucoesActivePageId(d.activePageId || (d.pages && d.pages[0] && d.pages[0].id) || null);
-        setLocucoesCad(d.cad || { clientes: [], projetos: [], empreendimentos: [], categorias: [] });
-      }).catch(() => {});
       window.API.getRedirects().then(setRedirects).catch(() => {});
-      window.API.getStoryboards().then(setStoryboards).catch(() => {});
       setLoading(false);
 
       // Views auto-update logic removed per user request
@@ -214,29 +182,9 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
   }, []);
 
   // Keep global in sync so other pages reflect changes
-  React.useEffect(() => { window.FRAMETY_SB = storyboards; }, [storyboards]);   // busca global
   React.useEffect(() => { if (window.FRAMETY_DATA) window.FRAMETY_DATA.videos = vids; }, [vids]);
   React.useEffect(() => { if (window.FRAMETY_DATA) window.FRAMETY_DATA.categories = cats; }, [cats]);
   React.useEffect(() => { if (window.FRAMETY_DATA) window.FRAMETY_DATA.clients = clients; }, [clients]);
-
-  // Locuções: debounced whole-blob save, kept here (not inside LocucoesPanel) so
-  // a pending edit still persists even if the admin switches tabs before it fires
-  // (switching tabs unmounts the panel, which would otherwise cancel the timer).
-  const locucoesSaveTimer = React.useRef(null);
-  const locucoesSavePending = React.useRef(false);  // true while a local save is queued/in-flight
-  const applyingRemoteLoc = React.useRef(false);     // true when state was just replaced by a live refetch
-  React.useEffect(() => {
-    if (loading) return;
-    if (applyingRemoteLoc.current) { applyingRemoteLoc.current = false; return; } // remote update → don't re-save (avoids echo loop)
-    locucoesSavePending.current = true;
-    clearTimeout(locucoesSaveTimer.current);
-    locucoesSaveTimer.current = setTimeout(() => {
-      window.API.saveLocucoes({ pages: locucoesPages, activePageId: locucoesActivePageId, cad: locucoesCad })
-        .catch(() => {})
-        .finally(() => { locucoesSavePending.current = false; });
-    }, 700);
-    return () => clearTimeout(locucoesSaveTimer.current);
-  }, [locucoesPages, locucoesActivePageId, locucoesCad, loading]);
 
   // Live updates: re-fetch when another user (or myself elsewhere) changes data.
   React.useEffect(() => {
@@ -249,26 +197,14 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
         setReelName(data.reel?.name || "");
         window.FRAMETY_DATA = data;
         window.getStoredReelUrl = () => data.reel?.url || '';
+        window.FRAMETY_APPLY_CONTENT?.(data.content);
       }).catch(() => {});
       window.API.getPartners().then(setPartners).catch(() => {});
-    });
-    // Comentários chegam pelo link do cliente — o console precisa acender o sino
-    // sem depender de recarregar a página.
-    const offSb = window.FRAMETY_LIVE.on('storyboards', () => {
-      window.API.getStoryboards().then(setStoryboards).catch(() => {});
-    });
-    const offLoc = window.FRAMETY_LIVE.on('locucoes', () => {
-      if (locucoesSavePending.current) return; // don't clobber my own in-progress edit
-      window.API.getLocucoes().then(d => {
-        applyingRemoteLoc.current = true;
-        setLocucoesPages(d.pages || []);
-        setLocucoesCad(d.cad || { clientes: [], projetos: [], empreendimentos: [], categorias: [] });
-      }).catch(() => {});
     });
     const offRed = window.FRAMETY_LIVE.on('redirects', () => {
       window.API.getRedirects().then(setRedirects).catch(() => {});
     });
-    return () => { offContent(); offSb(); offLoc(); offRed(); };
+    return () => { offContent(); offRed(); };
   }, [loading]);
 
   const handleReelUpload = async (file) => {
@@ -315,13 +251,10 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
 
   const titleMap = {
     overview: "Visão geral", videos: "Vídeos", clientes: "Clientes",
-    categorias: "Categorias", reel: "Demoreel da capa", ia: "Seção IA",
+    categorias: "Categorias", reel: "Home — capa e textos", ia: "Seção IA",
     seguranca: "Segurança", parceiros: "Parceiros", tutorial: "Tutorial",
-    storyboards: "Storyboards", locucoes: "Produções", links: "Links",
+    links: "Links",
   };
-
-  // Soma dos comentários novos que ainda não foram abertos — acende o sino.
-  const sbUnread = storyboards.reduce((n, s) => n + (s.unread || 0), 0);
 
   if (loading) {
     return (
@@ -332,8 +265,8 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
   }
 
   return (
-    <div className={"admin-shell page-enter" + (navHidden ? " nav-hidden" : "")} data-screen-label="07 Admin">
-      <aside className="admin-side" {...(navHidden ? { inert: "", "aria-hidden": "true" } : {})}>
+    <div className="admin-shell page-enter" data-screen-label="07 Admin">
+      <aside className="admin-side">
         <div className="crest" style={{justifyContent: "center", marginBottom: 30}}>
           <img src="/vector_framety.svg?v=1" alt="Framety" style={{height: 48}}/>
         </div>
@@ -341,20 +274,17 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
         <a className={"admin-nav-item " + (tab==="videos"?"active":"")} onClick={()=>setTab("videos")} data-cursor="hover"><span className="ico"><Icon name="video" size={15}/></span> Vídeos</a>
         <a className={"admin-nav-item " + (tab==="clientes"?"active":"")} onClick={()=>setTab("clientes")} data-cursor="hover"><span className="ico"><Icon name="users" size={15}/></span> Clientes</a>
         <a className={"admin-nav-item " + (tab==="categorias"?"active":"")} onClick={()=>setTab("categorias")} data-cursor="hover"><span className="ico"><Icon name="folder" size={15}/></span> Categorias</a>
-        <a className={"admin-nav-item " + (tab==="reel"?"active":"")} onClick={()=>setTab("reel")} data-cursor="hover"><span className="ico"><Icon name="play-line" size={15}/></span> Demoreel</a>
+        <a className={"admin-nav-item " + (tab==="reel"?"active":"")} onClick={()=>setTab("reel")} data-cursor="hover"><span className="ico"><Icon name="play-line" size={15}/></span> Home</a>
         <a className={"admin-nav-item " + (tab==="ia"?"active":"")} onClick={()=>setTab("ia")} data-cursor="hover"><span className="ico"><Icon name="sparkles" size={15}/></span> Seção IA</a>
         <a className={"admin-nav-item " + (tab==="parceiros"?"active":"")} onClick={()=>setTab("parceiros")} data-cursor="hover">
           <span className="ico"><Icon name="users" size={15}/></span> Parceiros
           {partners.length > 0 && <span className="num" style={{marginLeft:"auto",fontSize:10,background:"var(--accent)",color:"#fff",borderRadius:20,padding:"1px 7px",fontFamily:"var(--font-mono)"}}>{partners.length}</span>}
         </a>
         <a className={"admin-nav-item " + (tab==="tutorial"?"active":"")} onClick={()=>setTab("tutorial")} data-cursor="hover"><span className="ico"><Icon name="help" size={15}/></span> Tutorial</a>
-        <a className={"admin-nav-item " + (tab==="storyboards"?"active":"")} onClick={()=>setTab("storyboards")} data-cursor="hover">
-          <span className="ico"><Icon name="list" size={15}/></span> Storyboards
-          {sbUnread > 0 && <span className="num" style={{marginLeft:"auto",fontSize:10,background:"var(--accent)",color:"#fff",borderRadius:20,padding:"1px 7px",fontFamily:"var(--font-mono)"}} title={`${sbUnread} atualização(ões) do cliente`}>🔔 {sbUnread}</span>}
-        </a>
-        <div className="group-label">— Ordens de serviço</div>
-        <a className={"admin-nav-item " + (tab==="locucoes"?"active":"")} onClick={()=>setTab("locucoes")} data-cursor="hover"><span className="ico"><Icon name="list" size={15}/></span> Produções</a>
         <a className={"admin-nav-item " + (tab==="links"?"active":"")} onClick={()=>setTab("links")} data-cursor="hover"><span className="ico"><Icon name="share" size={15}/></span> Links</a>
+        <a className={"admin-nav-item " + (tab==="novidades"?"active":"")} onClick={()=>setTab("novidades")} data-cursor="hover"><span className="ico"><Icon name="star" size={15}/></span> Novidades</a>
+        <a className={"admin-nav-item " + (tab==="marca"?"active":"")} onClick={()=>setTab("marca")} data-cursor="hover"><span className="ico"><Icon name="eye" size={15}/></span> Marca &amp; prévia</a>
+        <a className={"admin-nav-item " + (tab==="minigame"?"active":"")} onClick={()=>setTab("minigame")} data-cursor="hover"><span className="ico"><Icon name="play" size={15}/></span> Minigame</a>
         <div className="group-label">— Configurações</div>
         <a className={"admin-nav-item " + (tab==="seguranca"?"active":"")} onClick={()=>setTab("seguranca")} data-cursor="hover"><span className="ico"><Icon name="settings" size={15}/></span> Segurança</a>
         <a className="admin-nav-item" onClick={onOpenPresentation} data-cursor="hover"><span className="ico"><Icon name="external" size={15}/></span> Modo apresentação</a>
@@ -379,7 +309,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
             <Icon name="folder" size={16}/><span>Categorias</span>
           </a>
           <a className={tab==="reel"?"active":""} onClick={tapMobile(()=>setTab("reel"))}>
-            <Icon name="play-line" size={16}/><span>Reel</span>
+            <Icon name="play-line" size={16}/><span>Home</span>
           </a>
           <a className={tab==="ia"?"active":""} onClick={tapMobile(()=>setTab("ia"))}>
             <Icon name="sparkles" size={16}/><span>Seção IA</span>
@@ -390,14 +320,17 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
           <a className={tab==="tutorial"?"active":""} onClick={tapMobile(()=>setTab("tutorial"))}>
             <Icon name="help" size={16}/><span>Tutorial</span>
           </a>
-          <a className={tab==="storyboards"?"active":""} onClick={tapMobile(()=>setTab("storyboards"))}>
-            <Icon name="list" size={16}/><span>Storyboards</span>
-          </a>
-          <a className={tab==="locucoes"?"active":""} onClick={tapMobile(()=>setTab("locucoes"))}>
-            <Icon name="list" size={16}/><span>Produções</span>
-          </a>
           <a className={tab==="links"?"active":""} onClick={tapMobile(()=>setTab("links"))}>
             <Icon name="share" size={16}/><span>Links</span>
+          </a>
+          <a className={tab==="novidades"?"active":""} onClick={tapMobile(()=>setTab("novidades"))}>
+            <Icon name="star" size={16}/><span>Novidades</span>
+          </a>
+          <a className={tab==="marca"?"active":""} onClick={tapMobile(()=>setTab("marca"))}>
+            <Icon name="eye" size={16}/><span>Marca</span>
+          </a>
+          <a className={tab==="minigame"?"active":""} onClick={tapMobile(()=>setTab("minigame"))}>
+            <Icon name="play" size={16}/><span>Minigame</span>
           </a>
           <a className={tab==="seguranca"?"active":""} onClick={tapMobile(()=>setTab("seguranca"))}>
             <Icon name="settings" size={16}/><span>Config</span>
@@ -417,27 +350,16 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
               {tab==="videos" ? `${vids.length} ITEMS`
               : tab==="clientes" ? `${clients.length} ITEMS`
               : tab==="categorias" ? `${cats.length} ITEMS`
-              : tab==="reel" ? (reelName ? "ATIVO" : "VAZIO")
+              : tab==="reel" ? (reelName ? "REEL ATIVO" : "REEL VAZIO")
               : tab==="ia" ? "HOME"
               : tab==="seguranca" ? "ADMIN"
               : tab==="parceiros" ? `${partners.length} CADASTROS`
               : tab==="tutorial" ? "SUPORTE"
-              : tab==="storyboards" ? `${storyboards.length} STORYBOARDS`
-              : tab==="locucoes" ? "OS POR #SKY"
               : tab==="links" ? `${redirects.length} LINKS`
               : "DASHBOARD"}
             </span>
           </h2>
           <div className="admin-topbar-right">
-            {tab === "storyboards" && (
-              <button className="btn btn-ghost admin-focus-btn" style={{padding:"9px 14px",fontSize:13}}
-                onClick={toggleSbFocus} data-cursor="hover"
-                aria-pressed={sbFocus}
-                title={sbFocus ? "Mostrar o menu do console" : "Ocultar o menu do console e focar no storyboard"}>
-                <Icon name={sbFocus ? "chevron-right" : "chevron-left"} size={14}/>
-                <span className="admin-focus-label">{sbFocus ? "Mostrar menu" : "Modo foco"}</span>
-              </button>
-            )}
             <button className="btn btn-ghost admin-pres-btn" style={{padding:"9px 16px",fontSize:13}} onClick={onOpenPresentation} data-cursor="hover">
               <Icon name="external" size={14}/> Apresentação
             </button>
@@ -453,23 +375,15 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
         {tab === "videos" && <VideosPanel vids={vids} setVids={setVids} cats={cats} clients={clients}/>}
         {tab === "clientes" && <ClientsPanel clients={clients} setClients={setClients} vids={vids} setVids={setVids}/>}
         {tab === "categorias" && <CategoriesPanel cats={cats} setCats={setCats}/>}
-        {tab === "reel" && <ReelPanel reelName={reelName} onUpload={handleReelUpload} onRemove={removeReel}/>}
+        {tab === "reel" && <><ReelPanel reelName={reelName} onUpload={handleReelUpload} onRemove={removeReel}/><AccentPanel/><HomeCopyPanel/><InstaPanel/></>}
         {tab === "ia" && <AIPanel/>}
         {tab === "seguranca" && <SecurityPanel/>}
         {tab === "parceiros" && <PartnersPanel partners={partners} setPartners={setPartners}/>}
         {tab === "tutorial" && <TutorialPanel/>}
-        {tab === "storyboards" && <StoryboardsPanel list={storyboards} setList={setStoryboards} addToast={addToast}
-          requestOpen={sbRequestOpen} onOpened={() => setSbRequestOpen(null)}/>}
-        {tab === "locucoes" && (producoesUnlocked
-          ? <LocucoesPanel cad={locucoesCad} setCad={setLocucoesCad}
-              onChangePassword={() => setShowProducoesPass(true)}
-              onShare={() => {
-                const url = window.location.origin + "/producoes";
-                if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(() => addToast("Link de compartilhamento copiado: " + url, "success")).catch(() => addToast("Link: " + url, "success"));
-                else addToast("Link: " + url, "success");
-              }}/>
-          : <ProducoesGate onUnlock={() => setProducoesUnlocked(true)}/>)}
         {tab === "links" && <LinksPanel redirects={redirects} setRedirects={setRedirects}/>}
+        {tab === "novidades" && <NovidadesPanel/>}
+        {tab === "marca" && <BrandingPanel/>}
+        {tab === "minigame" && <MinigamePanel/>}
       </main>
 
       {/* Floating "Voltar para o site" — visible on all console pages */}
@@ -515,72 +429,6 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
         </div>
       )}
 
-      {showProducoesPass && <ProducoesPasswordModal onClose={() => setShowProducoesPass(false)}/>}
-    </div>
-  );
-};
-
-/* =========================== Produções — section password gate =========================== */
-const ProducoesGate = ({ onUnlock }) => {
-  const [pass, setPass] = React.useState("");
-  const [err, setErr] = React.useState("");
-  const submit = async (e) => {
-    e.preventDefault();
-    try {
-      await window.API.unlockProducoes(pass);
-      onUnlock();
-    } catch (ex) {
-      setErr(ex?.error || "Senha da seção incorreta.");
-    }
-  };
-  return (
-    <div style={{ maxWidth: 420, margin: "40px auto 0", textAlign: "center" }}>
-      <div style={{ width: 54, height: 54, borderRadius: "50%", background: "rgba(255,255,255,0.06)", border: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
-        <Icon name="settings" size={22} style={{ color: "var(--ink-dim)" }}/>
-      </div>
-      <h3 style={{ fontFamily: "var(--font-display)", fontSize: 22, marginBottom: 8 }}>Seção protegida</h3>
-      <p style={{ color: "var(--ink-dim)", fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
-        A seção Produções tem uma senha própria. Digite a senha de Produções para continuar.
-      </p>
-      <form className="glass" onSubmit={submit} style={{ padding: 24, borderRadius: 14, display: "flex", flexDirection: "column", gap: 14, textAlign: "left" }}>
-        <div className="field" style={{ margin: 0 }}><label>Senha de Produções</label><input type="password" value={pass} onChange={e => setPass(e.target.value)} placeholder="••••" autoFocus/></div>
-        {err && <span style={{ color: "var(--accent)", fontSize: 11, fontFamily: "var(--font-mono)", letterSpacing: "0.1em" }}>{err}</span>}
-        <button type="submit" className="btn btn-accent" data-cursor="hover" style={{ justifyContent: "center" }}>Desbloquear <Icon name="arrow-right" size={14}/></button>
-      </form>
-    </div>
-  );
-};
-
-/* Change the Produções section password (modal) */
-const ProducoesPasswordModal = ({ onClose }) => {
-  const [next1, setNext1] = React.useState("");
-  const [next2, setNext2] = React.useState("");
-  const [msg, setMsg] = React.useState(null);
-  const submit = async (e) => {
-    e.preventDefault();
-    if (next1.length < 4) { setMsg({ type: "err", text: "Mínimo 4 caracteres." }); return; }
-    if (next1 !== next2) { setMsg({ type: "err", text: "As senhas não conferem." }); return; }
-    try {
-      await window.API.setProducoesPassword(next1);
-      window.__adminToast?.("Senha de Produções atualizada.", "success");
-      onClose();
-    } catch (ex) {
-      setMsg({ type: "err", text: ex?.error || "Erro ao salvar." });
-    }
-  };
-  return (
-    <div className="admin-modal-back" onClick={onClose}>
-      <form className="admin-modal glass-strong glass" onClick={e => e.stopPropagation()} onSubmit={submit}>
-        <h3>Senha da seção Produções</h3>
-        <p className="sub">Esta é a senha exigida ao abrir Produções (no console e no link externo). Padrão: 1111.</p>
-        <div className="field"><label>Nova senha</label><input type="text" value={next1} onChange={e => setNext1(e.target.value)} placeholder="mín. 4 caracteres" autoFocus/></div>
-        <div className="field" style={{ marginBottom: 0 }}><label>Confirmar nova senha</label><input type="text" value={next2} onChange={e => setNext2(e.target.value)} placeholder="repita a nova senha"/></div>
-        {msg && <span style={{ color: "var(--accent)", fontSize: 11, fontFamily: "var(--font-mono)", letterSpacing: "0.1em" }}>{msg.text}</span>}
-        <div className="admin-modal-actions">
-          <button type="button" className="btn btn-ghost" onClick={onClose} data-cursor="hover">Cancelar</button>
-          <button type="submit" className="btn btn-accent" data-cursor="hover">Salvar <Icon name="arrow-right" size={14}/></button>
-        </div>
-      </form>
     </div>
   );
 };
@@ -874,7 +722,7 @@ const RowAdmin = ({ v, i, onTogglePub, onToggleFeat, onRemove, onEdit, onDuplica
       <div className="title">
         {v.featured && <Icon name="star" size={11} stroke={2} style={{color:"var(--accent)",marginRight:6,verticalAlign:"-1px"}}/>}
         {v.title}
-        <span className="meta">{v.client}{v.empreendimento ? ` · ${v.empreendimento}` : ""} · {v.duration} · {v.year}</span>
+        <span className="meta">{v.client}{v.empreendimento ? ` · ${v.empreendimento}` : ""}{v.formato ? ` · ${v.formato}` : ""}{v.padrao ? ` · padrão ${v.padrao.toLowerCase()}` : ""} · {v.duration} · {v.year}</span>
       </div>
       <span className="cat-pill">{v.catLabel}</span>
       <span className={"status " + v.status} onClick={()=>onTogglePub && onTogglePub(v.id)} data-cursor="hover">
@@ -918,6 +766,8 @@ const GridCardAdmin = ({ v, cats, onTogglePub, onToggleFeat, onRemove, onEdit, o
           <span>{v.catLabel}</span><span className="sep">·</span>
           <span>{v.client}</span>
           {v.empreendimento && <><span className="sep">·</span><span>{v.empreendimento}</span></>}
+          {v.padrao && <><span className="sep">·</span><span>padrão {v.padrao.toLowerCase()}</span></>}
+          {v.formato && <><span className="sep">·</span><span>{v.formato}</span></>}
           <span className="sep">·</span><span>{v.year}</span>
         </div>
       </div>
@@ -1295,6 +1145,1104 @@ const ReelPanel = ({ reelName, onUpload, onRemove }) => {
   );
 };
 
+/* =========================== Cor de destaque =========================== */
+/* Uma cor só governa o site inteiro: o styles.css escreve tudo como
+   rgba(var(--accent-rgb), …), então publicar aqui troca botões, bordas, brilhos
+   e o glow dos cards de uma vez (ver FRAMETY_APPLY_ACCENT no data.jsx).
+   O console usa a mesma folha de estilo — por isso ele repinta enquanto você
+   escolhe, e a prévia já é o resultado final. */
+const ACCENT_PRESETS = [
+  { hex: "#2E86C1", name: "Azul Skyline" },
+  { hex: "#E63946", name: "Vermelho Framety" },
+  { hex: "#FF6B35", name: "Laranja" },
+  { hex: "#F5A524", name: "Âmbar" },
+  { hex: "#22C55E", name: "Verde" },
+  { hex: "#14B8A6", name: "Turquesa" },
+  { hex: "#3B82F6", name: "Azul" },
+  { hex: "#6366F1", name: "Índigo" },
+  { hex: "#A855F7", name: "Roxo" },
+  { hex: "#EC4899", name: "Rosa" },
+];
+
+const AccentPanel = () => {
+  const inTheAir = () => (window.FRAMETY_DATA?.theme?.accent || window.FRAMETY_ACCENT_DEFAULT).toUpperCase();
+  const [published, setPublished] = React.useState(inTheAir);
+  const [color, setColor] = React.useState(inTheAir);
+  const [saving, setSaving] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const dirty = color.toUpperCase() !== published;
+
+  // A prévia mexe na página inteira: sair da aba sem publicar devolve a cor
+  // que está no ar, senão o console fica mentindo até alguém recarregar.
+  React.useEffect(() => () => { window.FRAMETY_APPLY_ACCENT?.(window.FRAMETY_DATA?.theme?.accent || ""); }, []);
+
+  const preview = (hex) => {
+    setColor(hex.toUpperCase());
+    if (/^#[0-9a-fA-F]{6}$/.test(hex)) window.FRAMETY_APPLY_ACCENT?.(hex);
+  };
+
+  const publish = async (value) => {
+    const next = value === "" ? "" : color;
+    setErr(""); setSaving(true);
+    try {
+      const r = await window.API.saveAccent(next);
+      const applied = r.accent || window.FRAMETY_ACCENT_DEFAULT;
+      if (window.FRAMETY_DATA) window.FRAMETY_DATA.theme = { accent: r.accent || "" };
+      window.FRAMETY_APPLY_ACCENT?.(r.accent);
+      setPublished(applied.toUpperCase());
+      setColor(applied.toUpperCase());
+      setDone(true);
+      setTimeout(() => setDone(false), 2400);
+    } catch (ex) {
+      setErr(ex?.error || "Erro ao salvar a cor.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="hc-panel accent-panel">
+      <h3>Cor de destaque</h3>
+      <p className="hc-lead">
+        Uma cor governa o site inteiro — botões, links, bordas em foco, o brilho dos cards e os detalhes deste console.
+        Escolher já mostra o resultado na tela; só o que for publicado vale para quem abrir o site.
+      </p>
+
+      <div className="accent-swatches">
+        {ACCENT_PRESETS.map(p => (
+          <button key={p.hex} type="button" title={p.name}
+            className={"accent-swatch" + (color.toUpperCase() === p.hex.toUpperCase() ? " active" : "")}
+            style={{ background: p.hex }}
+            onClick={() => preview(p.hex)} data-cursor="hover">
+            <span className="sr-only">{p.name}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="accent-row">
+        <label className="accent-picker" data-cursor="hover">
+          <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(color) ? color : "#2E86C1"}
+            onChange={(e) => preview(e.target.value)}/>
+          <span style={{ background: color }}/>
+          Escolher outra cor
+        </label>
+        <input className="accent-hex" type="text" value={color} maxLength={7} spellCheck={false}
+          onChange={(e) => { const v = e.target.value.startsWith("#") ? e.target.value : "#" + e.target.value; preview(v); }}
+          placeholder="#2E86C1"/>
+        <span className="accent-state">
+          {dirty ? "não publicada" : "no ar"}
+        </span>
+      </div>
+
+      <div className="hc-actions">
+        <button className="btn btn-accent" onClick={() => publish()} disabled={saving || !dirty || !/^#[0-9a-fA-F]{6}$/.test(color)} data-cursor="hover">
+          {saving ? "Publicando…" : dirty ? "Publicar cor" : "Cor publicada"} <Icon name="arrow-right" size={14}/>
+        </button>
+        <button className="btn btn-ghost" onClick={() => publish("")} disabled={saving} data-cursor="hover">Voltar à cor padrão</button>
+        {done && <span style={{fontFamily:"var(--font-mono)",fontSize:11,color:"#22e07c"}}>✓ publicado</span>}
+        {err && <span style={{fontFamily:"var(--font-mono)",fontSize:11,color:"var(--accent)"}}>{err}</span>}
+      </div>
+    </div>
+  );
+};
+
+/* =========================== Textos da home =========================== */
+/* A home é montada a partir de window.FRAMETY_CONTENT: o padrão mora no
+   content.js e o que é salvo aqui entra por cima (POST /api/site-content,
+   devolvido junto de /api/data). O spec abaixo lista os campos na mesma ordem
+   em que aparecem na página, para achar o texto pelo lugar e não pelo nome. */
+const HOME_COPY_SPEC = [
+  {
+    key: "nav", title: "Topo / menu", hint: "Barra fixa no alto da página",
+    fields: [
+      { key: "cta", label: "Botão do topo", type: "text" },
+      { key: "links", label: "Itens do menu", type: "objlist", fixed: true, itemLabel: "Link",
+        cols: [{ key: "label", label: "Texto" }, { key: "id", label: "Seção (âncora)" }],
+        hint: "A âncora precisa bater com o id da seção na página: home, categorias, trabalhos, sobre, contato." },
+    ],
+  },
+  {
+    key: "hero", title: "Capa (demoreel)", hint: "Texto por cima do vídeo",
+    fields: [
+      { key: "titleHtml", label: "Título da capa", type: "html" },
+      { key: "subtitleHtml", label: "Subtexto da capa", type: "html" },
+      { key: "ctaButton", label: "Botão da capa (leva aos projetos)", type: "text" },
+      { key: "ctaContato", label: "Botão da capa (leva ao contato)", type: "text" },
+      { key: "badge", label: "Assinatura no rodapé da capa", type: "text",
+        hint: "O ano corrente entra automaticamente depois deste texto." },
+    ],
+  },
+  {
+    key: "categories", title: "Categorias", hint: "Seção 02 — as pastas",
+    fields: [
+      { key: "eyebrow", label: "Etiqueta da seção", type: "text" },
+      { key: "title", label: "Título", type: "text" },
+      { key: "subtitle", label: "Segunda linha do título", type: "text" },
+      { key: "hint", label: "Dica no computador", type: "text" },
+      { key: "hintMobile", label: "Dica no celular", type: "text" },
+      { key: "countLabel", label: "Palavra depois do número (plural)", type: "text" },
+      { key: "countLabelOne", label: "Palavra depois do número (singular)", type: "text" },
+      { key: "updatedPrefix", label: "Prefixo da data no canto da pasta", type: "text",
+        hint: "A data da última publicação entra logo depois, no formato DD/MM." },
+      { key: "emptyLabel", label: "Texto quando a categoria não tem vídeo", type: "text" },
+      { key: "loadMore", label: "Botão carregar mais", type: "text" },
+    ],
+  },
+  {
+    key: "featured", title: "Projetos em destaque", hint: "Seção 03",
+    fields: [
+      { key: "eyebrow", label: "Etiqueta da seção", type: "text" },
+      { key: "title", label: "Título", type: "text",
+        hint: "Sem pontuação no fim, a página acrescenta \":\" na cor de destaque." },
+    ],
+  },
+  {
+    key: "clients", title: "Clientes & parceiros", hint: "Faixa de logos e página do cliente",
+    fields: [
+      { key: "eyebrow", label: "Etiqueta da seção", type: "text" },
+      { key: "noProjects", label: "Aviso quando o cliente não tem vídeo publicado", type: "text" },
+    ],
+  },
+  {
+    key: "about", title: "Sobre a Framety", hint: "Seção 04",
+    fields: [
+      { key: "eyebrow", label: "Etiqueta da seção", type: "text" },
+      { key: "quoteHtml", label: "Frase de destaque", type: "html" },
+      { key: "stats", label: "Números", type: "objlist", itemLabel: "Número", addLabel: "Adicionar número",
+        cols: [{ key: "num", label: "Número" }, { key: "label", label: "Legenda" }] },
+      { key: "marquee", label: "Palavras da faixa rolante", type: "list", addLabel: "Adicionar palavra" },
+    ],
+  },
+  {
+    key: "process", title: "Processo", hint: "Como transformamos sua ideia",
+    fields: [
+      { key: "eyebrow", label: "Etiqueta da seção", type: "text" },
+      { key: "title", label: "Título", type: "text" },
+      { key: "subtitle", label: "Parágrafo de abertura", type: "area" },
+      { key: "cards", label: "Cartões ao lado do texto", type: "objlist", itemLabel: "Cartão", addLabel: "Adicionar cartão",
+        hint: "Empilhados à direita do texto de abertura; o visitante passa o mouse para ler cada um.",
+        cols: [
+          { key: "title", label: "Afirmação" },
+          { key: "sub", label: "Linha de apoio", type: "area" },
+        ] },
+      { key: "steps", label: "Etapas", type: "objlist", itemLabel: "Etapa", addLabel: "Adicionar etapa",
+        cols: [
+          { key: "name", label: "Nome da etapa" },
+          { key: "desc", label: "Descrição (opcional)", type: "area" },
+          { key: "tags", label: "Tags (opcional)", type: "tags" },
+          { key: "arrow", label: "Seta para a próxima etapa", type: "select",
+            options: [{ value: "", label: "Sem seta" }, { value: "right", label: "Curva para a direita" }, { value: "left", label: "Curva para a esquerda" }] },
+        ] },
+    ],
+  },
+  {
+    key: "contact", title: "Contato", hint: "Seção 05",
+    fields: [
+      { key: "eyebrow", label: "Etiqueta da seção", type: "text" },
+      { key: "titleHtml", label: "Título", type: "html" },
+      { key: "rows", label: "Linhas de contato", type: "objlist", itemLabel: "Linha", addLabel: "Adicionar linha",
+        cols: [{ key: "label", label: "Rótulo" }, { key: "value", label: "Valor" }] },
+      { key: "ctaLabel", label: "Botão do quadro de contato", type: "text",
+        hint: "Deixe em branco para não mostrar o botão." },
+      { key: "ctaHref", label: "Link do botão", type: "text",
+        hint: "Precisa começar com https://, mailto: ou tel: — qualquer outra coisa é ignorada." },
+    ],
+  },
+  {
+    key: "footer", title: "Rodapé", hint: "Última faixa da página",
+    fields: [
+      { key: "phones", label: "Telefones", type: "list", addLabel: "Adicionar telefone" },
+      { key: "email", label: "E-mail", type: "text" },
+      { key: "cities", label: "Cidades", type: "list", addLabel: "Adicionar cidade" },
+      { key: "copyrightHtml", label: "Direitos autorais", type: "html" },
+    ],
+  },
+  {
+    key: "video", title: "Player de vídeo", hint: "Botão dentro do player aberto",
+    fields: [
+      { key: "ctaButton", label: "Botão do player", type: "text" },
+    ],
+  },
+];
+
+const HomeCopyPanel = () => {
+  const clone = (o) => JSON.parse(JSON.stringify(o || {}));
+  const defaults = window.FRAMETY_CONTENT_DEFAULTS || {};
+  const [data, setData] = React.useState(() => clone(window.FRAMETY_CONTENT));
+  const [openKey, setOpenKey] = React.useState("hero");
+  const [saving, setSaving] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+  const [dirty, setDirty] = React.useState(false);
+  const [err, setErr] = React.useState("");
+
+  const put = (sec, key, value) => {
+    setDirty(true);
+    setData((d) => ({ ...d, [sec]: { ...(d[sec] || {}), [key]: value } }));
+  };
+
+  const save = async () => {
+    setErr(""); setSaving(true);
+    try {
+      await window.API.saveSiteContent(data);
+      window.FRAMETY_APPLY_CONTENT?.(data);
+      setDirty(false); setSaved(true);
+      setTimeout(() => setSaved(false), 2400);
+    } catch (ex) {
+      setErr(ex?.error || "Erro ao salvar.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restore = () => {
+    window.__adminConfirm?.("Restaurar todos os textos da home para o padrão? As edições salvas serão perdidas.", async () => {
+      try {
+        await window.API.resetSiteContent();
+        const fresh = window.FRAMETY_APPLY_CONTENT?.(null) || clone(defaults);
+        setData(clone(fresh));
+        setDirty(false);
+        window.__adminToast?.("Textos da home restaurados.", "success");
+      } catch (ex) {
+        setErr(ex?.error || "Erro ao restaurar.");
+      }
+    });
+  };
+
+  const renderCol = (items, i, c, onSet) => {
+    const v = items[i][c.key];
+    if (c.type === "area") return <textarea rows={3} value={v || ""} onChange={(e) => onSet(i, c.key, e.target.value)}/>;
+    if (c.type === "tags") return (
+      <input type="text" placeholder="separe por vírgula"
+        value={Array.isArray(v) ? v.join(", ") : (v || "")}
+        onChange={(e) => { const parts = e.target.value.split(",").map(s => s.trim()).filter(Boolean); onSet(i, c.key, parts.length ? parts : null); }}/>
+    );
+    if (c.type === "select") return (
+      <select value={v || ""} onChange={(e) => onSet(i, c.key, e.target.value || null)}>
+        {c.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    );
+    return <input type="text" value={v || ""} onChange={(e) => onSet(i, c.key, e.target.value)}/>;
+  };
+
+  const renderField = (sec, f) => {
+    const val = (data[sec] || {})[f.key];
+    const def = (defaults[sec] || {})[f.key];
+
+    if (f.type === "list") {
+      const items = Array.isArray(val) ? val : [];
+      return (
+        <div className="hc-field" key={f.key}>
+          <label>{f.label}</label>
+          {items.map((it, i) => (
+            <div className="hc-row" key={i}>
+              <input type="text" value={it || ""} onChange={(e) => { const n = [...items]; n[i] = e.target.value; put(sec, f.key, n); }}/>
+              <button className="hc-x" title="Remover" onClick={() => put(sec, f.key, items.filter((_, j) => j !== i))} data-cursor="hover"><Icon name="trash" size={13}/></button>
+            </div>
+          ))}
+          <button className="hc-add" onClick={() => put(sec, f.key, [...items, ""])} data-cursor="hover"><Icon name="plus" size={12}/> {f.addLabel || "Adicionar item"}</button>
+          {f.hint && <div className="hc-hint">{f.hint}</div>}
+        </div>
+      );
+    }
+
+    if (f.type === "objlist") {
+      const items = Array.isArray(val) ? val : [];
+      const setItem = (i, k, v) => put(sec, f.key, items.map((it, j) => j === i ? { ...it, [k]: v } : it));
+      const blank = f.cols.reduce((o, c) => ({ ...o, [c.key]: c.type === "tags" ? null : "" }), {});
+      return (
+        <div className="hc-field" key={f.key}>
+          <label>{f.label}</label>
+          {items.map((it, i) => (
+            <div className="hc-card" key={i}>
+              <div className="hc-card-head">
+                <span>{f.itemLabel || "Item"} {String(i + 1).padStart(2, "0")}</span>
+                {!f.fixed && <button className="hc-x" title="Remover" onClick={() => put(sec, f.key, items.filter((_, j) => j !== i))} data-cursor="hover"><Icon name="trash" size={13}/></button>}
+              </div>
+              {f.cols.map(c => (
+                <div className="hc-sub" key={c.key}>
+                  <label>{c.label}</label>
+                  {renderCol(items, i, c, setItem)}
+                </div>
+              ))}
+            </div>
+          ))}
+          {!f.fixed && (
+            <button className="hc-add" onClick={() => put(sec, f.key, [...items, { ...blank }])} data-cursor="hover"><Icon name="plus" size={12}/> {f.addLabel || "Adicionar"}</button>
+          )}
+          {f.hint && <div className="hc-hint">{f.hint}</div>}
+        </div>
+      );
+    }
+
+    const isHtml = f.type === "html";
+    return (
+      <div className="hc-field" key={f.key}>
+        <label>{f.label}</label>
+        {(isHtml || f.type === "area") ? (
+          <textarea rows={3} value={val || ""} placeholder={def || ""}
+            style={isHtml ? { fontFamily: "var(--font-mono)", fontSize: 12 } : null}
+            onChange={(e) => put(sec, f.key, e.target.value)}/>
+        ) : (
+          <input type="text" value={val || ""} placeholder={def || ""} onChange={(e) => put(sec, f.key, e.target.value)}/>
+        )}
+        {isHtml && <div className="hc-hint">Aceita &lt;em&gt; (itálico), &lt;br/&gt; (quebra de linha) e &lt;span class="strike"&gt; (tachado).</div>}
+        {!isHtml && f.hint && <div className="hc-hint">{f.hint}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <div className="hc-panel">
+      <h3>Textos da home</h3>
+      <p className="hc-lead">
+        Todo texto escrito na página inicial está aqui, na ordem em que aparece — do menu ao rodapé.
+        Publicar já vale para quem abrir o site, sem precisar de deploy. Campo apagado volta ao texto padrão.
+      </p>
+
+      {HOME_COPY_SPEC.map(sec => {
+        const isOpen = openKey === sec.key;
+        return (
+          <div className={"hc-sec" + (isOpen ? " open" : "")} key={sec.key}>
+            <button className="hc-sec-head" onClick={() => setOpenKey(isOpen ? null : sec.key)} data-cursor="hover">
+              <span className="hc-sec-title">{sec.title}</span>
+              <span className="hc-sec-hint">{sec.hint}</span>
+              <Icon name={isOpen ? "chevron-up" : "chevron-down"} size={14}/>
+            </button>
+            {isOpen && <div className="hc-sec-body">{sec.fields.map(f => renderField(sec.key, f))}</div>}
+          </div>
+        );
+      })}
+
+      <div className="hc-actions">
+        <button className="btn btn-accent" onClick={save} disabled={saving || !dirty} data-cursor="hover">
+          {saving ? "Publicando…" : dirty ? "Publicar textos" : "Tudo publicado"} <Icon name="arrow-right" size={14}/>
+        </button>
+        <a href="/framety" target="_blank" className="btn btn-ghost" data-cursor="hover"><Icon name="external" size={14}/> Ver a home</a>
+        <button className="btn btn-ghost" onClick={restore} data-cursor="hover">Restaurar padrão</button>
+        {saved && <span style={{fontFamily:"var(--font-mono)",fontSize:11,color:"#22e07c"}}>✓ publicado</span>}
+        {err && <span style={{fontFamily:"var(--font-mono)",fontSize:11,color:"var(--accent)"}}>{err}</span>}
+      </div>
+    </div>
+  );
+};
+
+/* =========================== Instagram =========================== */
+/* O celular que sobe no canto esquerdo quando o visitante chega ao fim da home.
+   As fotos são escolhidas aqui: não há API do Instagram no meio, que traria
+   token expirando e um mural quebrando sozinho. */
+const InstaPanel = () => {
+  const [dados, setDados] = React.useState(null);
+  const [enviando, setEnviando] = React.useState(false);
+  const [salvando, setSalvando] = React.useState(false);
+  const [salvo, setSalvo] = React.useState(false);
+  const [erro, setErro] = React.useState("");
+
+  React.useEffect(() => {
+    window.API.getInstagram()
+      .then((d) => setDados({ ativo: true, perfil: "", usuario: "", chamada: "", print: "", fotos: [], ...d }))
+      .catch(() => setDados({ ativo: true, perfil: "", usuario: "", chamada: "", print: "", fotos: [] }));
+  }, []);
+
+  const mexer = (fn) => setDados((d) => { const c = JSON.parse(JSON.stringify(d)); fn(c); return c; });
+
+  const enviar = async (files) => {
+    if (!files || !files.length) return;
+    setEnviando(true);
+    try {
+      for (const f of [...files].slice(0, 9)) {
+        if (f.size > 8 * 1024 * 1024) { window.__adminToast?.(`"${f.name}" passa de 8MB e ficou de fora.`, "warn"); continue; }
+        const { url } = await window.API.uploadThumb(f);
+        mexer((d) => { if (d.fotos.length < 9) d.fotos.push(url); });
+      }
+    } catch (ex) {
+      window.__adminToast?.("Erro ao enviar: " + (ex?.error || ex));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const salvar = async () => {
+    setErro(""); setSalvando(true);
+    try {
+      const r = await window.API.saveInstagram(dados);
+      if (r && r.instagram) setDados(r.instagram);
+      window.FRAMETY_INSTAGRAM = r && r.instagram ? r.instagram : dados;
+      setSalvo(true); setTimeout(() => setSalvo(false), 2400);
+    } catch (ex) {
+      setErro(ex?.error || "Erro ao salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  if (!dados) return <div style={{ padding: 32, color: "var(--ink-dim)" }}>Carregando…</div>;
+
+  const linkOk = /^https?:\/\//i.test((dados.perfil || "").trim());
+
+  return (
+    <div className="hc-panel">
+      <h3>Instagram no fim da página</h3>
+      <p className="hc-lead">
+        Um celular sobe no canto esquerdo quando o visitante chega ao pé da home, mostrando estas fotos.
+        Clicar leva ao perfil. Em telas de até 900px ele não aparece — num celular de verdade, um celular
+        desenhado só atrapalha, e o rodapé já leva ao perfil.
+      </p>
+
+      <label className="nov-switch">
+        <input type="checkbox" checked={dados.ativo !== false}
+          onChange={(e) => mexer((d) => { d.ativo = e.target.checked; })} />
+        <span>Mostrar o celular</span>
+      </label>
+
+      <div className="hc-sec open" style={{ marginTop: 16 }}>
+        <div className="hc-sec-body">
+          <div className="hc-field">
+            <label>Endereço do perfil</label>
+            <input type="text" value={dados.perfil} placeholder="https://www.instagram.com/seuperfil/"
+              onChange={(e) => mexer((d) => { d.perfil = e.target.value; })} />
+            <div className="hc-hint">
+              Precisa começar com https:// — sem isso o celular não aparece, para não virar um link quebrado na tela.
+              {dados.perfil && !linkOk && <strong style={{ color: "var(--accent)" }}> Falta o https:// aqui.</strong>}
+            </div>
+          </div>
+          <div className="hc-field">
+            <label>Usuário</label>
+            <input type="text" value={dados.usuario} placeholder="@framety"
+              onChange={(e) => mexer((d) => { d.usuario = e.target.value; })} />
+          </div>
+          <div className="hc-field">
+            <label>Chamada</label>
+            <input type="text" value={dados.chamada} placeholder="Acompanhe os bastidores"
+              onChange={(e) => mexer((d) => { d.chamada = e.target.value; })} />
+          </div>
+        </div>
+      </div>
+
+      <div className="hc-field" style={{ marginTop: 18 }}>
+        <label>Print da tela do perfil</label>
+        <div className="nov-img-linha">
+          {dados.print
+            ? <img src={dados.print} alt="" className="insta-admin-print" />
+            : <div className="nov-img-previa nov-img-previa--vazia">sem print</div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <label className="hc-add" data-cursor="hover" style={{ cursor: "pointer" }}>
+              <Icon name="plus" size={12} /> {dados.print ? "Trocar print" : "Enviar print"}
+              <input type="file" accept="image/*" style={{ display: "none" }}
+                onChange={async (e) => {
+                  const f = e.target.files[0];
+                  if (!f) return;
+                  try { const { url } = await window.API.uploadThumb(f); mexer((d) => { d.print = url; }); }
+                  catch (ex) { window.__adminToast?.("Erro ao enviar: " + (ex?.error || ex)); }
+                }} />
+            </label>
+            {dados.print && (
+              <button className="hc-add" onClick={() => mexer((d) => { d.print = ""; })} data-cursor="hover">
+                <Icon name="trash" size={12} /> Remover
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="hc-hint">
+          Uma foto da tela do perfil, em formato de celular (ex.: 440×940). É ela que aparece no aparelho.
+          Sem print, o celular monta a grade com as fotos abaixo.
+        </div>
+      </div>
+
+      <div className="hc-field" style={{ marginTop: 18 }}>
+        <label>Fotos do feed ({dados.fotos.length}/9) — usadas quando não há print</label>
+        <div className="insta-admin-grade">
+          {dados.fotos.map((f, i) => (
+            <div className="insta-admin-celula" key={i}>
+              <img src={f} alt="" />
+              <button className="hc-x" title="Remover" data-cursor="hover"
+                onClick={() => mexer((d) => { d.fotos.splice(i, 1); })}>
+                <Icon name="trash" size={12} />
+              </button>
+              <span className="insta-admin-mover">
+                <button title="Antes" data-cursor="hover" onClick={() => mexer((d) => {
+                  if (i > 0) { const [x] = d.fotos.splice(i, 1); d.fotos.splice(i - 1, 0, x); }
+                })}>‹</button>
+                <button title="Depois" data-cursor="hover" onClick={() => mexer((d) => {
+                  if (i < d.fotos.length - 1) { const [x] = d.fotos.splice(i, 1); d.fotos.splice(i + 1, 0, x); }
+                })}>›</button>
+              </span>
+            </div>
+          ))}
+          {dados.fotos.length < 9 && (
+            <label className="insta-admin-celula insta-admin-add" data-cursor="hover">
+              <Icon name="plus" size={16} />
+              <span>{enviando ? "Enviando…" : "Adicionar"}</span>
+              <input type="file" accept="image/*" multiple style={{ display: "none" }}
+                onChange={(e) => enviar(e.target.files)} />
+            </label>
+          )}
+        </div>
+        <div className="hc-hint">
+          A primeira foto também vira o retrato do perfil, no alto do celular. A ordem aqui é a ordem na tela.
+        </div>
+      </div>
+
+      <div className="hc-actions">
+        <button className="btn btn-accent" onClick={salvar} disabled={salvando} data-cursor="hover">
+          {salvando ? "Publicando…" : "Publicar"} <Icon name="arrow-right" size={14} />
+        </button>
+        {linkOk && (
+          <a href={dados.perfil} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-cursor="hover">
+            <Icon name="external" size={14} /> Abrir o perfil
+          </a>
+        )}
+        {salvo && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#22e07c" }}>✓ publicado</span>}
+        {erro && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--accent)" }}>{erro}</span>}
+      </div>
+    </div>
+  );
+};
+
+/* =========================== Minigame =========================== */
+/* Página escondida em /play, que também abre digitando "play" no site. Aqui só
+   duas alavancas: a imagem que vira a barrinha do jogador e o botão de zerar o
+   placar. */
+const MinigamePanel = () => {
+  const [carroUrl, setCarroUrl] = React.useState("");
+  const [placar, setPlacar] = React.useState([]);
+  const [enviando, setEnviando] = React.useState(false);
+  const [salvando, setSalvando] = React.useState(false);
+  const [salvo, setSalvo] = React.useState(false);
+
+  const carregar = () => window.API.getPlacar()
+    .then((d) => { setCarroUrl(d.carroUrl || ""); setPlacar(d.placar || []); })
+    .catch(() => {});
+
+  React.useEffect(() => { carregar(); }, []);
+
+  const gravar = async (url, limparPlacar) => {
+    setSalvando(true);
+    try {
+      const r = await window.API.salvarMinigame({ carroUrl: url, limparPlacar: !!limparPlacar });
+      setCarroUrl(r.minigame.carroUrl);
+      setPlacar(r.placar || []);
+      setSalvo(true); setTimeout(() => setSalvo(false), 2400);
+    } catch (ex) {
+      window.__adminToast?.("Erro ao salvar: " + (ex?.error || ex));
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const enviarCarro = async (file) => {
+    if (!file) return;
+    setEnviando(true);
+    try {
+      const { url } = await window.API.uploadThumb(file);
+      await gravar(url, false);
+    } catch (ex) {
+      window.__adminToast?.("Erro ao enviar: " + (ex?.error || ex));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const zerar = () => {
+    window.__adminConfirm?.("Apagar todas as pontuações do placar?", () => gravar(carroUrl, true));
+  };
+
+  const lideres = [...placar].sort((a, b) => b.pontos - a.pontos);
+
+  return (
+    <div className="hc-panel" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
+      <h3>Carro do jogador</h3>
+      <p className="hc-lead">
+        A imagem que vira a barrinha lá embaixo. Pode enviar o PNG com fundo branco:
+        o jogo recorta o branco sozinho ao carregar. Carro de perfil, olhando para a esquerda, funciona melhor.
+      </p>
+      <div className="hc-sec open">
+        <div className="hc-sec-body">
+          <div className="hc-field">
+            <div className="nov-img-linha">
+              {carroUrl
+                ? <img src={carroUrl} alt="" className="nov-img-previa" style={{ background: "#0b0d12" }} />
+                : <div className="nov-img-previa nov-img-previa--vazia">sem imagem</div>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <label className="hc-add" data-cursor="hover" style={{ cursor: "pointer" }}>
+                  <Icon name="plus" size={12} /> {enviando ? "Enviando…" : (carroUrl ? "Trocar carro" : "Enviar carro")}
+                  <input type="file" accept="image/*" style={{ display: "none" }}
+                    onChange={(e) => enviarCarro(e.target.files[0])} />
+                </label>
+                {carroUrl && (
+                  <button className="hc-add" onClick={() => gravar("", false)} data-cursor="hover">
+                    <Icon name="trash" size={12} /> Remover
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="hc-hint">Sem imagem, o jogo desenha uma barra na cor de destaque e continua jogável.</div>
+          </div>
+        </div>
+      </div>
+
+      <h3 style={{ marginTop: 40 }}>Placar</h3>
+      <p className="hc-lead">
+        Os 20 últimos jogos, do maior para o menor. Quando o 21º entra, o mais antigo sai.
+      </p>
+
+      {lideres.length === 0
+        ? <div className="hc-hint">Ninguém jogou ainda.</div>
+        : (
+          <div className="hc-sec open">
+            <div className="hc-sec-body">
+              <ol className="mg-placar">
+                {lideres.map((l, i) => (
+                  <li key={l.quando + "-" + i}>
+                    <span>{String(i + 1).padStart(2, "0")}</span>
+                    <span>{l.nome}</span>
+                    <span>{l.pontos}</span>
+                    <span>{new Date(l.quando).toLocaleDateString("pt-BR")}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        )}
+
+      <div className="hc-actions">
+        <a href="/play" target="_blank" className="btn btn-accent" data-cursor="hover">
+          <Icon name="play-line" size={14} /> Abrir o jogo
+        </a>
+        <button className="btn btn-ghost" onClick={zerar} disabled={salvando || placar.length === 0} data-cursor="hover">
+          Zerar placar
+        </button>
+        {salvo && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#22e07c" }}>✓ salvo</span>}
+      </div>
+    </div>
+  );
+};
+
+/* =========================== Marca e prévia de link =========================== */
+/* Duas coisas que só existem fora da página: o ícone da aba e o cartão que o
+   WhatsApp (e Telegram, e Facebook) monta quando alguém cola o link. Esse cartão
+   é lido do HTML pelo robô da rede, que não roda JavaScript — por isso quem
+   monta é o servidor, e não o site. */
+const MARCA_PAGINAS = [
+  { rota: "/framety",         nome: "Home",                 hint: "o link do site" },
+  { rota: "/novidades",       nome: "Novidades",            hint: "o mini blog" },
+  { rota: "/tutorial",        nome: "Tutorial",             hint: "página de ajuda ao cliente" },
+  { rota: "/cadastroparceiro", nome: "Cadastro de parceiro", hint: "formulário de parceiros" },
+  { rota: "/screendimension", nome: "Configurador de sala",  hint: "dimensionamento de projeção" },
+];
+
+const MARCA_VAZIA = { favicon: "", ogTitulo: "", ogDescricao: "", ogImagem: "", paginas: {} };
+
+const BrandingPanel = () => {
+  const [dados, setDados] = React.useState(null);
+  const [salvando, setSalvando] = React.useState(false);
+  const [salvo, setSalvo] = React.useState(false);
+  const [erro, setErro] = React.useState("");
+  const [enviando, setEnviando] = React.useState(null);
+
+  React.useEffect(() => {
+    window.API.getBranding()
+      .then((d) => setDados({ ...MARCA_VAZIA, ...d, paginas: { ...(d.paginas || {}) } }))
+      .catch(() => setDados(MARCA_VAZIA));
+  }, []);
+
+  const mexer = (fn) => setDados((d) => { const c = JSON.parse(JSON.stringify(d)); fn(c); return c; });
+
+  const enviar = async (file, aplicar, chave) => {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      window.__adminToast?.("Imagem de mais de 8MB. Use uma menor — a prévia é um cartãozinho.", "warn");
+      return;
+    }
+    setEnviando(chave);
+    try {
+      const { url } = await window.API.uploadThumb(file);
+      mexer(aplicar(url));
+    } catch (ex) {
+      window.__adminToast?.("Erro ao enviar: " + (ex?.error || ex));
+    } finally {
+      setEnviando(null);
+    }
+  };
+
+  const salvar = async () => {
+    setErro(""); setSalvando(true);
+    try {
+      await window.API.saveBranding(dados);
+      setSalvo(true); setTimeout(() => setSalvo(false), 2400);
+    } catch (ex) {
+      setErro(ex?.error || "Erro ao salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  if (!dados) return <div style={{ padding: 32, color: "var(--ink-dim)" }}>Carregando…</div>;
+
+  const campoImagem = (url, aplicar, chave, formato) => (
+    <div className="nov-img-linha">
+      {url
+        ? <img src={url} alt="" className={"nov-img-previa" + (formato === "quadrado" ? " marca-previa-ico" : "")} />
+        : <div className={"nov-img-previa nov-img-previa--vazia" + (formato === "quadrado" ? " marca-previa-ico" : "")}>sem imagem</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <label className="hc-add" data-cursor="hover" style={{ cursor: "pointer" }}>
+          <Icon name="plus" size={12} /> {enviando === chave ? "Enviando…" : (url ? "Trocar" : "Enviar imagem")}
+          <input type="file" accept="image/*" style={{ display: "none" }}
+            onChange={(e) => enviar(e.target.files[0], aplicar, chave)} />
+        </label>
+        {url && (
+          <button className="hc-add" onClick={() => mexer(aplicar(""))} data-cursor="hover">
+            <Icon name="trash" size={12} /> Remover
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="hc-panel" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
+      <h3>Ícone da aba</h3>
+      <p className="hc-lead">
+        O quadradinho que aparece na aba do navegador e nos favoritos. Quadrado, de preferência 512×512.
+        Trocar o ícone pode demorar a aparecer para quem já visitou o site — o navegador guarda o antigo por um tempo.
+      </p>
+      <div className="hc-sec open">
+        <div className="hc-sec-body">
+          <div className="hc-field">
+            {campoImagem(dados.favicon, (url) => (d) => { d.favicon = url; }, "favicon", "quadrado")}
+          </div>
+        </div>
+      </div>
+
+      <h3 style={{ marginTop: 40 }}>Prévia ao colar o link</h3>
+      <p className="hc-lead">
+        O cartão que WhatsApp, Telegram e Facebook montam a partir do link. Use uma imagem larga — o recorte é 1200×630;
+        o que ficar de fora é cortado nas laterais. Isto aqui vale para o site inteiro; abaixo dá para trocar por página.
+      </p>
+      <div className="hc-hint" style={{ marginBottom: 14 }}>
+        Essas redes guardam a prévia por dias. Depois de publicar, um link já compartilhado
+        continua mostrando o cartão antigo até o cache delas expirar.
+      </div>
+      <div className="hc-sec open">
+        <div className="hc-sec-body">
+          <div className="hc-field">
+            <label>Título</label>
+            <input type="text" value={dados.ogTitulo} placeholder="Framety"
+              onChange={(e) => mexer((d) => { d.ogTitulo = e.target.value; })} />
+          </div>
+          <div className="hc-field">
+            <label>Descrição</label>
+            <textarea rows={2} value={dados.ogDescricao}
+              placeholder="Cinema© para marcas que pensam em movimento. Uma empresa do Grupo Skyline."
+              onChange={(e) => mexer((d) => { d.ogDescricao = e.target.value; })} />
+          </div>
+          <div className="hc-field">
+            <label>Imagem</label>
+            {campoImagem(dados.ogImagem, (url) => (d) => { d.ogImagem = url; }, "og")}
+          </div>
+        </div>
+      </div>
+
+      <h3 style={{ marginTop: 40 }}>Por página</h3>
+      <p className="hc-lead">
+        Cada endereço do site pode ter a sua prévia. Campo em branco herda o padrão acima.
+      </p>
+      <div className="hc-hint" style={{ marginBottom: 14 }}>
+        As páginas de <strong>categoria</strong> e de <strong>vídeo</strong> não estão na lista porque já se viram
+        sozinhas: usam a capa da categoria e a thumb do vídeo. E seções da home (destaques, sobre, contato)
+        não aparecem aqui porque não têm endereço próprio — colar o link da home mostra a prévia da home.
+      </div>
+
+      {MARCA_PAGINAS.map((pg) => {
+        const v = dados.paginas[pg.rota] || {};
+        const por = (campo) => (e) => mexer((d) => {
+          d.paginas[pg.rota] = { ...(d.paginas[pg.rota] || {}), [campo]: e.target.value };
+        });
+        return (
+          <div className="hc-card" key={pg.rota} style={{ marginBottom: 14 }}>
+            <div className="hc-card-head">
+              <span>{pg.nome} · {pg.rota}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-mute)" }}>{pg.hint}</span>
+            </div>
+            <div className="hc-sub">
+              <label>Título</label>
+              <input type="text" value={v.titulo || ""} placeholder={dados.ogTitulo || "Framety"} onChange={por("titulo")} />
+            </div>
+            <div className="hc-sub">
+              <label>Descrição</label>
+              <textarea rows={2} value={v.descricao || ""} placeholder={dados.ogDescricao || "(usa a descrição padrão)"} onChange={por("descricao")} />
+            </div>
+            <div className="hc-sub">
+              <label>Imagem</label>
+              {campoImagem(v.imagem || "", (url) => (d) => {
+                d.paginas[pg.rota] = { ...(d.paginas[pg.rota] || {}), imagem: url };
+              }, "pg" + pg.rota)}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="hc-actions">
+        <button className="btn btn-accent" onClick={salvar} disabled={salvando} data-cursor="hover">
+          {salvando ? "Publicando…" : "Publicar"} <Icon name="arrow-right" size={14} />
+        </button>
+        <a href="https://developers.facebook.com/tools/debug/" target="_blank" rel="noopener noreferrer"
+           className="btn btn-ghost" data-cursor="hover">
+          <Icon name="external" size={14} /> Forçar atualização da prévia
+        </a>
+        {salvo && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#22e07c" }}>✓ publicado</span>}
+        {erro && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--accent)" }}>{erro}</span>}
+      </div>
+    </div>
+  );
+};
+
+/* =========================== Novidades =========================== */
+/* Edita as duas pontas do mesmo conteúdo: o cartão que aparece na home e a
+   página /novidades, montada por blocos (texto, imagem, vídeo). A ordem dos
+   blocos é a ordem da página. */
+const NOV_VAZIA = {
+  ativo: true,
+  card: { etiqueta: "Novidades", titulo: "", texto: "", botao: "Saiba mais", imagem: "" },
+  pagina: { titulo: "Novidades", resumo: "", blocos: [] },
+};
+
+const NovidadesPanel = () => {
+  const [dados, setDados] = React.useState(null);
+  const [salvando, setSalvando] = React.useState(false);
+  const [salvo, setSalvo] = React.useState(false);
+  const [erro, setErro] = React.useState("");
+  const [enviando, setEnviando] = React.useState(null);   // id do bloco em upload
+  const capaRef = React.useRef(null);
+
+  React.useEffect(() => {
+    window.API.getNovidades()
+      .then((d) => setDados({ ...NOV_VAZIA, ...d, card: { ...NOV_VAZIA.card, ...(d.card || {}) }, pagina: { ...NOV_VAZIA.pagina, ...(d.pagina || {}) } }))
+      .catch(() => setDados(NOV_VAZIA));
+  }, []);
+
+  const mexer = (fn) => setDados((d) => { const c = JSON.parse(JSON.stringify(d)); fn(c); return c; });
+
+  const salvar = async () => {
+    setErro(""); setSalvando(true);
+    try {
+      const r = await window.API.saveNovidades(dados);
+      if (r && r.novidades) setDados(r.novidades);
+      window.FRAMETY_NOVIDADES = r && r.novidades ? r.novidades : dados;
+      setSalvo(true); setTimeout(() => setSalvo(false), 2400);
+    } catch (ex) {
+      setErro(ex?.error || "Erro ao salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  /* O upload já aceita foto, gif e vídeo pelo servidor; o teto aqui é de
+     bom senso — 20MB num cartão que abre por cima da home é muito. Quem
+     precisar de um filme inteiro usa um bloco de vídeo do YouTube. */
+  const NOV_TETO_MB = 20;
+
+  const enviarImagem = async (file, aplicar, chave) => {
+    if (!file) return;
+    if (file.size > NOV_TETO_MB * 1024 * 1024) {
+      window.__adminToast?.(
+        `Arquivo de ${(file.size / 1048576).toFixed(1)}MB — o limite aqui é ${NOV_TETO_MB}MB. Use um trecho mais curto ou comprima o vídeo.`,
+        "warn"
+      );
+      return;
+    }
+    setEnviando(chave);
+    try {
+      const { url } = await window.API.uploadThumb(file);
+      mexer(aplicar(url));
+    } catch (ex) {
+      window.__adminToast?.("Erro ao enviar a imagem: " + (ex?.error || ex));
+    } finally {
+      setEnviando(null);
+    }
+  };
+
+  const novoBloco = (tipo) => mexer((d) => {
+    d.pagina.blocos.push({
+      id: "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      tipo, titulo: "", textoHtml: "", imagem: "", youtube: "", legenda: "",
+    });
+  });
+
+  const mover = (i, passo) => mexer((d) => {
+    const alvo = i + passo;
+    if (alvo < 0 || alvo >= d.pagina.blocos.length) return;
+    const [b] = d.pagina.blocos.splice(i, 1);
+    d.pagina.blocos.splice(alvo, 0, b);
+  });
+
+  if (!dados) return <div style={{ padding: 32, color: "var(--ink-dim)" }}>Carregando…</div>;
+
+  const c = dados.card, p = dados.pagina;
+
+  return (
+    <div className="hc-panel" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
+      <h3>Cartão na home</h3>
+      <p className="hc-lead">
+        Aparece no canto superior direito depois que o visitante passa pelos números da Framety, e leva para a página de novidades.
+        Fechar guarda na sessão de quem visita — volta na visita seguinte.
+      </p>
+
+      <label className="nov-switch">
+        <input type="checkbox" checked={dados.ativo !== false} onChange={(e) => mexer((d) => { d.ativo = e.target.checked; })} />
+        <span>Mostrar o cartão no site</span>
+      </label>
+
+      <div className="hc-sec open" style={{ marginTop: 16 }}>
+        <div className="hc-sec-body">
+          <div className="hc-field">
+            <label>Etiqueta</label>
+            <input type="text" value={c.etiqueta || ""} onChange={(e) => mexer((d) => { d.card.etiqueta = e.target.value; })} placeholder="Novidades"/>
+          </div>
+          <div className="hc-field">
+            <label>Título</label>
+            <input type="text" value={c.titulo || ""} onChange={(e) => mexer((d) => { d.card.titulo = e.target.value; })}/>
+          </div>
+          <div className="hc-field">
+            <label>Texto</label>
+            <textarea rows={2} value={c.texto || ""} onChange={(e) => mexer((d) => { d.card.texto = e.target.value; })}/>
+          </div>
+          <div className="hc-field">
+            <label>Botão</label>
+            <input type="text" value={c.botao || ""} onChange={(e) => mexer((d) => { d.card.botao = e.target.value; })} placeholder="Saiba mais"/>
+          </div>
+          <div className="hc-field">
+            <label>Imagem, gif ou vídeo do cartão</label>
+            <div className="nov-img-linha">
+              {!c.imagem
+                ? <div className="nov-img-previa nov-img-previa--vazia">sem mídia</div>
+                : EH_VIDEO_URL(c.imagem)
+                  ? <video src={c.imagem} className="nov-img-previa" muted loop autoPlay playsInline/>
+                  : <img src={c.imagem} alt="" className="nov-img-previa"/>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <input ref={capaRef} type="file" accept="image/*,video/mp4,video/webm,video/quicktime" style={{ display: "none" }}
+                  onChange={(e) => enviarImagem(e.target.files[0], (url) => (d) => { d.card.imagem = url; }, "capa")}/>
+                <button className="hc-add" onClick={() => capaRef.current.click()} data-cursor="hover">
+                  <Icon name="plus" size={12}/> {enviando === "capa" ? "Enviando…" : (c.imagem ? "Trocar arquivo" : "Enviar arquivo")}
+                </button>
+                {c.imagem && (
+                  <button className="hc-add" onClick={() => mexer((d) => { d.card.imagem = ""; })} data-cursor="hover">
+                    <Icon name="trash" size={12}/> Remover
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="hc-hint">
+              Foto, gif ou um vídeo curto (MP4 ou WebM, até 20MB). Vídeo toca sozinho, mudo e em laço.
+              Sem nada enviado, o cartão usa um fundo na cor de destaque.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3 style={{ marginTop: 40 }}>Página de novidades</h3>
+      <p className="hc-lead">
+        Fica em <code style={{ background: "rgba(255,255,255,0.06)", padding: "2px 6px", borderRadius: 4 }}>/novidades</code>.
+        Monte a página com blocos — eles aparecem na ordem em que estão aqui.
+      </p>
+
+      <div className="hc-sec open">
+        <div className="hc-sec-body">
+          <div className="hc-field">
+            <label>Título da página</label>
+            <input type="text" value={p.titulo || ""} onChange={(e) => mexer((d) => { d.pagina.titulo = e.target.value; })}/>
+          </div>
+          <div className="hc-field">
+            <label>Resumo</label>
+            <textarea rows={2} value={p.resumo || ""} onChange={(e) => mexer((d) => { d.pagina.resumo = e.target.value; })}/>
+          </div>
+        </div>
+      </div>
+
+      <div className="nov-blocos-editor">
+        {p.blocos.map((b, i) => (
+          <div key={b.id} className="hc-card nov-bloco-card">
+            <div className="hc-card-head">
+              <span>{i + 1} · {b.tipo === "imagem" ? "Imagem" : b.tipo === "video" ? "Vídeo" : "Texto"}</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="hc-x" title="Subir" onClick={() => mover(i, -1)} data-cursor="hover"><Icon name="chevron-up" size={13}/></button>
+                <button className="hc-x" title="Descer" onClick={() => mover(i, 1)} data-cursor="hover"><Icon name="chevron-down" size={13}/></button>
+                <button className="hc-x" title="Remover" onClick={() => mexer((d) => { d.pagina.blocos.splice(i, 1); })} data-cursor="hover"><Icon name="trash" size={13}/></button>
+              </div>
+            </div>
+
+            {b.tipo === "texto" && (
+              <>
+                <div className="hc-sub">
+                  <label>Título do bloco (opcional)</label>
+                  <input type="text" value={b.titulo || ""} onChange={(e) => mexer((d) => { d.pagina.blocos[i].titulo = e.target.value; })}/>
+                </div>
+                <div className="hc-sub">
+                  <label>Texto</label>
+                  <textarea rows={6} style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
+                    value={b.textoHtml || ""}
+                    onChange={(e) => mexer((d) => { d.pagina.blocos[i].textoHtml = e.target.value; })}
+                    placeholder="<p>Escreva aqui…</p>"/>
+                  <div className="hc-hint">Aceita HTML simples: &lt;p&gt;, &lt;strong&gt;, &lt;em&gt;, &lt;ul&gt;/&lt;li&gt; e links.</div>
+                </div>
+              </>
+            )}
+
+            {b.tipo === "imagem" && (
+              <>
+                <div className="nov-img-linha">
+                  {b.imagem
+                    ? <img src={b.imagem} alt="" className="nov-img-previa"/>
+                    : <div className="nov-img-previa nov-img-previa--vazia">sem imagem</div>}
+                  <label className="hc-add" data-cursor="hover" style={{ cursor: "pointer" }}>
+                    <Icon name="plus" size={12}/> {enviando === b.id ? "Enviando…" : (b.imagem ? "Trocar" : "Enviar imagem")}
+                    <input type="file" accept="image/*" style={{ display: "none" }}
+                      onChange={(e) => enviarImagem(e.target.files[0], (url) => (d) => { d.pagina.blocos[i].imagem = url; }, b.id)}/>
+                  </label>
+                </div>
+                <div className="hc-sub">
+                  <label>Legenda (opcional)</label>
+                  <input type="text" value={b.legenda || ""} onChange={(e) => mexer((d) => { d.pagina.blocos[i].legenda = e.target.value; })}/>
+                </div>
+              </>
+            )}
+
+            {b.tipo === "video" && (
+              <>
+                <div className="hc-sub">
+                  <label>Link do vídeo no YouTube</label>
+                  <input type="text" value={b.youtube || ""} onChange={(e) => mexer((d) => { d.pagina.blocos[i].youtube = e.target.value; })}
+                    placeholder="https://www.youtube.com/watch?v=..."/>
+                  <div className="hc-hint">Ao salvar, fica só o identificador do vídeo — a página monta o player com ele.</div>
+                </div>
+                <div className="hc-sub">
+                  <label>Legenda (opcional)</label>
+                  <input type="text" value={b.legenda || ""} onChange={(e) => mexer((d) => { d.pagina.blocos[i].legenda = e.target.value; })}/>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+
+        <div className="nov-add-linha">
+          <button className="hc-add" onClick={() => novoBloco("texto")} data-cursor="hover"><Icon name="plus" size={12}/> Bloco de texto</button>
+          <button className="hc-add" onClick={() => novoBloco("imagem")} data-cursor="hover"><Icon name="plus" size={12}/> Imagem</button>
+          <button className="hc-add" onClick={() => novoBloco("video")} data-cursor="hover"><Icon name="plus" size={12}/> Vídeo do YouTube</button>
+        </div>
+      </div>
+
+      <div className="hc-actions">
+        <button className="btn btn-accent" onClick={salvar} disabled={salvando} data-cursor="hover">
+          {salvando ? "Publicando…" : "Publicar novidades"} <Icon name="arrow-right" size={14}/>
+        </button>
+        <a href="/novidades" target="_blank" className="btn btn-ghost" data-cursor="hover"><Icon name="external" size={14}/> Ver a página</a>
+        {salvo && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#22e07c" }}>✓ publicado</span>}
+        {erro && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--accent)" }}>{erro}</span>}
+      </div>
+    </div>
+  );
+};
+
 /* =========================== Security =========================== */
 const SecurityPanel = () => {
   const [current, setCurrent] = React.useState("");
@@ -1339,8 +2287,8 @@ const SecurityPanel = () => {
           <div style={{
             fontSize:12,fontFamily:"var(--font-mono)",letterSpacing:"0.1em",
             padding:"10px 14px",borderRadius:10,
-            background: msg.type === "ok" ? "rgba(34,224,124,0.1)" : "rgba(230,57,70,0.1)",
-            border: "1px solid " + (msg.type === "ok" ? "rgba(34,224,124,0.4)" : "rgba(230,57,70,0.4)"),
+            background: msg.type === "ok" ? "rgba(34,224,124,0.1)" : "rgba(var(--accent-rgb),0.1)",
+            border: "1px solid " + (msg.type === "ok" ? "rgba(34,224,124,0.4)" : "rgba(var(--accent-rgb),0.4)"),
             color: msg.type === "ok" ? "#22e07c" : "var(--accent)"
           }}>{msg.text}</div>
         )}
@@ -1357,6 +2305,23 @@ const SecurityPanel = () => {
 };
 
 /* =========================== Video Form Modal (add + edit) =========================== */
+/* Classificação do empreendimento por trás do vídeo. Lista fechada de
+   propósito: é o que entra no filtro e na ficha, e texto livre viraria
+   "Alto"/"alto"/"ALTO" no mesmo relatório. "" = não informado. */
+const VIDEO_PADROES = [
+  { value: "",          label: "— não informado —" },
+  { value: "Baixo",     label: "Baixo" },
+  { value: "Médio",     label: "Médio" },
+  { value: "Alto",      label: "Alto" },
+  { value: "Altíssimo", label: "Altíssimo" },
+];
+const VIDEO_FORMATOS = [
+  { value: "",                      label: "— não informado —" },
+  { value: "Condomínio vertical",   label: "Condomínio vertical" },
+  { value: "Condomínio horizontal", label: "Condomínio horizontal" },
+  { value: "Business",              label: "Business" },
+];
+
 const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
   const isEdit     = !!(initialData?.id);
   const iSrc       = initialData?.videoUrl ? (initialData.videoUrl.includes("vimeo") ? "vimeo" : "youtube") : "youtube";
@@ -1367,6 +2332,9 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
   const [year,     setYear]     = React.useState(initialData?.year || "2026");
   const [duration, setDuration] = React.useState(initialData?.duration || "");
   const [empreendimento, setEmpreendimento] = React.useState(initialData?.empreendimento || "");
+  // Classificação do empreendimento — listas fixas, combinadas com o comercial.
+  const [padrao,  setPadrao]  = React.useState(initialData?.padrao  || "");
+  const [formato, setFormato] = React.useState(initialData?.formato || "");
   const [cat,      setCat]      = React.useState(initialData?.category || cats[0]?.id || "");
   const [views,    setViews]    = React.useState(initialData?.views || "—");
   const [tags,     setTags]     = React.useState((initialData?.tags||[]).join(", "));
@@ -1420,6 +2388,8 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
       year:     year || "2026",
       duration: duration || "00:00",
       empreendimento: empreendimento || "",
+      padrao:   padrao  || "",
+      formato:  formato || "",
       tags:     tagsArr.length ? tagsArr : [c?.name || "Novo"],
       featured: feat,
       aiGenerated: aiGen,
@@ -1446,7 +2416,7 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
           {["youtube","vimeo","upload"].map(s => (
             <button type="button" key={s} onClick={()=>setSrc(s)} data-cursor="hover" className="btn"
               style={{flex:1,justifyContent:"center",padding:"9px 0",fontSize:12,
-                background: src===s ? "rgba(230,57,70,0.1)" : "rgba(255,255,255,0.03)",
+                background: src===s ? "rgba(var(--accent-rgb),0.1)" : "rgba(255,255,255,0.03)",
                 border:"1px solid " + (src===s ? "var(--accent)" : "var(--line-strong)"),
                 color: src===s ? "var(--accent)" : "var(--ink-dim)"}}>
               {s === "youtube" ? "YouTube" : s === "vimeo" ? "Vimeo" : "Upload"}
@@ -1495,6 +2465,22 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
         <div className="row">
           <div className="field"><label>Empreendimento</label><input value={empreendimento} onChange={(e)=>setEmpreendimento(e.target.value)} placeholder="Ex.: Edifício Horizonte" style={F}/></div>
           <div className="field"><label>Tags (vírgula)</label><input value={tags} onChange={(e)=>setTags(e.target.value)} placeholder="Auto, Branded, Música" style={F}/></div>
+        </div>
+
+        {/* Padrão + Formato do empreendimento */}
+        <div className="row">
+          <div className="field">
+            <label>Padrão do empreendimento</label>
+            <select value={padrao} onChange={(e)=>setPadrao(e.target.value)} style={F}>
+              {VIDEO_PADROES.map(o => <option key={o.value} value={o.value} style={{background:"#0b0b0f"}}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>Formato</label>
+            <select value={formato} onChange={(e)=>setFormato(e.target.value)} style={F}>
+              {VIDEO_FORMATOS.map(o => <option key={o.value} value={o.value} style={{background:"#0b0b0f"}}>{o.label}</option>)}
+            </select>
+          </div>
         </div>
 
         {/* Description — contenteditable with paste-image support */}
@@ -2125,56 +3111,6 @@ const LinksPanel = ({ redirects, setRedirects }) => {
   );
 };
 
-/* =========================== Locuções (OS) — shared helpers =========================== */
-function osToday() { return new Date().toLocaleDateString('pt-BR'); }
-function anoOfRow(r) {
-  const m = (r.data || '').match(/(\d{4})/);
-  if (m) return m[1];
-  const m2 = r.os && r.os.emissao ? ('' + r.os.emissao).match(/(\d{4})/) : null;
-  return m2 ? m2[1] : '';
-}
-/* O valor vem da planilha já formatado; quem somava e reformatava era o total
-   da lista, que não existe mais — daí parseBRL/formatBRL terem saído daqui. */
-function buildOS(r, over) {
-  const parts = (r.locutor || '').split('/');
-  const os = {
-    date: osToday(),
-    servicoId: r.id || '',
-    emissao: r.data || osToday(),
-    responsavel: '',
-    empresa: 'Skyline Inovação',
-    projeto: [r.cliente, r.produto].filter(Boolean).join(' - '),
-    tipoServico: '',
-    fornecedor: (parts[0] || '').trim(),
-    responsavel2: (parts[1] || '').trim(),
-    banner: 'ATENÇÃO AOS DADOS NO CAMPO "DADOS PARA FATURAMENTO" PARA EMISSÃO DA NOTA FISCAL',
-    fatNome: 'SKYLINE INOVACAO E PRODUCOES LTDA',
-    fatCnpj: '23.240.029/0001-46',
-    fatEndereco: 'Rua 5, S/N Quadra 16 Lote 21 CIDADE JARDIM\nANÁPOLIS - GO 75080-730',
-    descNota: '" Referente ao job ' + (r.id || '') + ' "',
-    descricao: '',
-    infoAdicionais: 'nenhuma',
-    nota1: '• NFS recebidas entre os dias 01 e 15 do mês, pagamento dia 05 do mês seguinte;',
-    nota2: '• NFS recebidas entre os dias 16 e 30 do mês, pagamento dia 25 do mês seguinte;',
-    anexoLabel: 'Anexar esse documento junto a nota fiscal, no link :',
-    pipefyLink: 'https://app.pipefy.com/public/form/J1LvfGLJ',
-    pixNote: 'Adicionar a chave pix junto aos dados bancários.',
-    valorTotal: r.valor || 'R$ 0,00',
-    formaPagamento: 'Pix',
-    logoSkyline: null,
-    logoFramety: null,
-    customSobre: [],
-    customFat: [],
-  };
-  return Object.assign(os, over || {});
-}
-function pdfNameFor(r) {
-  if (!r) return 'OS';
-  const id = r.id || '';
-  const forn = ((r.locutor || '').split('/')[0] || '').trim();
-  const ano = anoOfRow(r) || new Date().getFullYear();
-  return ['OS', forn, id, ano].filter(Boolean).join(' ');
-}
 const cadSectionDefs = [
   { key: 'clientes', label: 'Clientes' },
   { key: 'projetos', label: 'Projetos' },
@@ -2449,386 +3385,6 @@ const LocucoesPanel = ({ cad, setCad, readOnly = false, roToken = '', onShare, o
         </div>
       )}
     </>
-  );
-};
-
-/* =========================== OS Document (full-viewport) =========================== */
-function autoGrow(el) { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
-
-// Load a script once and cache the promise so repeat calls reuse it.
-const _scriptCache = {};
-function loadScriptOnce(src) {
-  if (_scriptCache[src]) return _scriptCache[src];
-  _scriptCache[src] = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src; s.async = true;
-    s.onload = resolve;
-    s.onerror = () => { delete _scriptCache[src]; reject(new Error('load failed: ' + src)); };
-    document.head.appendChild(s);
-  });
-  return _scriptCache[src];
-}
-// html2canvas + jsPDF are heavy (~600KB) and only needed for PDF export, so we
-// fetch them the first time the user actually exports an OS.
-async function loadPdfLibs() {
-  if (!window.html2canvas) await loadScriptOnce('https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js');
-  if (!window.jspdf)       await loadScriptOnce('https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js');
-}
-
-async function exportOsPdf(rootEl, filename) {
-  if (!rootEl) return;
-  try {
-    await loadPdfLibs();
-  } catch (e) {
-    window.__adminToast?.('Não foi possível carregar a biblioteca de PDF. Verifique sua conexão com a internet.');
-    return;
-  }
-  if (!window.html2canvas || !window.jspdf) {
-    window.__adminToast?.('Não foi possível gerar o PDF (biblioteca não carregada). Verifique sua conexão com a internet.');
-    return;
-  }
-
-  const pipefyUrl = (rootEl.querySelector('textarea[data-field="pipefyLink"]')?.value || '').trim();
-
-  // Clone off-screen and swap textareas/inputs for plain wrapped text nodes:
-  // html2canvas doesn't render multi-line textarea values correctly.
-  const clone = rootEl.cloneNode(true);
-  clone.style.position = 'fixed';
-  clone.style.left = '-99999px';
-  clone.style.top = '0';
-  clone.style.width = rootEl.offsetWidth + 'px';
-  // Neutralize any on-screen zoom transform so the PDF captures the doc at full size.
-  clone.style.transform = 'none';
-  clone.style.transformOrigin = 'top left';
-  document.body.appendChild(clone);
-
-  const origEls = Array.from(rootEl.querySelectorAll('textarea, input'));
-  const cloneEls = Array.from(clone.querySelectorAll('textarea, input'));
-  cloneEls.forEach((el, i) => {
-    const orig = origEls[i];
-    if (!orig || (orig.tagName === 'INPUT' && orig.type === 'file')) { el.remove(); return; }
-    const cs = getComputedStyle(orig);
-    const div = document.createElement('div');
-    div.textContent = orig.value;
-    div.style.font = cs.font;
-    div.style.color = cs.color;
-    div.style.textAlign = cs.textAlign;
-    div.style.whiteSpace = 'pre-wrap';
-    div.style.wordBreak = 'break-word';
-    div.style.width = orig.offsetWidth + 'px';
-    div.style.flex = cs.flex;
-    div.style.padding = cs.padding;
-    // Wrap the pipefy URL so we can measure exactly where it lands *in the clone*.
-    // Measuring it on screen doesn't work: these divs replace bordered textareas, so the
-    // clone's layout drifts a couple of px per field and the link ends up way off.
-    if (orig.dataset.field === 'pipefyLink' && /^https?:\/\//i.test(pipefyUrl)) {
-      div.textContent = '';
-      const span = document.createElement('span');
-      span.textContent = orig.value;
-      span.setAttribute('data-pdf-link', '1');
-      div.appendChild(span);
-    }
-    el.replaceWith(div);
-  });
-
-  // Now that the clone is laid out, take the link's box from the span itself, so the
-  // clickable area matches the text as rendered into the PDF image.
-  let linkRect = null;
-  const linkSpan = clone.querySelector('span[data-pdf-link]');
-  if (linkSpan) {
-    const cloneRect = clone.getBoundingClientRect();
-    const spanRect = linkSpan.getBoundingClientRect();
-    // The span box hugs the glyphs; grow it to the line box (plus a hair) and centre it
-    // on the text so the hotspot is comfortable to hit without drifting off the line.
-    const lineH = parseFloat(getComputedStyle(linkSpan.parentNode).lineHeight) || spanRect.height;
-    const h = Math.max(spanRect.height, lineH) + 4;
-    linkRect = {
-      url: pipefyUrl,
-      x: spanRect.left - cloneRect.left,
-      y: spanRect.top - cloneRect.top - (h - spanRect.height) / 2,
-      w: spanRect.width,
-      h,
-    };
-  }
-
-  try {
-    const canvas = await window.html2canvas(clone, { backgroundColor: '#ffffff', scale: 1.5, useCORS: true });
-    const { jsPDF } = window.jspdf;
-    const mmPerPx = 0.2645833;
-    const marginMm = 10;
-    const wMm = clone.offsetWidth * mmPerPx;
-    const hMm = clone.offsetHeight * mmPerPx;
-    const pdf = new jsPDF({ unit: 'mm', format: [wMm + marginMm * 2, hMm + marginMm * 2], compress: true });
-    pdf.setFillColor(255, 255, 255);
-    pdf.rect(0, 0, wMm + marginMm * 2, hMm + marginMm * 2, 'F');
-    pdf.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', marginMm, marginMm, wMm, hMm, undefined, 'FAST');
-    if (linkRect) {
-      pdf.link(marginMm + linkRect.x * mmPerPx, marginMm + linkRect.y * mmPerPx, linkRect.w * mmPerPx, linkRect.h * mmPerPx, { url: linkRect.url });
-    }
-    pdf.save(filename + '.pdf');
-  } catch (e) {
-    window.__adminToast?.('Erro ao gerar PDF: ' + e.message);
-  } finally {
-    document.body.removeChild(clone);
-  }
-}
-
-const OsDocumentView = ({ row, osEdit, setOsEdit, autoDownload, readOnly: shared = false, onBack, onUpdateOS }) => {
-  const rootRef = React.useRef(null);
-  const deskRef = React.useRef(null);
-  const fileInputRef = React.useRef(null);
-  const fileWhichRef = React.useRef(null);
-  const lastTapRef = React.useRef(0);
-  const os = row.os || {};
-
-  // ── Fit the fixed-width (820px) document to the screen; double-tap zooms to 100%,
-  //    drag pans (native scroll). On wide screens fit === 1, so desktop is unchanged. ──
-  const DOC_W = 820;
-  const [fit, setFit] = React.useState(1);
-  const [zoomed, setZoomed] = React.useState(false);
-  const [docH, setDocH] = React.useState(0);
-  const eff = zoomed ? 1 : fit;
-
-  React.useLayoutEffect(() => {
-    const measure = () => {
-      const desk = deskRef.current, doc = rootRef.current;
-      if (!desk || !doc) return;
-      const cs = getComputedStyle(desk);
-      const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-      setFit(Math.min(1, (desk.clientWidth - pad) / DOC_W));
-      setDocH(doc.offsetHeight);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    if (deskRef.current) ro.observe(deskRef.current);
-    if (rootRef.current) ro.observe(rootRef.current);
-    window.addEventListener('resize', measure);
-    window.addEventListener('orientationchange', measure);
-    return () => { ro.disconnect(); window.removeEventListener('resize', measure); window.removeEventListener('orientationchange', measure); };
-  }, [os]);
-
-  // Double-tap toggles between fit-to-width and natural (100%), keeping the tapped point stable.
-  const applyZoom = (willZoom, clientX, clientY) => {
-    const desk = deskRef.current;
-    const oldEff = zoomed ? 1 : fit;
-    const newEff = willZoom ? 1 : fit;
-    setZoomed(willZoom);
-    if (!desk) return;
-    requestAnimationFrame(() => {
-      if (willZoom && clientX != null) {
-        const rect = desk.getBoundingClientRect();
-        const docX = (desk.scrollLeft + clientX - rect.left) / oldEff;
-        const docY = (desk.scrollTop + clientY - rect.top) / oldEff;
-        desk.scrollLeft = docX * newEff - (clientX - rect.left);
-        desk.scrollTop = docY * newEff - (clientY - rect.top);
-      } else {
-        desk.scrollLeft = 0;
-      }
-    });
-  };
-  const onDeskTouchEnd = (e) => {
-    const now = Date.now();
-    if (now - lastTapRef.current < 300) {
-      e.preventDefault();
-      const t = e.changedTouches[0];
-      applyZoom(!zoomed, t ? t.clientX : null, t ? t.clientY : null);
-      lastTapRef.current = 0;
-    } else {
-      lastTapRef.current = now;
-    }
-  };
-
-  React.useEffect(() => {
-    if (rootRef.current) rootRef.current.querySelectorAll('textarea').forEach(autoGrow);
-  }, [os]);
-
-  React.useEffect(() => {
-    if (!autoDownload) return;
-    const t = setTimeout(() => exportOsPdf(rootRef.current, pdfNameFor(row)), 300);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const set = (field) => (e) => { autoGrow(e.target); onUpdateOS(field, e.target.value); };
-
-  const addField = (sec) => {
-    const key = sec === 'sobre' ? 'customSobre' : 'customFat';
-    onUpdateOS(key, (os[key] || []).concat([{ label: 'Novo campo :', value: '' }]));
-  };
-  const removeField = (sec, idx) => {
-    const key = sec === 'sobre' ? 'customSobre' : 'customFat';
-    onUpdateOS(key, (os[key] || []).filter((_, i) => i !== idx));
-  };
-  const updateCustomField = (sec, idx, k, value) => {
-    const key = sec === 'sobre' ? 'customSobre' : 'customFat';
-    onUpdateOS(key, (os[key] || []).map((it, i) => i === idx ? { ...it, [k]: value } : it));
-  };
-
-  const onPickLogo = (which) => { fileWhichRef.current = which; fileInputRef.current && fileInputRef.current.click(); };
-  const onLogoFile = (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => onUpdateOS('logo' + fileWhichRef.current, reader.result);
-    reader.readAsDataURL(f);
-    e.target.value = '';
-  };
-
-  const tBase = { font: 'inherit', resize: 'none', overflow: 'hidden', lineHeight: 1.4, color: '#111', margin: 0, outline: 'none', boxSizing: 'border-box', width: '100%' };
-  const aff = osEdit ? { border: '1px dashed #ff2e6b', background: '#fff5f9', borderRadius: 5 } : { border: '1px solid transparent', background: 'transparent' };
-  const readOnly = !osEdit;
-  const rowStyle = { display: 'flex', gap: 5, alignItems: 'flex-start', marginBottom: 5 };
-  const labelStyle = { fontWeight: 700, fontSize: 13, flex: '0 0 auto', whiteSpace: 'nowrap', paddingTop: 2, color: '#111' };
-  const valStyle = { ...tBase, ...aff, flex: '1 1 auto', minWidth: 30, padding: '1px 5px', fontSize: 13 };
-  const customLabelStyle = { ...tBase, ...aff, fontSize: 13, fontWeight: 700, flex: '0 0 auto', width: 110, padding: '1px 5px' };
-  const addFieldBtnStyle = { background: 'none', color: '#ff2e6b', border: '1px dashed #ff2e6b', borderRadius: 999, padding: '4px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', marginTop: 8 };
-  const removeFieldBtnStyle = { background: 'none', border: 'none', color: '#c0c0c0', fontSize: 13, cursor: 'pointer', flex: '0 0 auto', padding: '0 2px' };
-
-  return (
-    <div className="os-view-shell">
-      <div className="os-view-toolbar">
-        <button className="btn btn-ghost" onClick={onBack} data-cursor="hover"><Icon name="chevron-left" size={14}/> Voltar</button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: 'var(--ink-dim)' }}>{shared ? 'Somente leitura' : (osEdit ? 'Modo edição — clique nos campos para alterar' : 'Modo visualização')}</span>
-          {!shared && (
-            <button className={osEdit ? 'btn btn-accent' : 'btn btn-ghost'} onClick={() => setOsEdit(!osEdit)} data-cursor="hover">
-              {osEdit ? <><Icon name="check" size={13}/> Concluir edição</> : <><Icon name="edit" size={13}/> Editar documento</>}
-            </button>
-          )}
-          <button className="btn btn-accent" onClick={() => exportOsPdf(rootRef.current, pdfNameFor(row))} data-cursor="hover">
-            <Icon name="download" size={13}/> Baixar PDF
-          </button>
-        </div>
-      </div>
-
-      <div className="os-desk" ref={deskRef} onTouchEnd={onDeskTouchEnd}>
-        <div className="os-zoom-hint" onClick={() => applyZoom(!zoomed, null, null)}>{zoomed ? 'Toque duplo para ajustar' : 'Toque duplo para ampliar · arraste para navegar'}</div>
-        <div className="os-stage" style={{ width: DOC_W * eff, height: docH ? docH * eff : undefined }}>
-        <div className="os-doc" ref={rootRef} style={{ transform: `scale(${eff})`, transformOrigin: 'top left' }}>
-          <input type="file" accept="image/*" ref={fileInputRef} onChange={onLogoFile} style={{ display: 'none' }}/>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 20 }}>
-            <div style={{ flex: '1 1 auto' }}>
-              <textarea value={os.date || ''} data-field="date" onChange={set('date')} readOnly={readOnly} rows={1}
-                style={{ ...tBase, ...aff, fontSize: 10, color: '#333', width: 120, padding: '1px 4px' }}/>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: 14 }}>
-                {os.logoSkyline
-                  ? <img src={os.logoSkyline} alt="Skyline" style={{ height: 78, objectFit: 'contain' }}/>
-                  : <img src="/os-skyline-logo.png" alt="Grupo Skyline" style={{ height: 78, width: 'auto', display: 'block' }}/>}
-                <div style={{ width: 3, height: 82, background: '#d0d0d0' }}/>
-                {os.logoFramety
-                  ? <img src={os.logoFramety} alt="Framety" style={{ height: 58, objectFit: 'contain' }}/>
-                  : <img src="/os-framety-logo.png" alt="Framety" style={{ height: 58, width: 'auto', display: 'block' }}/>}
-              </div>
-              {osEdit && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <button onClick={() => onPickLogo('Skyline')} data-cursor="hover" style={{ background: '#fff', color: '#ff2e6b', border: '1px solid #ff2e6b', borderRadius: 999, padding: '4px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Trocar logo Skyline</button>
-                  <button onClick={() => onPickLogo('Framety')} data-cursor="hover" style={{ background: '#fff', color: '#ff2e6b', border: '1px solid #ff2e6b', borderRadius: 999, padding: '4px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Trocar logo Framety</button>
-                </div>
-              )}
-            </div>
-            <div style={{ flex: '0 0 320px', textAlign: 'right' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: '#111' }}>ID do Serviço:</div>
-              <div style={{ border: '2px solid #111', borderRadius: 16, padding: '10px 16px' }}>
-                <textarea value={os.servicoId || ''} data-field="servicoId" onChange={set('servicoId')} readOnly={readOnly} rows={1}
-                  style={{ ...tBase, ...aff, fontSize: 34, fontWeight: 800, textAlign: 'center', padding: 2 }}/>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ background: '#ff2e6b', borderRadius: 20, padding: '8px 16px', margin: '18px 0 16px', textAlign: 'center' }}>
-            <textarea value={os.banner || ''} data-field="banner" onChange={set('banner')} readOnly={readOnly} rows={1}
-              style={{ ...tBase, border: osEdit ? '1px dashed #fff' : '1px solid transparent', background: 'transparent', color: '#fff', fontSize: 11.5, fontWeight: 700, textAlign: 'center', letterSpacing: '0.2px', padding: '1px 4px' }}/>
-          </div>
-
-          <div style={{ display: 'flex', gap: 18, alignItems: 'stretch' }}>
-            <div style={{ flex: '1 1 50%' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#111' }}>Sobre o serviço:</div>
-              <div style={{ border: '2px solid #111', borderRadius: 18, padding: '14px 16px' }}>
-                <div style={rowStyle}><span style={labelStyle}>ID do serviço :</span><textarea value={os.servicoId || ''} data-field="servicoId" onChange={set('servicoId')} readOnly={readOnly} rows={1} style={valStyle}/></div>
-                <div style={rowStyle}><span style={labelStyle}>Emissão:</span><textarea value={os.emissao || ''} data-field="emissao" onChange={set('emissao')} readOnly={readOnly} rows={1} style={valStyle}/></div>
-                <div style={rowStyle}><span style={labelStyle}>Responsável:</span><textarea value={os.responsavel || ''} data-field="responsavel" onChange={set('responsavel')} readOnly={readOnly} rows={1} placeholder="—" style={valStyle}/></div>
-                <div style={rowStyle}><span style={labelStyle}>Empresa:</span><textarea value={os.empresa || ''} data-field="empresa" onChange={set('empresa')} readOnly={readOnly} rows={1} style={valStyle}/></div>
-                <div style={rowStyle}><span style={labelStyle}>Projeto :</span><textarea value={os.projeto || ''} data-field="projeto" onChange={set('projeto')} readOnly={readOnly} rows={1} style={valStyle}/></div>
-                <div style={rowStyle}><span style={labelStyle}>Tipo de serviço :</span><textarea value={os.tipoServico || ''} data-field="tipoServico" onChange={set('tipoServico')} readOnly={readOnly} rows={1} placeholder="—" style={valStyle}/></div>
-                <div style={rowStyle}><span style={labelStyle}>Fornecedor :</span><textarea value={os.fornecedor || ''} data-field="fornecedor" onChange={set('fornecedor')} readOnly={readOnly} rows={1} style={valStyle}/></div>
-                <div style={rowStyle}><span style={labelStyle}>Responsável :</span><textarea value={os.responsavel2 || ''} data-field="responsavel2" onChange={set('responsavel2')} readOnly={readOnly} rows={1} style={valStyle}/></div>
-                {(os.customSobre || []).map((cf, idx) => (
-                  <div key={idx} style={rowStyle}>
-                    <input value={cf.label} onChange={e => updateCustomField('sobre', idx, 'label', e.target.value)} readOnly={readOnly} style={customLabelStyle}/>
-                    <textarea value={cf.value} onChange={e => { autoGrow(e.target); updateCustomField('sobre', idx, 'value', e.target.value); }} readOnly={readOnly} rows={1} style={valStyle}/>
-                    {osEdit && <button onClick={() => removeField('sobre', idx)} data-cursor="hover" style={removeFieldBtnStyle}>✕</button>}
-                  </div>
-                ))}
-                {osEdit && <button onClick={() => addField('sobre')} data-cursor="hover" style={addFieldBtnStyle}>＋ Adicionar campo</button>}
-              </div>
-            </div>
-
-            <div style={{ flex: '1 1 50%' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#111' }}>Dados para faturamento:</div>
-              <div style={{ border: '2px solid #111', borderRadius: 18, padding: '14px 16px', height: 'calc(100% - 25px)' }}>
-                <div style={rowStyle}><span style={labelStyle}>Nome :</span><textarea value={os.fatNome || ''} data-field="fatNome" onChange={set('fatNome')} readOnly={readOnly} rows={1} style={valStyle}/></div>
-                <div style={rowStyle}><span style={labelStyle}>CNPJ :</span><textarea value={os.fatCnpj || ''} data-field="fatCnpj" onChange={set('fatCnpj')} readOnly={readOnly} rows={1} style={valStyle}/></div>
-                <div style={rowStyle}><span style={labelStyle}>Endereço :</span><textarea value={os.fatEndereco || ''} data-field="fatEndereco" onChange={set('fatEndereco')} readOnly={readOnly} rows={1} style={valStyle}/></div>
-                {(os.customFat || []).map((cf, idx) => (
-                  <div key={idx} style={rowStyle}>
-                    <input value={cf.label} onChange={e => updateCustomField('fat', idx, 'label', e.target.value)} readOnly={readOnly} style={customLabelStyle}/>
-                    <textarea value={cf.value} onChange={e => { autoGrow(e.target); updateCustomField('fat', idx, 'value', e.target.value); }} readOnly={readOnly} rows={1} style={valStyle}/>
-                    {osEdit && <button onClick={() => removeField('fat', idx)} data-cursor="hover" style={removeFieldBtnStyle}>✕</button>}
-                  </div>
-                ))}
-                <div style={{ textAlign: 'center', marginTop: 16 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2, color: '#111' }}>Adicionar na descrição da nota e da plataforma :</div>
-                  <textarea value={os.descNota || ''} data-field="descNota" onChange={set('descNota')} readOnly={readOnly} rows={1}
-                    style={{ ...tBase, ...aff, fontSize: 13, textAlign: 'center', fontStyle: 'italic', padding: '2px 6px' }}/>
-                </div>
-                {osEdit && <button onClick={() => addField('fat')} data-cursor="hover" style={addFieldBtnStyle}>＋ Adicionar campo</button>}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 16 }}>
-            <div style={{ border: '2px solid #111', borderRadius: 18, padding: '12px 18px' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: '#111' }}>Descrição:</div>
-              <textarea value={os.descricao || ''} data-field="descricao" onChange={set('descricao')} readOnly={readOnly} rows={2} placeholder="Descreva o serviço..."
-                style={{ ...tBase, ...aff, fontSize: 13, textAlign: 'center', padding: '2px 6px', fontStyle: 'italic' }}/>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            <div style={{ border: '2px solid #111', borderRadius: 18, padding: '12px 18px' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: '#111' }}>Informações adicionais:</div>
-              <textarea value={os.infoAdicionais || ''} data-field="infoAdicionais" onChange={set('infoAdicionais')} readOnly={readOnly} rows={1}
-                style={{ ...tBase, ...aff, fontSize: 13, textAlign: 'center', padding: '2px 6px', fontStyle: 'italic' }}/>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, marginTop: 20, alignItems: 'flex-start' }}>
-            <div style={{ flex: '1 1 auto' }}>
-              <textarea value={os.nota1 || ''} data-field="nota1" onChange={set('nota1')} readOnly={readOnly} rows={1} style={{ ...tBase, ...aff, fontSize: 11.5, padding: '1px 5px' }}/>
-              <textarea value={os.nota2 || ''} data-field="nota2" onChange={set('nota2')} readOnly={readOnly} rows={1} style={{ ...tBase, ...aff, fontSize: 11.5, padding: '1px 5px' }}/>
-              <div style={{ marginTop: 14, fontSize: 12.5, fontWeight: 700, color: '#111' }}>{os.anexoLabel}</div>
-              <textarea value={os.pipefyLink || ''} data-field="pipefyLink" onChange={set('pipefyLink')} readOnly={readOnly} rows={1} style={{ ...tBase, ...aff, fontSize: 12, fontWeight: 700, padding: '1px 5px', color: '#111' }}/>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 12 }}>
-                <span style={{ fontSize: 15 }}>⚠</span>
-                <textarea value={os.pixNote || ''} data-field="pixNote" onChange={set('pixNote')} readOnly={readOnly} rows={1} style={{ ...tBase, ...aff, fontSize: 11.5, padding: '1px 5px' }}/>
-              </div>
-            </div>
-            <div style={{ flex: '0 0 250px', textAlign: 'right' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, color: '#111' }}>Valor total :</div>
-              <div style={{ border: '2px solid #111', borderRadius: 16, padding: '10px 14px' }}>
-                <textarea value={os.valorTotal || ''} data-field="valorTotal" onChange={set('valorTotal')} readOnly={readOnly} rows={1} style={{ ...tBase, ...aff, fontSize: 29, fontWeight: 800, textAlign: 'center', padding: 2 }}/>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'baseline', gap: 6, marginTop: 10 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', color: '#111' }}>Forma de pagamento :</span>
-                <textarea value={os.formaPagamento || ''} data-field="formaPagamento" onChange={set('formaPagamento')} readOnly={readOnly} rows={1} style={{ ...tBase, ...aff, fontSize: 13, fontWeight: 700, textAlign: 'right', width: 90, padding: '1px 5px' }}/>
-              </div>
-            </div>
-          </div>
-        </div>
-        </div>
-      </div>
-    </div>
   );
 };
 

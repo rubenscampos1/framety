@@ -12,11 +12,17 @@
   --ink-mute: #5b5b66;
   --line: rgba(255,255,255,0.08);
   --line-strong: rgba(255,255,255,0.16);
-  --accent: #E63946;
-  --accent-glow: rgba(230, 57, 70, 0.55);
-  --accent-glow-soft: rgba(230, 57, 70, 0.22);
-  --accent-soft: rgba(230, 57, 70, 0.12);
-  --accent-deep: #A6202C;
+  /* Cor de destaque. Trocada em tempo de execução pelo console (aba Home →
+     Cor de destaque), que reescreve --accent, --accent-rgb, --accent-hue e
+     --accent-deep no <html>. Todo o resto do arquivo usa rgba(var(--accent-rgb),
+     …) justamente para acompanhar sozinho. */
+  --accent: #2E86C1;
+  --accent-rgb: 46, 134, 193;
+  --accent-hue: 204;
+  --accent-glow: rgba(var(--accent-rgb), 0.55);
+  --accent-glow-soft: rgba(var(--accent-rgb), 0.22);
+  --accent-soft: rgba(var(--accent-rgb), 0.12);
+  --accent-deep: #21608B;
   --glass-bg: rgba(255, 255, 255, 0.04);
   --glass-bg-strong: rgba(255, 255, 255, 0.07);
   --glass-border: rgba(255, 255, 255, 0.10);
@@ -24,8 +30,8 @@
   --radius: 18px;
   --radius-sm: 10px;
   --shadow-glass: 0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
-  --font-display: 'gibson', 'canada-type-gibson', 'Canada Type Gibson', 'Outfit', system-ui, sans-serif;
-  --font-body: 'gibson', 'canada-type-gibson', 'Canada Type Gibson', 'Outfit', system-ui, sans-serif;
+  --font-display: 'Albert Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-body: 'Albert Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
@@ -91,14 +97,6 @@ img, video { max-width: 100%; display: block; }
 
 h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.025em; line-height: 1; }
 
-/* Gibson web font (Canada Type) — load via CDN with fallback. If license missing, falls back to system stack above. */
-@font-face {
-  font-family: 'gibson';
-  font-style: normal;
-  font-weight: 300 700;
-  font-display: swap;
-  src: local('Canada Type Gibson'), local('Gibson'), local('CanadaType-Gibson');
-}
 
 .eyebrow {
   font-family: var(--font-mono);
@@ -155,6 +153,9 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
 .btn-accent {
   background: var(--accent);
   color: #fff;
+  /* Borda transparente só para igualar a caixa à do .btn-ghost, que tem 1px de
+     borda: sem ela, dois botões lado a lado saem 2px diferentes. */
+  border: 1px solid transparent;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 8px 30px var(--accent-glow);
 }
 .btn-accent:hover { transform: translateY(-1px); }
@@ -297,18 +298,28 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
   position: relative;
   min-height: 100vh;
   display: flex; align-items: flex-end;
-  padding: 120px 0 80px;
+  /* Fundo maior desde que o texto da capa passou a existir: com 80px a última
+     linha do subtexto encostava na barra do REC, que é absoluta no rodapé. */
+  padding: 120px 0 116px;
   overflow: hidden;
-  background: var(--bg);
+  /* Transparente de propósito: o preto opaco daqui batia de frente com o fundo
+     animado e criava aquela linha reta no fim da capa. Quem termina a capa é a
+     máscara do .hero-bg, que dissolve o vídeo no fundo. */
+  background: transparent;
 }
 .hero-bg {
   position: absolute; inset: 0;
   z-index: 0;
+  /* A capa inteira (vídeo, véu e grão) desaparece aos poucos no último terço:
+     em vez de uma borda entre o preto e o fundo animado, um trecho onde os dois
+     convivem. */
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 58%, rgba(0,0,0,0.72) 78%, rgba(0,0,0,0.25) 92%, transparent 100%);
+          mask-image: linear-gradient(180deg, #000 0%, #000 58%, rgba(0,0,0,0.72) 78%, rgba(0,0,0,0.25) 92%, transparent 100%);
 }
 .hero-bg::after {
   content: "";
   position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(5,5,7,0.3) 0%, rgba(5,5,7,0.55) 60%, var(--bg) 100%);
+  background: linear-gradient(180deg, rgba(5,5,7,0.12) 0%, rgba(5,5,7,0.32) 62%, rgba(5,5,7,0.8) 100%);
 }
 .hero-bg-grain {
   position: absolute; inset: 0;
@@ -325,38 +336,65 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
   align-items: end;
   gap: 60px;
 }
+/* Texto da capa, embaixo à esquerda. O h1 vivia escondido (servia só ao
+   buscador) e a capa não tinha texto nenhum; agora ele é o texto mesmo. O
+   tamanho é bem menor que o antigo clamp de até 132px — a frase é longa e
+   divide a tela com o vídeo. */
+.hero-intro {
+  grid-column: 1;
+  align-self: end;
+  max-width: 620px;
+}
 .hero-title {
-  /* Visually hidden but accessible to screen readers and search engines */
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0,0,0,0);
-  white-space: nowrap;
-  border: 0;
-  font-size: clamp(56px, 9vw, 132px);
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3.6vw, 48px);
   font-weight: 600;
-  line-height: 0.92;
-  letter-spacing: -0.04em;
-  max-width: 1100px;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  text-shadow: 0 2px 24px rgba(0,0,0,0.55);
+}
+.hero-sub {
+  margin-top: 20px;
+  /* Medida de leitura: ~58 caracteres por linha. Mais largo que isto e o olho
+     se perde na volta; mais estreito e a frase vira uma coluna de retalhos. */
+  max-width: 56ch;
+  font-size: 15.5px;
+  line-height: 1.68;
+  color: rgba(255,255,255,0.7);
+  text-shadow: 0 1px 16px rgba(0,0,0,0.6);
+  /* equilibra o comprimento das três linhas em vez de deixar a última com duas
+     palavras soltas — o bloco é curto o bastante para o navegador balancear. */
+  text-wrap: balance;
+}
+/* A primeira frase é a afirmação: peso e brilho maiores separam ela da
+   explicação, sem precisar de outro tamanho de letra. */
+.hero-sub strong {
+  font-weight: 500;
+  color: rgba(255,255,255,0.96);
 }
 .hero-title em {
+  /* O itálico é o da própria Albert Sans (a Space Grotesk daqui nunca chegou a
+     ser carregada — caía na serifada do sistema). */
   font-style: italic;
-  font-family: 'Space Grotesk', serif;
   font-weight: 400;
   color: var(--accent);
 }
+/* Só os dois botões moram aqui agora (as linhas de Demo Reel e Studio saíram):
+   align-items no fim para eles ficarem com a largura do próprio texto, colados
+   na margem direita, em vez de esticarem na coluna. */
 .hero-meta {
   grid-column: 2;
   text-align: right;
-  display: flex; flex-direction: column; gap: 18px;
+  display: flex; flex-direction: column; gap: 12px;
+  /* stretch: os dois botões ficam do tamanho do mais largo. A coluna do grid é
+     "auto", então ela continua encolhendo até o conteúdo — o que estica é só o
+     botão menor, para os dois saírem idênticos. */
+  align-items: stretch;
   min-width: 240px;
 }
-.hero-meta-row { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
-.hero-meta-row .label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-mute); }
-.hero-meta-row .value { font-size: 13px; color: var(--ink); }
+.hero-meta > span { display: block !important; }   /* o invólucro magnético */
+.hero-meta .btn { width: 100%; justify-content: center; }
 
 .hero-bar {
   position: absolute; bottom: 24px; left: 0; right: 0; width: 100%;
@@ -390,13 +428,13 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
   width: 100%; height: 100%;
   object-fit: cover;
   z-index: 0;
-  filter: brightness(0.6) contrast(1.05) saturate(1.1);
+  filter: brightness(0.92) contrast(1.03) saturate(1.12);
 }
 .hero-video-overlay {
   position: absolute; inset: 0;
   background:
-    radial-gradient(ellipse at 50% 40%, transparent 30%, rgba(5,5,7,0.55) 80%),
-    linear-gradient(180deg, rgba(5,5,7,0.25) 0%, rgba(5,5,7,0.55) 60%, var(--bg) 100%);
+    radial-gradient(ellipse at 50% 42%, transparent 42%, rgba(5,5,7,0.30) 88%),
+    linear-gradient(180deg, rgba(5,5,7,0.10) 0%, rgba(5,5,7,0.28) 62%, rgba(5,5,7,0.85) 100%);
   pointer-events: none;
 }
 
@@ -632,8 +670,8 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
   position: relative;
   padding: 22px 24px;
   border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.07);
-  background: rgba(10,10,15,0.42);
+  border: 1px solid rgba(var(--accent-rgb), 0.24);
+  background: rgba(6,7,10,0.74);
   backdrop-filter: blur(24px) saturate(150%);
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   display: grid;
@@ -936,11 +974,17 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
 }
 .about-quote {
   font-family: var(--font-display);
-  font-weight: 400;
-  font-size: clamp(36px, 5.5vw, 88px);
-  line-height: 1;
-  letter-spacing: -0.035em;
-  max-width: 1200px;
+  /* 500 em vez de 400: no corpo grande da Albert Sans o 400 fica esguio demais
+     para uma frase que é a afirmação da seção. */
+  font-weight: 500;
+  font-size: clamp(30px, 4.4vw, 68px);
+  line-height: 1.06;
+  letter-spacing: -0.028em;
+  /* Medida em ch: a frase quebra pelo tamanho da letra, não por uma largura
+     fixa em pixels. Com balance, as linhas saem parecidas em vez de uma delas
+     ficar com uma palavra só. */
+  max-width: 30ch;
+  text-wrap: balance;
 }
 .about-quote em {
   font-style: italic;
@@ -1131,7 +1175,7 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
 }
 .modal-share-btn.copied {
   border-color: var(--accent);
-  background: rgba(230,57,70,0.1);
+  background: rgba(var(--accent-rgb),0.1);
 }
 @media (max-width: 600px) {
   .modal-share-btn .share-label { display: none; }
@@ -1489,7 +1533,7 @@ body.in-cat-page.cat-peek .cat-page {
   color: var(--ink-dim);
   margin-bottom: 24px;
 }
-.cat-page-back:hover { color: var(--accent); background: rgba(230,57,70,0.06); border-color: rgba(230,57,70,0.25); }
+.cat-page-back:hover { color: var(--accent); background: rgba(var(--accent-rgb),0.06); border-color: rgba(var(--accent-rgb),0.25); }
 .cat-page-meta {
   display: flex; flex-direction: column; gap: 12px; align-items: flex-end;
 }
@@ -1700,7 +1744,7 @@ body.in-cat-page.cat-peek .cat-page {
   transition: background 0.25s ease, transform 0.25s ease;
 }
 .cat-card:hover .cat-card-play { opacity: 1; }
-.cat-card:hover .cat-card-play svg { background: rgba(230,57,70,0.7); transform: scale(1.05); }
+.cat-card:hover .cat-card-play svg { background: rgba(var(--accent-rgb),0.7); transform: scale(1.05); }
 
 /* Card text section */
 .cat-card-info {
@@ -2023,6 +2067,7 @@ body.in-cat-page.cat-peek .cat-page {
 /* Modo foco (só na aba Storyboards): recolhe o menu para o deck ganhar largura.
    min-width:0 é necessário — sem ele o item de grid não encolhe abaixo do
    conteúdo e a coluna de 0 não fecha. */
+.admin-shell { grid-template-rows: 100%; }
 .admin-shell.nav-hidden { grid-template-columns: 0 1fr; }
 .admin-shell.nav-hidden .admin-side {
   min-width: 0; overflow: hidden; padding-left: 0; padding-right: 0;
@@ -2082,6 +2127,10 @@ body.in-cat-page.cat-peek .cat-page {
 
 .admin-main {
   overflow-y: auto;
+  /* min-height:0 + a linha de 100% no shell mantêm a rolagem DENTRO do main:
+     sem isso a linha do grid cresce com o conteúdo e o fim de um painel longo
+     (o rodapé de ações da aba Home, por exemplo) fica fora da tela. */
+  min-height: 0;
   padding: 28px 36px 60px;
   background: transparent;
 }
@@ -2115,9 +2164,9 @@ body.in-cat-page.cat-peek .cat-page {
   display: flex; flex-direction: column; gap: 8px;
 }
 .admin-grid-card {
-  border: 1px solid var(--line);
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
   border-radius: 12px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(8,9,13,0.72);
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
   overflow: hidden;
@@ -2129,12 +2178,20 @@ body.in-cat-page.cat-peek .cat-page {
   gap: 14px;
   align-items: center;
   padding: 12px 16px;
-  border: 1px solid var(--line);
+  /* Mesma caixa dos cards: vidro quase preto e contorno na cor de destaque. */
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
   border-radius: 14px;
-  background: rgba(255,255,255,0.02);
+  background: rgba(8,9,13,0.72);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 8px 22px -14px rgba(0,0,0,0.9);
   transition: all 0.2s ease;
 }
-.admin-row:hover { border-color: var(--line-strong); background: rgba(255,255,255,0.03); }
+.admin-row:hover {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(12,14,19,0.8);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07), 0 12px 30px -14px rgba(0,0,0,0.95);
+}
 .admin-row.dragging { opacity: 0.5; transform: scale(0.98); }
 .admin-row .grip {
   color: var(--ink-mute);
@@ -2299,6 +2356,11 @@ body.in-cat-page.cat-peek .cat-page {
 }
 .preloader-overlay dotlottie-player {
   background: transparent !important;
+  /* Os primeiros quadros da animação trazem um quadrado rgb(255,23,81) assado
+     dentro dos webp do .lottie — não dá para trocar por variável. O giro de
+     matiz leva aquele vermelho para rgb(32,122,190), o azul do site, e não
+     mexe no resto: branco e preto não têm matiz para girar. */
+  filter: hue-rotate(220deg) saturate(0.7) brightness(1.2);
 }
 /* Força transparência no container interno do Web Component */
 dotlottie-player::part(container) {
@@ -2338,7 +2400,7 @@ dotlottie-player::part(container) {
 .iris-flash {
   position: fixed; inset: 0;
   z-index: 9001;
-  background: radial-gradient(circle at 50% 50%, rgba(230,57,70,0.5) 0%, transparent 50%);
+  background: radial-gradient(circle at 50% 50%, rgba(var(--accent-rgb),0.5) 0%, transparent 50%);
   opacity: 0;
   pointer-events: none;
   animation: irisFlash 1.1s ease-out forwards;
@@ -2371,18 +2433,26 @@ dotlottie-player::part(container) {
   position: relative;
   border-radius: 14px;
   border: 1px solid var(--line-strong);
-  background: rgba(255,255,255,0.04);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    0 6px 20px -10px rgba(0,0,0,0.7);
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
   cursor: pointer;
   transition: opacity 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+}
+.chip-card:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.16),
+    0 0 0 1px rgba(255,255,255,0.24),
+    0 10px 28px -12px rgba(0,0,0,0.8);
 }
 /* chip-active: expands downward only (same column width, double height) */
 .chip-card.chip-active {
   grid-column: span 1;
   grid-row: span 2;
   z-index: 10;
-  border-color: rgba(230,57,70,0.45);
+  border-color: rgba(var(--accent-rgb),0.45);
   box-shadow: 0 0 0 1px var(--accent-glow-soft), 0 20px 60px -12px var(--accent-glow);
   animation: chipPop 0.28s cubic-bezier(.2,.8,.2,1) both;
 }
@@ -2390,7 +2460,7 @@ dotlottie-player::part(container) {
   from { transform: scale(0.97); }
   to   { transform: scale(1); }
 }
-.chip-card.chip-dim { opacity: 0.4; }
+.chip-card.chip-dim { opacity: 0.62; }
 /* Label stays visible and pinned to the top section */
 .chip-card.chip-active .chip-label {
   opacity: 1;
@@ -2405,7 +2475,8 @@ dotlottie-player::part(container) {
 .chip-card.chip-active .chip-expand { opacity: 1; pointer-events: none; }
 .chip-card.chip-active .chip-expand-name { display: none; } /* label already shows name */
 .chip-card.chip-active .chip-cover  { transform: scale(1.04); }
-.chip-card.chip-empty { opacity: 0.28; }
+/* Categoria sem vídeo publicado: fica para trás, mas ainda legível. */
+.chip-card.chip-empty { opacity: 0.62; }
 
 /* Compact label */
 .chip-label {
@@ -2426,11 +2497,11 @@ dotlottie-player::part(container) {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.14em;
-  color: var(--ink-mute);
-  background: rgba(255,255,255,0.05);
+  color: var(--ink-dim);
+  background: rgba(255,255,255,0.08);
   padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255,255,255,0.16);
 }
 
 /* Expanded reveal layer — fills the chip (which is now 2×2 grid cells when active) */
@@ -2481,10 +2552,10 @@ dotlottie-player::part(container) {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--accent);
-  background: rgba(230,57,70,0.12);
+  background: rgba(var(--accent-rgb),0.12);
   padding: 8px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(230,57,70,0.35);
+  border: 1px solid rgba(var(--accent-rgb),0.35);
 }
 .exp-card {
   position: relative;
@@ -2529,7 +2600,7 @@ dotlottie-player::part(container) {
   transition: background 0.4s ease;
 }
 .exp-card.exp-active .exp-card-glass {
-  background: linear-gradient(180deg, rgba(230,57,70,0.06) 0%, rgba(0,0,0,0.82) 100%);
+  background: linear-gradient(180deg, rgba(var(--accent-rgb),0.06) 0%, rgba(0,0,0,0.82) 100%);
 }
 .exp-card-content {
   position: absolute; inset: 0;
@@ -2564,7 +2635,7 @@ dotlottie-player::part(container) {
   pointer-events: none;
 }
 .exp-card.exp-active .exp-card-glow {
-  border-color: rgba(230,57,70,0.35);
+  border-color: rgba(var(--accent-rgb),0.35);
 }
 
 /* ---------- Clients marquee ---------- */
@@ -2580,6 +2651,9 @@ dotlottie-player::part(container) {
   -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 6%, black 94%, transparent 100%);
 }
 .mq-row.mq-paused .mq-track { animation-play-state: paused; }
+/* Passar o mouse sobre um cliente segura a roleta; ao sair, ela volta a andar.
+   :has() em vez de .mq-row:hover para o vão entre os logos não parar a fita. */
+.mq-row:has(.mq-item:hover) .mq-track { animation-play-state: paused; }
 .mq-track {
   display: inline-flex;
   gap: 6px;
@@ -2628,20 +2702,22 @@ dotlottie-player::part(container) {
 .client-page-overlay {
   position: fixed; inset: 0;
   z-index: 450;
-  background: rgba(5,5,7,0.7);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  /* Era um backdrop-filter de tela cheia por cima de um canvas que redesenha
+     todo quadro — o navegador refazia o desfoque da tela inteira o tempo todo,
+     e era daí que vinha o engasgo ao rolar. Fundo quase opaco custa zero e o
+     que ficava atrás já não aparecia. */
+  background: rgba(5,5,7,0.97);
   overflow-y: auto;
   animation: fadeIn 0.3s ease;
 }
 .client-page-inner {
   min-height: 100%;
   padding: 0 0 80px;
-  background: radial-gradient(ellipse at 50% 0, rgba(230,57,70,0.05) 0%, transparent 55%);
+  background: radial-gradient(ellipse at 50% 0, rgba(var(--accent-rgb),0.05) 0%, transparent 55%);
 }
 .client-page-accent-bar {
   height: 2px;
-  background: linear-gradient(90deg, var(--accent) 0%, rgba(230,57,70,0.3) 55%, transparent 100%);
+  background: linear-gradient(90deg, var(--accent) 0%, rgba(var(--accent-rgb),0.3) 55%, transparent 100%);
   position: sticky; top: 0; z-index: 11;
 }
 .client-page-header {
@@ -2652,7 +2728,7 @@ dotlottie-player::part(container) {
   backdrop-filter: blur(28px);
   -webkit-backdrop-filter: blur(28px);
   border-bottom: 1px solid rgba(255,255,255,0.08);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 1px 0 rgba(230,57,70,0.1);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 1px 0 rgba(var(--accent-rgb),0.1);
 }
 .client-page-logo {
   display: flex; align-items: center; gap: 20px;
@@ -2699,9 +2775,9 @@ dotlottie-player::part(container) {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--accent);
-  background: rgba(230,57,70,0.12);
+  background: rgba(var(--accent-rgb),0.12);
   padding: 4px 12px;
-  border: 1px solid rgba(230,57,70,0.28);
+  border: 1px solid rgba(var(--accent-rgb),0.28);
   border-radius: 999px;
   display: inline-block;
 }
@@ -2732,10 +2808,16 @@ dotlottie-player::part(container) {
 
 .client-page-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
   padding: 36px 48px 0;
 }
+/* Aqui os cards não se empilham: o -38px de margem que cria o baralho na página
+   de categoria deixava as fileiras uma por cima da outra e obrigava o card a
+   saltar 42px no hover. Nesta lista eles ficam lado a lado e só sobem de leve. */
+.client-page-grid .cat-card { margin-bottom: 0; }
+.client-page-grid .cat-card:hover { transform: translateY(-4px); }
+@media (max-width: 1500px) { .client-page-grid { grid-template-columns: repeat(4,1fr); } }
 @media (max-width: 1300px) { .client-page-grid { grid-template-columns: repeat(3,1fr); padding: 24px 24px 0; } }
 @media (max-width: 800px)  { .client-page-grid { grid-template-columns: repeat(2,1fr); } }
 @media (max-width: 500px)  { .client-page-grid { grid-template-columns: 1fr !important; padding: 16px 16px 0; } }
@@ -2792,7 +2874,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .admin-toolbar select option { background: #0b0b0f; }
 .admin-toolbar .filter-pill { display: inline-flex; align-items: center; gap: 6px; }
 .admin-toolbar .filter-pill.active {
-  background: rgba(230,57,70,0.12);
+  background: rgba(var(--accent-rgb),0.12);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -2919,7 +3001,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   transition: all 0.2s ease;
 }
 .admin-grid-actions button:hover { background: rgba(255,255,255,0.06); color: var(--ink); }
-.admin-grid-actions button.del:hover { background: rgba(230,57,70,0.12); color: var(--accent); }
+.admin-grid-actions button.del:hover { background: rgba(var(--accent-rgb),0.12); color: var(--accent); }
 
 /* ---------- Client cards ---------- */
 .client-grid {
@@ -2989,7 +3071,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   color: var(--ink-dim); transition: all 0.2s ease;
 }
 .client-card-actions button:hover { background: rgba(255,255,255,0.06); color: var(--ink); }
-.client-card-actions button.del:hover { background: rgba(230,57,70,0.12); color: var(--accent); }
+.client-card-actions button.del:hover { background: rgba(var(--accent-rgb),0.12); color: var(--accent); }
 .client-card-add {
   border: 1.5px dashed var(--line-strong);
   background: transparent;
@@ -3005,7 +3087,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .client-card-add:hover {
   border-color: var(--accent);
   color: var(--accent);
-  background: rgba(230,57,70,0.04);
+  background: rgba(var(--accent-rgb),0.04);
 }
 
 /* ---------- Inline editable categorias ---------- */
@@ -3057,7 +3139,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   width: 100%;
 }
 .cat-edit-input:hover { border-color: var(--line); background: rgba(255,255,255,0.02); }
-.cat-edit-input:focus { border-color: var(--accent); background: rgba(230,57,70,0.05); }
+.cat-edit-input:focus { border-color: var(--accent); background: rgba(var(--accent-rgb),0.05); }
 .cat-edit-input.desc {
   font-family: var(--font-body);
   font-size: 12px;
@@ -3364,9 +3446,9 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   letter-spacing: 0.24em;
   color: var(--accent);
   padding: 5px 12px;
-  border: 1px solid rgba(230,57,70,0.3);
+  border: 1px solid rgba(var(--accent-rgb),0.3);
   border-radius: 999px;
-  background: rgba(230,57,70,0.07);
+  background: rgba(var(--accent-rgb),0.07);
 }
 .pres-search {
   display: flex; align-items: center; gap: 10px;
@@ -3400,7 +3482,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .pres-side-label {
   font-family: var(--font-mono);
   font-size: 9px; letter-spacing: 0.28em; text-transform: uppercase;
-  color: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.42);
   padding: 4px 14px 10px;
 }
 .pres-side-item {
@@ -3410,19 +3492,19 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   padding: 9px 14px;
   border-radius: 10px;
   font-size: 13px; font-weight: 400;
-  color: rgba(255,255,255,0.38);
+  color: rgba(255,255,255,0.72);
   text-align: left;
   border-left: 2px solid transparent;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .pres-side-item.compact { grid-template-columns: 1fr; padding-left: 16px; }
-.pres-side-item:hover { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.72); border-left-color: rgba(255,255,255,0.1); }
-.pres-side-item.active { background: rgba(230,57,70,0.1); color: #fff; border-left-color: var(--accent); font-weight: 500; }
-.pres-side-item .num { font-family: var(--font-mono); font-size: 10px; color: rgba(255,255,255,0.18); letter-spacing: 0.08em; }
-.pres-side-item.active .num { color: rgba(230,57,70,0.65); }
+.pres-side-item:hover { background: rgba(255,255,255,0.06); color: #fff; border-left-color: rgba(255,255,255,0.18); }
+.pres-side-item.active { background: rgba(var(--accent-rgb),0.1); color: #fff; border-left-color: var(--accent); font-weight: 500; }
+.pres-side-item .num { font-family: var(--font-mono); font-size: 10px; color: rgba(255,255,255,0.5); letter-spacing: 0.08em; }
+.pres-side-item.active .num { color: rgba(var(--accent-rgb),0.65); }
 .pres-side-item .ico-thumb { width: 20px; height: 15px; border-radius: 4px; background-size: cover; opacity: 0.75; }
 .pres-side-item.active .ico-thumb { opacity: 1; }
-.pres-side-item .ico { display: flex; align-items: center; justify-content: center; opacity: 0.55; }
+.pres-side-item .ico { display: flex; align-items: center; justify-content: center; opacity: 0.8; }
 .pres-side-item.active .ico { opacity: 1; }
 
 .pres-main { overflow-y: auto; padding: 32px 40px 80px; }
@@ -3473,7 +3555,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .pres-hero-tag::before {
   content: ""; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
   background: var(--accent);
-  box-shadow: 0 0 8px 2px rgba(230,57,70,0.55);
+  box-shadow: 0 0 8px 2px rgba(var(--accent-rgb),0.55);
 }
 .pres-hero-info h1 {
   font-family: var(--font-display);
@@ -3483,10 +3565,10 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 }
 .pres-hero-meta {
   display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-  color: rgba(255,255,255,0.48); font-size: 13px;
+  color: rgba(255,255,255,0.72); font-size: 13px;
 }
 .pres-hero-meta span { display: inline-flex; align-items: center; }
-.pres-hero-meta .dot-sep { color: rgba(255,255,255,0.2); margin: 0 1px; }
+.pres-hero-meta .dot-sep { color: rgba(255,255,255,0.38); margin: 0 1px; }
 .pres-hero-cta { margin-top: 6px; }
 
 .pres-row { margin-bottom: 50px; }
@@ -3502,8 +3584,8 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 }
 .pres-row-count {
   font-family: var(--font-mono);
-  font-size: 10px; color: rgba(255,255,255,0.22); letter-spacing: 0.18em; text-transform: uppercase;
-  background: rgba(255,255,255,0.05); padding: 3px 9px; border-radius: 999px;
+  font-size: 10px; color: rgba(255,255,255,0.55); letter-spacing: 0.18em; text-transform: uppercase;
+  background: rgba(255,255,255,0.07); padding: 3px 9px; border-radius: 999px;
 }
 .pres-row-more {
   margin-left: auto;
@@ -3539,7 +3621,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   background-size: cover; background-position: center;
   transition: box-shadow 0.22s ease;
 }
-.pres-card:hover .pres-card-thumb { box-shadow: 0 0 0 1px rgba(230,57,70,0.35); }
+.pres-card:hover .pres-card-thumb { box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.35); }
 .pres-card-thumb::after {
   content: ""; position: absolute; inset: 0;
   background: linear-gradient(180deg, transparent 45%, rgba(0,0,0,0.55));
@@ -3562,13 +3644,13 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .pres-card-info h3 {
   font-family: var(--font-display);
   font-size: 14px; font-weight: 500; letter-spacing: -0.01em; line-height: 1.35;
-  color: rgba(255,255,255,0.88);
+  color: #fff;
 }
 .pres-card-meta {
   display: flex; gap: 5px; flex-wrap: wrap; align-items: center;
-  font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 5px;
+  font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 5px;
 }
-.pres-card-meta .dot-sep { color: rgba(255,255,255,0.14); }
+.pres-card-meta .dot-sep { color: rgba(255,255,255,0.3); }
 
 .pres-placeholder {
   position: absolute; top: 50%; left: 50%;
@@ -3762,7 +3844,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .gsearch-edit-btn:hover {
-  background: rgba(230,57,70,0.18);
+  background: rgba(var(--accent-rgb),0.18);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -3846,8 +3928,8 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .pf-error {
   margin-top: 16px;
   padding: 10px 14px;
-  background: rgba(230,57,70,0.1);
-  border: 1px solid rgba(230,57,70,0.4);
+  background: rgba(var(--accent-rgb),0.1);
+  border: 1px solid rgba(var(--accent-rgb),0.4);
   border-radius: 10px;
   color: var(--accent);
   font-family: var(--font-mono);
@@ -3914,8 +3996,8 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .partner-row-avatar {
   width: 36px; height: 36px;
   border-radius: 50%;
-  background: rgba(230,57,70,0.15);
-  border: 1px solid rgba(230,57,70,0.3);
+  background: rgba(var(--accent-rgb),0.15);
+  border: 1px solid rgba(var(--accent-rgb),0.3);
   color: var(--accent);
   font-family: var(--font-display);
   font-size: 15px; font-weight: 700;
@@ -4007,8 +4089,8 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 /* ── Chip expand button — arrow nudge on hover ───────────── */
 .chip-expand-btn { transition: background 0.25s ease, border-color 0.25s ease, gap 0.3s ease; }
 .chip-expand-btn:hover, .chip-card.chip-active .chip-expand-btn:hover {
-  background: rgba(230,57,70,0.22);
-  border-color: rgba(230,57,70,0.6);
+  background: rgba(var(--accent-rgb),0.22);
+  border-color: rgba(var(--accent-rgb),0.6);
   gap: 14px;
 }
 
@@ -4071,7 +4153,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 
 /* ── Cat card — stronger accent glow ─────────────────────── */
 .cat-card:hover {
-  border-color: rgba(230,57,70,0.18);
+  border-color: rgba(var(--accent-rgb),0.18);
 }
 
 /* ── Suggested video card — thumb zoom ───────────────────── */
@@ -4353,7 +4435,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
 /* ── Touch devices: always show play overlays ─────────────── */
 @media (hover: none) {
   .cat-card-play        { opacity: 1 !important; }
-  .cat-card-play svg    { background: rgba(230,57,70,0.55) !important; }
+  .cat-card-play svg    { background: rgba(var(--accent-rgb),0.55) !important; }
   .feat-item .feat-play { opacity: 1 !important; }
   .feat-item .feat-play-btn { background: rgba(255,255,255,0.12); }
   .mq-item:hover        { transform: none; } /* no scale on touch */
@@ -4572,8 +4654,8 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
 }
 .admin-mobile-nav a span { margin-top: 2px; }
 .admin-mobile-nav a:hover { background: rgba(255,255,255,0.05); border-color: var(--line-strong); color: var(--ink); }
-.admin-mobile-nav a.active { background: rgba(230,57,70,0.1); border-color: rgba(230,57,70,0.4); color: var(--ink); }
-.admin-mobile-nav a.exit-mobile { color: var(--accent); border-color: rgba(230,57,70,0.2); }
+.admin-mobile-nav a.active { background: rgba(var(--accent-rgb),0.1); border-color: rgba(var(--accent-rgb),0.4); color: var(--ink); }
+.admin-mobile-nav a.exit-mobile { color: var(--accent); border-color: rgba(var(--accent-rgb),0.2); }
 
 @media (max-width: 900px) {
   .admin-mobile-nav { display: flex; }
@@ -4909,7 +4991,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   }
   .admin-mobile-nav a .icon,
   .admin-mobile-nav a svg { opacity: 0.85; }
-  .admin-mobile-nav a.active { box-shadow: 0 0 0 1px rgba(230,57,70,0.18) inset; }
+  .admin-mobile-nav a.active { box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.18) inset; }
 
   /* Admin topbar: title + actions polish */
   .admin-topbar {
@@ -5110,7 +5192,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
     border-color: rgba(255,255,255,0.18);
   }
   .admin-mobile-filter-btn.has-active {
-    border-color: rgba(230,57,70,0.4);
+    border-color: rgba(var(--accent-rgb),0.4);
     color: var(--accent);
   }
   .admin-mobile-filter-bar .view-toggle {
@@ -5566,8 +5648,8 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 .admin-exit-fab:hover {
-  background: rgba(230,57,70,0.15);
-  border-color: rgba(230,57,70,0.4);
+  background: rgba(var(--accent-rgb),0.15);
+  border-color: rgba(var(--accent-rgb),0.4);
   color: var(--accent);
   transform: translateY(-1px);
 }
@@ -5604,7 +5686,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   animation: toastIn 0.25s ease;
 }
-.admin-toast-error { background: rgba(230,57,70,0.18); border: 1px solid rgba(230,57,70,0.35); color: #f87171; }
+.admin-toast-error { background: rgba(var(--accent-rgb),0.18); border: 1px solid rgba(var(--accent-rgb),0.35); color: #f87171; }
 .admin-toast-warn  { background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.3); color: #fbbf24; }
 .admin-toast-ok    { background: rgba(34,197,94,0.14);  border: 1px solid rgba(34,197,94,0.28); color: #4ade80; }
 .admin-toast-close {
@@ -5659,7 +5741,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse at top, rgba(230,57,70,0.08), transparent 60%),
+    radial-gradient(ellipse at top, rgba(var(--accent-rgb),0.08), transparent 60%),
     radial-gradient(ellipse at bottom, rgba(255,45,45,0.05), transparent 70%);
   pointer-events: none;
   z-index: 0;
@@ -6409,8 +6491,16 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
     padding: 0 18px 90px !important;
     gap: 0 !important;
   }
+  .hero-intro { max-width: none !important; margin-bottom: 18px !important; }
   .hero-title {
-    display: none !important; /* hidden, used hero-meta only */
+    font-size: clamp(21px, 6.4vw, 30px) !important;
+    line-height: 1.12 !important;
+  }
+  .hero-sub {
+    margin-top: 10px !important;
+    font-size: 12.5px !important;
+    line-height: 1.5 !important;
+    max-width: none !important;
   }
   .hero-meta {
     margin-left: 0 !important;
@@ -6434,11 +6524,17 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
     margin-bottom: 8px;
     display: block;
   }
+  .hero-meta {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
   .hero-meta .btn,
   .hero-meta button {
     margin-top: 14px !important;
-    padding: 11px 18px !important;
-    font-size: 12.5px !important;
+    padding: 11px 16px !important;
+    font-size: 12px !important;
     border-radius: 999px !important;
   }
 
@@ -7401,4 +7497,1281 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
     width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important;
     border-radius: 0 !important; box-shadow: none !important;
   }
+}
+
+/* ---------- Console: textos da home (aba Home) ---------- */
+.hc-panel {
+  max-width: 880px;
+  margin-top: 40px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
+}
+.hc-panel h3 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.hc-lead {
+  color: var(--ink-dim);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 22px;
+  max-width: 620px;
+}
+.hc-sec { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+.hc-sec.open { background: rgba(255,255,255,0.02); }
+.hc-sec-head {
+  width: 100%;
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  background: none; border: none; cursor: pointer;
+  color: var(--ink); text-align: left;
+}
+.hc-sec-head:hover { background: rgba(255,255,255,0.03); }
+.hc-sec-title { font-size: 14px; font-weight: 500; }
+.hc-sec-hint {
+  flex: 1;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.hc-sec-body { padding: 4px 16px 20px; }
+.hc-field { margin-bottom: 18px; }
+.hc-field > label, .hc-sub > label {
+  display: block;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-dim); margin-bottom: 6px;
+}
+.hc-panel input[type="text"],
+.hc-panel textarea,
+.hc-panel select {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--ink);
+  font-family: inherit; font-size: 13px;
+  outline: none;
+}
+.hc-panel input[type="text"]:focus,
+.hc-panel textarea:focus,
+.hc-panel select:focus { border-color: var(--accent); background: rgba(255,255,255,0.06); }
+.hc-panel textarea { resize: vertical; line-height: 1.5; }
+.hc-panel select option { background: #14141a; }
+.hc-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.hc-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: rgba(255,255,255,0.02);
+}
+.hc-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-mute); margin-bottom: 10px;
+}
+.hc-sub { margin-bottom: 10px; }
+.hc-sub:last-child { margin-bottom: 0; }
+.hc-x {
+  flex-shrink: 0;
+  background: none; border: 1px solid var(--line); border-radius: 8px;
+  color: var(--ink-mute); padding: 7px 9px; cursor: pointer; line-height: 0;
+}
+.hc-x:hover { color: var(--accent); border-color: var(--accent); }
+.hc-add {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 1px dashed var(--line); border-radius: 8px;
+  color: var(--ink-dim); padding: 8px 12px; cursor: pointer;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.hc-add:hover { color: var(--ink); border-color: var(--ink-mute); }
+.hc-hint { font-size: 11px; color: var(--ink-mute); line-height: 1.5; margin-top: 6px; }
+.hc-actions {
+  position: sticky; bottom: 0;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  margin-top: 20px; padding: 14px 0;
+  background: linear-gradient(180deg, transparent, var(--bg) 40%);
+}
+@media (max-width: 720px) {
+  .hc-sec-hint { display: none; }
+}
+
+/* ---------- Console: cor de destaque ---------- */
+.accent-swatches { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+.accent-swatch {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.18);
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+.accent-swatch:hover { transform: translateY(-2px); }
+.accent-swatch.active {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px rgba(255,255,255,0.6);
+}
+.accent-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.accent-picker {
+  display: inline-flex; align-items: center; gap: 10px;
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 14px 8px 10px;
+  font-size: 13px; color: var(--ink-dim); cursor: pointer;
+}
+.accent-picker:hover { color: var(--ink); border-color: var(--ink-mute); }
+.accent-picker input[type="color"] { position: absolute; opacity: 0; width: 0; height: 0; }
+.accent-picker > span { width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); }
+.accent-hex {
+  width: 130px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--ink);
+  font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  outline: none;
+}
+.accent-hex:focus { border-color: var(--accent); }
+.accent-state {
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.accent-panel { margin-top: 40px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* ---------- Categorias em pastas (home) ----------
+   A pasta é feita de três peças: a capa da categoria ao fundo (fraca em
+   repouso), a frente escura por cima e a aba com o nome. No hover a frente
+   desce alguns pixels — como quem abre a pasta — e a capa acende. O contorno
+   da aba sai de dois raios: o convexo do próprio canto e um filete côncavo
+   (a máscara em .folder-tab::after) que emenda a aba na borda da frente. */
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 18px;
+}
+.folder-card {
+  --folder-face: #1b1b23;
+  --folder-tab-w: 64%;
+  position: relative;
+  /* Mais alto que largo do que era (1.38): a frente da pasta ocupa uma altura
+     fixa em pixels, então esticar o card sobra tudo para a foto. */
+  aspect-ratio: 1.15;
+  border-radius: 22px;
+  /* Sem recorte no card: ao abrir, a frente desce para fora da caixa e o rodapé
+     precisa continuar visível. Quem arredonda a capa é o .folder-cover-wrap. */
+  overflow: visible;
+  background: #08080c;
+  /* mesmo contorno azul dos cards do console */
+  border: 1px solid rgba(var(--accent-rgb), 0.32);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 10px 26px -18px rgba(0,0,0,0.9);
+  cursor: pointer;
+  transition: transform 0.4s cubic-bezier(.2,.8,.2,1), box-shadow 0.4s ease, border-color 0.3s ease;
+}
+.folder-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(var(--accent-rgb), 0.65);
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.18), 0 26px 60px -24px rgba(0,0,0,0.9);
+  z-index: 3;   /* a pasta aberta passa por cima das vizinhas */
+}
+.folder-cover-wrap { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
+.folder-cover {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  opacity: 0.8;
+  transform: scale(1.06);
+  transition: opacity 0.45s ease, transform 0.6s cubic-bezier(.2,.8,.2,1);
+}
+/* Sem capa enviada, o miolo é o gradiente da categoria — que já é escuro e por
+   isso entra mais forte que uma foto —, com um facho da cor de destaque em cima. */
+.folder-cover.is-gradient { opacity: 0.92; }
+.folder-card:hover .folder-cover.is-gradient { opacity: 1; }
+.folder-cover-wrap::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(120% 80% at 22% -10%, rgba(var(--accent-rgb), 0.30), transparent 62%);
+  opacity: 0.42;
+  transition: opacity 0.45s ease;
+  pointer-events: none;
+}
+.folder-card:hover .folder-cover-wrap::before { opacity: 1; }
+/* A foto sai da pasta: sobe e clareia enquanto a frente desce. */
+.folder-card:hover .folder-cover { opacity: 1; transform: scale(1) translateY(-16px); }
+/* véu no topo para o nome não brigar com fotos claras */
+.folder-cover-wrap::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(5,5,7,0.22) 0%, transparent 42%);
+  pointer-events: none;
+}
+
+.folder-face {
+  position: absolute; inset: 0;
+  transition: transform 0.45s cubic-bezier(.2,.8,.2,1);
+}
+/* Aberta, a pasta desce e fica só com o nome e a descrição: contagem e data
+   somem para a foto ganhar a tela. A dobra não sobe mais — era ela que puxava a
+   frente para cima e comia a imagem justamente na hora de mostrá-la. */
+.folder-card:hover .folder-face { transform: translateY(10px); }
+.folder-card:hover .folder-foot { opacity: 0; max-height: 0; }
+
+.folder-tab {
+  position: absolute; left: 0;
+  width: var(--folder-tab-w);
+  bottom: 100%;          /* pendurada na borda de cima do painel */
+  height: 38px;
+  background: var(--folder-face);
+  border-radius: 16px 16px 0 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.09);
+}
+.folder-tab::after {
+  content: "";
+  position: absolute; right: -18px; bottom: 0;
+  width: 18px; height: 18px;
+  background: var(--folder-face);
+  -webkit-mask: radial-gradient(circle 18px at 100% 0, transparent 0 17.5px, #000 18px);
+          mask: radial-gradient(circle 18px at 100% 0, transparent 0 17.5px, #000 18px);
+}
+/* A altura sai do CONTEÚDO, não de uma fração do card: com porcentagem, card
+   menor = painel menor, e a descrição era cortada no meio da linha justamente
+   nos cards estreitos. Ancorado embaixo, ele cresce o quanto precisar para
+   cima — o texto nunca fica sem espaço. */
+.folder-panel {
+  position: absolute; left: 0; right: 0;
+  bottom: 0; top: auto;
+  background: var(--folder-face);
+  border-radius: 0 18px 22px 22px;
+  padding: 8px 20px 16px;
+  display: flex; flex-direction: column;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+/* O nome mora na aba, acima do painel: posicionado em vez de puxado por margem
+   negativa — a margem arrastaria junto o subtítulo para cima da capa. */
+.folder-title {
+  position: absolute;
+  left: 20px;
+  bottom: calc(100% + 7px);
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px; font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: calc(var(--folder-tab-w) - 34px);
+}
+/* A descrição fica fechada: só aparece quando a pasta abre. max-height animável
+   (auto não faz transição) com folga para duas linhas. */
+.folder-sub {
+  margin: 0;
+  font-size: 12.5px; line-height: 1.45;
+  color: var(--ink-dim);
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: max-height 0.4s cubic-bezier(.2,.8,.2,1), opacity 0.3s ease, transform 0.4s cubic-bezier(.2,.8,.2,1);
+}
+/* Reticências quando o texto passa de duas linhas. Fica no span porque o <p> é
+   item de flex e item de flex blockifica o -webkit-box de que o line-clamp
+   depende. Onde o navegador blockifica o span também, quem garante o corte
+   limpo é o max-height exato de duas linhas na regra de hover — nunca no meio
+   de uma linha, que era o defeito. */
+.folder-sub > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.folder-card:hover .folder-sub,
+.folder-card:focus-visible .folder-sub {
+  max-height: 2.9em;   /* 2 linhas × 1.45 de entrelinha, exatas */
+  opacity: 1;
+  transform: translateY(0);
+}
+/* Teclado: o foco abre a pasta igual ao ponteiro. */
+.folder-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; z-index: 3; }
+.folder-card:focus-visible .folder-face { transform: translateY(10px); }
+.folder-card:focus-visible .folder-foot { opacity: 0; max-height: 0; }
+.folder-card:focus-visible .folder-cover { opacity: 1; transform: scale(1) translateY(-16px); }
+.folder-foot {
+  margin-top: auto;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  max-height: 40px;
+  overflow: hidden;
+  transition: opacity 0.25s ease, max-height 0.4s cubic-bezier(.2,.8,.2,1);
+}
+.folder-count {
+  font-family: var(--font-display);
+  font-size: 26px; font-weight: 700; line-height: 1;
+  color: var(--ink);
+  display: inline-flex; align-items: baseline; gap: 6px;
+}
+.folder-count-label {
+  font-family: var(--font-body);
+  font-size: 12px; font-weight: 400;
+  color: var(--ink-dim);
+}
+.folder-meta {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-mute);
+}
+/* Categoria sem vídeo publicado: continua clicável, só não puxa o olho. */
+.folder-card.folder-empty { opacity: 0.62; }
+.folder-card.folder-empty:hover { opacity: 1; }
+
+@media (max-width: 600px) {
+  .folder-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .folder-card { border-radius: 18px; }
+  .folder-title { font-size: 15px; }
+  .folder-count { font-size: 22px; }
+}
+
+/* Compartilhar categoria: aparece só com a pasta aberta, no canto de cima, e
+   nunca abre a categoria junto (o clique para nele — ver landing.jsx). */
+.folder-share {
+  position: absolute;
+  top: 10px; right: 10px;
+  z-index: 4;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(8,9,13,0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--ink);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.25s ease, transform 0.3s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.folder-card:hover .folder-share,
+.folder-card:focus-within .folder-share { opacity: 1; transform: translateY(0); }
+.folder-share:hover {
+  border-color: rgba(var(--accent-rgb), 0.7);
+  background: rgba(var(--accent-rgb), 0.22);
+}
+.folder-share:focus-visible { opacity: 1; transform: translateY(0); outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Aviso curto no rodapé da tela — o site não tinha nenhum, o console tem o dele. */
+.site-toast {
+  position: fixed;
+  left: 50%; bottom: 34px;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  background: rgba(8,9,13,0.86);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: 0 16px 40px -18px rgba(0,0,0,0.9);
+  font-size: 13px;
+  color: var(--ink);
+  animation: siteToastIn 0.28s cubic-bezier(.2,.8,.2,1);
+  pointer-events: none;
+}
+.site-toast .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.8);
+}
+@keyframes siteToastIn {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (max-width: 600px) {
+  .folder-share { opacity: 1; transform: none; width: 28px; height: 28px; }
+}
+
+/* ---------- Destaques: corredor 3D ----------
+   Os cards vêm do fundo em direção a quem olha. A perspectiva sozinha faz o que
+   parece ser duas animações: quando o z cresce, o card aumenta E sua posição na
+   tela abre para fora do ponto de fuga, porque a projeção multiplica posição e
+   tamanho pelo mesmo fator. A geometria e o porquê de cada número estão no
+   comentário do landing.jsx. */
+.ish-stage {
+  position: relative;
+  overflow: hidden;
+  /* O que muda aqui dentro não obriga o resto da página a recalcular. */
+  contain: layout paint;
+  container-type: inline-size;   /* base do cqw: tudo aqui é proporção da largura */
+  height: clamp(340px, 42vw, 560px);
+  margin-bottom: 10px;
+  /* Faixa preta atrás do corredor: separa a cena do fundo animado do site sem
+     brigar com ele — a máscara abaixo dissolve as quatro bordas, então a faixa
+     não tem contorno nenhum, só some. Os fios de luz em cima e embaixo marcam a
+     faixa de leve e somem junto com ela. */
+  /* O próprio fundo termina transparente em cima e embaixo: assim a faixa não
+     tem limite para esconder, e não é preciso uma segunda camada de máscara (que
+     custaria a cada quadro). Os fios de 1px saíram por serem justamente a linha
+     que denunciava a borda. */
+  background:
+    linear-gradient(180deg,
+      rgba(4,5,8,0) 0%,
+      rgba(4,5,8,0.34) 10%,
+      rgba(3,3,6,0.6) 32%,
+      rgba(3,3,6,0.6) 68%,
+      rgba(4,5,8,0.34) 90%,
+      rgba(4,5,8,0) 100%);
+  /* O corredor inteiro se dissolve no fundo da página: forte nas laterais, onde
+     os cards sairiam cortados pelo limite do palco, e suave em cima e embaixo,
+     para a seção não ter borda. A máscara é aplicada aqui, fora do contexto 3D
+     (que vive em .ish-space/.ish-world) — no meio dele, achataria a cena. */
+  /* Uma máscara só, na horizontal: duas camadas compostas custavam o dobro a
+     cada quadro, e o corredor não chega perto das bordas de cima e de baixo. */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 13%, #000 87%, transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0%, #000 13%, #000 87%, transparent 100%);
+}
+/* Os dois contêineres não recebem ponteiro. Sem isso eles roubam o clique dos
+   cards do fundo: card com tamanho aparente menor que o próprio tem z NEGATIVO,
+   isto é, fica atrás do plano z=0 destas caixas — e uma caixa transparente que
+   cobre o palco inteiro continua valendo para o teste de clique. Só os cards da
+   frente (z positivo) respondiam. Quem volta a receber é o card, pelos keyframes. */
+.ish-space { position: absolute; inset: 0; pointer-events: none; }
+.ish-world { position: absolute; inset: 0; transform-style: preserve-3d; pointer-events: none; }
+/* O invólucro leva o card pelo corredor; o card, dentro dele, só se inclina.
+   É essa separação que permite endireitar o card em destaque sem tocar na
+   posição — a inclinação vive no transform, que pertence à animação. */
+.ish-slot {
+  position: absolute;
+  transform-style: preserve-3d;
+  cursor: pointer;
+  /* Os contêineres do palco têm pointer-events:none (para não roubarem o clique
+     dos cards do fundo, que ficam atrás do plano z=0) e isso é HERDADO. O card
+     precisa se declarar clicável de novo — antes quem fazia isso eram os
+     keyframes, que saíram para a animação poder rodar no compositor. */
+  pointer-events: auto;
+  /* Com poucos cards o passo é curto: dá tempo de acompanhar sem parecer salto. */
+  transition: translate 0.32s cubic-bezier(.22,.61,.36,1);
+}
+.ish-card {
+  position: absolute;
+  inset: 0;
+  animation-name: var(--giro);
+  /* preserve-3d para o giro contrário da face acontecer no espaço 3D do card —
+     é assim que a thumb fica reta sem a animação ser interrompida. */
+  transform-style: preserve-3d;
+}
+.ish-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  backface-visibility: hidden;
+  box-shadow: 0 1cqw 3cqw -1cqw rgba(0,0,0,0.75);
+  transition: filter 0.2s ease-out, box-shadow 0.2s ease-out, transform 0.32s cubic-bezier(.22,.61,.36,1);
+}
+.ish-card img, .ish-ph { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ish-ph {
+  background-size: cover; background-position: center;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 8%;
+}
+.ish-ph span {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 2.1cqw;
+  line-height: 1.2;
+  text-align: center;
+  color: rgba(255,255,255,0.82);
+  text-shadow: 0 1px 8px rgba(0,0,0,0.6);
+}
+
+/* Parar no hover em vez de desligar a animação mantém o corredor inteiro: cada
+   card já foi jogado no meio do voo pelo atraso negativo, então ele congela
+   onde está em vez de voltar para o eixo. O mesmo vale para a seção fora da
+   tela (ver o IntersectionObserver no landing.jsx). */
+.ish-stage--faixa .ish-slot, .ish-stage--faixa .ish-card,
+.ish-stage--off .ish-slot, .ish-stage--off .ish-card { animation-play-state: paused; }
+
+/* O card sob o cursor acende; os outros recuam. */
+.ish-stage--hov .ish-face { filter: brightness(0.4) saturate(0.75); }
+.ish-stage--hov .ish-slot--hov .ish-face {
+  filter: brightness(1.12) saturate(1.08);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.9), 0 1.4cqw 4cqw -1cqw rgba(0,0,0,0.85);
+}
+/* O destaque apenas desliza para o lado, sem crescer e sem avançar. O passo vai
+   em direção ao miolo do corredor: trilho da direita anda para a esquerda e
+   vice-versa — daí cada invólucro carregar a marca do trilho dele. */
+.ish-stage--hov .ish-slot--hov { z-index: 2; opacity: 1 !important; }
+.ish-stage--hov .ish-slot--hov.ish-slot--r { translate: -5cqw 0 0; }
+.ish-stage--hov .ish-slot--hov.ish-slot--l { translate:  5cqw 0 0; }
+
+.ish-caption {
+  position: absolute;
+  left: 50%; bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 12px 22px;
+  max-width: min(88%, 620px);
+  text-align: center;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  background: rgba(8,9,13,0.86);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  pointer-events: none;
+  animation: siteToastIn 0.24s cubic-bezier(.2,.8,.2,1);
+}
+.ish-caption .t {
+  font-family: var(--font-display);
+  font-size: 16px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.ish-caption .s {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+/* No celular o corredor sai de cena: 18 cards em 3D não valem a bateria, e a
+   faixa horizontal que já existia dá conta. */
+@media (max-width: 900px) {
+  .ish-stage { display: none; }
+}
+
+/* Opção de filtro sem nenhum vídeo: continua clicável (leva ao aviso de lista
+   vazia), mas não disputa atenção com as que têm conteúdo. */
+.pres-side-item.vazio { opacity: 0.62; }
+.pres-side-item.vazio:hover { opacity: 1; }
+
+/* ---------- Entrada em cascata, palavra a palavra ----------
+   Porte do "whisper text": cada palavra aparece 80ms depois da anterior, em
+   0.4s, com a curva do power2.out (cubic-bezier(.22,.61,.36,1) é a mesma coisa
+   escrita em CSS). Sem biblioteca — e, sendo só opacidade, roda no compositor.
+   São duas condições para a cascata começar: body.home-pronta (a página parou
+   de aparecer) e .no-ar, que o componente põe quando o texto entra na tela.
+   Sem a segunda, um texto lá embaixo animaria sozinho no primeiro segundo. */
+.whisper { display: inline; }
+.whisper-w {
+  display: inline-block;
+  white-space: nowrap;
+  opacity: 0;
+  will-change: opacity;
+}
+body.home-pronta .whisper.no-ar .whisper-w {
+  animation-name: whisperIn;
+  animation-timing-function: cubic-bezier(.22,.61,.36,1);
+  animation-fill-mode: forwards;
+}
+@keyframes whisperIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+/* Quem pediu menos movimento vê o texto inteiro, sem cascata. */
+@media (prefers-reduced-motion: reduce) {
+  .whisper-w { opacity: 1; }
+  body.home-pronta .whisper.no-ar .whisper-w { animation: none; }
+}
+
+/* A chamada das categorias é a única frase longa entre os títulos de seção: no
+   corpo padrão (até 72px) a segunda linha quebrava em duas. Corpo menor e mais
+   largura resolvem sem mexer nos outros títulos, que são curtos. */
+#categorias .section-head h2 {
+  font-size: clamp(26px, 3.3vw, 44px);
+  max-width: 900px;
+  line-height: 1.06;
+}
+
+/* ---------- Novidades: cartão da home ----------
+   Canto superior direito, fixo, com o mesmo vidro escuro e contorno azul dos
+   outros cards do site. Entra deslizando de fora da tela. */
+.nov-pop {
+  position: fixed;
+  top: 108px; right: 22px;
+  z-index: 400;
+  width: 320px; max-width: calc(100vw - 32px);
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--accent-rgb), 0.32);
+  background: rgba(8,9,13,0.86);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  box-shadow: 0 24px 60px -22px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.06);
+  animation: novEntra 0.45s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes novEntra {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: none; }
+}
+.nov-pop-x {
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(6,7,10,0.7);
+  color: rgba(255,255,255,0.75);
+  cursor: pointer;
+}
+.nov-pop-x:hover { color: #fff; border-color: rgba(255,255,255,0.3); }
+.nov-pop-img {
+  display: block;
+  width: 100%; height: 132px;
+  object-fit: cover;
+}
+.nov-pop-img--vazia {
+  background:
+    radial-gradient(120% 100% at 20% 0%, rgba(var(--accent-rgb), 0.5), transparent 62%),
+    linear-gradient(160deg, #16202e, #090b10);
+}
+.nov-pop-corpo { padding: 14px 16px 16px; }
+.nov-pop-tag {
+  font-family: var(--font-mono);
+  font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--accent);
+}
+.nov-pop-titulo {
+  margin: 6px 0 0;
+  font-family: var(--font-display);
+  font-size: 17px; font-weight: 600; line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.nov-pop-texto {
+  margin: 7px 0 0;
+  font-size: 13px; line-height: 1.5;
+  color: rgba(255,255,255,0.66);
+}
+.nov-pop-btn {
+  margin-top: 14px;
+  width: 100%;
+  justify-content: center;
+  padding: 11px 16px;
+  font-size: 13.5px;
+}
+@media (max-width: 720px) {
+  /* No celular ele vira uma faixa no rodapé: no alto taparia o menu. */
+  .nov-pop { top: auto; bottom: 16px; right: 16px; left: 16px; width: auto; }
+  .nov-pop-img { height: 104px; }
+  @keyframes novEntra {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+
+/* ---------- Novidades: a página ---------- */
+.nov-pagina {
+  min-height: 100vh;
+  padding: 120px 0 110px;
+  background: transparent;
+}
+.nov-voltar {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--ink-dim);
+  padding: 0 0 26px;
+}
+.nov-voltar:hover { color: var(--ink); }
+.nov-cabecalho { margin-bottom: 56px; max-width: 780px; }
+.nov-cabecalho h1 {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 5vw, 64px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.04;
+  color: var(--ink);
+}
+.nov-cabecalho p {
+  margin-top: 16px;
+  max-width: 56ch;
+  font-size: 15.5px; line-height: 1.65;
+  color: rgba(255,255,255,0.7);
+}
+.nov-blocos {
+  display: flex; flex-direction: column; gap: 56px;
+  max-width: 860px;
+}
+.nov-bloco { margin: 0; }
+.nov-bloco--texto h2 {
+  font-family: var(--font-display);
+  font-size: clamp(21px, 2.4vw, 30px);
+  font-weight: 600; letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-bottom: 14px;
+}
+.nov-texto {
+  font-size: 15.5px; line-height: 1.72;
+  color: rgba(255,255,255,0.76);
+}
+.nov-texto p { margin: 0 0 14px; }
+.nov-texto p:last-child { margin-bottom: 0; }
+.nov-texto a { color: var(--accent); text-decoration: underline; }
+.nov-texto ul, .nov-texto ol { margin: 0 0 14px 20px; }
+.nov-texto li { margin-bottom: 6px; }
+.nov-bloco--imagem img {
+  display: block; width: 100%; height: auto;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.nov-video {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: #05060a;
+}
+.nov-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.nov-bloco figcaption {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.nov-vazio {
+  padding: 60px 0;
+  font-family: var(--font-mono);
+  font-size: 12px; letter-spacing: 0.15em;
+  color: var(--ink-dim);
+}
+
+/* ── Editor de novidades (console) ───────────────────────────────────────── */
+.nov-switch {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--ink); cursor: pointer;
+  padding: 12px 14px; border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  width: fit-content;
+}
+.nov-switch input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+/* prévia da imagem: quadro fixo para a lista não pular de altura a cada envio */
+.nov-img-linha { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+.nov-img-previa {
+  width: 148px; aspect-ratio: 16 / 10; border-radius: 8px; object-fit: cover;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.09);
+  flex: none;
+}
+.nov-img-previa--vazia {
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ink-dim);
+  border-style: dashed;
+}
+
+.nov-blocos-editor { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+.nov-bloco-card { border-left: 2px solid rgba(var(--accent-rgb), 0.5); }
+.nov-add-linha { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+
+/* ── Processo: abertura em duas colunas ──────────────────────────────────── */
+/* O texto para de atravessar a largura toda e vira um bloco de leitura; o
+   baralho de diferenciais ocupa o outro lado. */
+.process-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr);
+  gap: 56px;
+  align-items: start;
+  margin-bottom: 72px;
+}
+.process-intro .process-title {
+  margin-bottom: 22px;
+  font-size: clamp(26px, 2.4vw, 36px);
+  line-height: 1.12;
+  text-wrap: balance;
+  max-width: 22ch;
+}
+.process-lead {
+  font-size: 15.5px;
+  line-height: 1.72;
+  color: var(--ink-dim);
+  max-width: 52ch;
+  text-wrap: pretty;
+}
+
+/* ── O baralho ───────────────────────────────────────────────────────────── */
+/* Todos os cartões dividem a mesma célula do grid; o que os separa é o
+   deslocamento de cada um, escrito a partir do índice (--i). */
+.dc-stack {
+  display: grid;
+  grid-template-areas: "stack";
+  place-items: start;
+  /* A altura da célula é a do cartão mais alto; o resto do baralho vive em
+     translate, que não ocupa espaço. Então o espaço dos deslocamentos (e da
+     diagonal da inclinação, 23px de cada lado) vem daqui — calculado a partir
+     da contagem, para o baralho não vazar por cima das etapas quando alguém
+     adicionar um cartão no console. */
+  padding: 26px 0 calc((var(--dc-n, 5) - 1) * 42px + 26px);
+}
+.dc-card {
+  grid-area: stack;
+  position: relative;
+  /* encolhe se forem muitos, para o último não sair da coluna */
+  width: min(330px, calc(100% - (var(--dc-n, 5) - 1) * 52px));
+  min-height: 128px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 15px 18px 17px;
+  border-radius: 14px;
+  background:
+    radial-gradient(130% 150% at 6% -12%, rgba(var(--accent-rgb), 0.30), transparent 62%),
+    linear-gradient(168deg, rgba(38, 48, 64, 0.97), rgba(16, 20, 28, 0.97));
+  border: 1px solid rgba(var(--accent-rgb), 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),     /* fio de luz na borda de cima */
+    0 0 30px rgba(var(--accent-rgb), 0.20),      /* halo */
+    0 18px 40px rgba(0, 0, 0, 0.42);
+  transform: skewY(-8deg);
+  translate: calc(var(--i) * 52px) calc(var(--i) * 42px);
+  filter: grayscale(0.25);
+  transition: translate 420ms cubic-bezier(0.22, 0.8, 0.3, 1),
+              filter 420ms ease, border-color 420ms ease, box-shadow 420ms ease;
+  user-select: none;
+  cursor: default;
+}
+/* véu que apaga o cartão parado */
+.dc-card::before {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background: rgba(6, 8, 12, 0.16);
+  transition: opacity 420ms ease;
+  pointer-events: none;
+}
+/* máscara que dissolve a borda direita no fundo, como no componente original */
+.dc-card::after {
+  content: "";
+  position: absolute;
+  top: -1px; right: -1px; bottom: -1px;
+  width: 46%;
+  border-radius: inherit;
+  background: linear-gradient(to left, rgba(13, 16, 23, 0.86), rgba(13, 16, 23, 0));
+  transition: opacity 420ms ease;
+  pointer-events: none;
+}
+.dc-card:hover {
+  z-index: 5;                         /* sem isto, um cartão de trás sobe e continua coberto */
+  filter: none;
+  border-color: rgba(var(--accent-rgb), 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 44px rgba(var(--accent-rgb), 0.32),
+    0 26px 60px rgba(0, 0, 0, 0.55);
+  translate: calc(var(--i) * 52px) calc(var(--i) * 42px - 46px);
+}
+.dc-card:hover::before,
+.dc-card:hover::after { opacity: 0; }
+
+.dc-topo { display: flex; align-items: center; gap: 9px; }
+.dc-icone {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex: none;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.22);
+  box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.35), inset 0 0 0 1px rgba(var(--accent-rgb), 0.4);
+  color: var(--accent);
+  transition: box-shadow 420ms ease;
+}
+.dc-card:hover .dc-icone { box-shadow: 0 0 22px rgba(var(--accent-rgb), 0.6), inset 0 0 0 1px rgba(var(--accent-rgb), 0.7); }
+.dc-titulo {
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.dc-sub {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-dim);
+  max-width: 40ch;
+}
+
+/* Telas estreitas: sem passar o mouse, um baralho é uma pilha de cartões que
+   ninguém abre. Vira lista, sem inclinação e sem véu. */
+@media (max-width: 980px) {
+  .process-intro { grid-template-columns: 1fr; gap: 40px; }
+  .dc-stack {
+    display: flex; flex-direction: column; gap: 12px;
+    min-height: 0; padding-top: 0; width: 100%;
+  }
+  .dc-card {
+    width: 100%; min-height: 0;
+    transform: none; translate: none; filter: none;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.09),
+      0 0 22px rgba(var(--accent-rgb), 0.12);
+  }
+  .dc-card::before, .dc-card::after { display: none; }
+  .dc-card:hover { translate: none; }
+}
+
+/* Botão no pé do quadro de contato. Ele não estica: fica do tamanho do próprio
+   texto, alinhado à esquerda com as linhas de cima. O padding é o do .btn — um
+   padding-top zerado aqui empurrava o texto para o topo da pílula. */
+.contact-cta {
+  margin-top: 8px;
+  align-self: flex-start;
+}
+.contact-card .contact-cta { text-decoration: none; }
+@media (max-width: 720px) {
+  .contact-cta { align-self: stretch; justify-content: center; }
+}
+
+/* Prévia do ícone da aba: quadrado, porque é assim que ele é usado — mostrar
+   um favicon num quadro 16:10 esconderia o corte que o navegador vai fazer. */
+.marca-previa-ico {
+  width: 84px;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px;
+}
+
+/* ── Minigame de /play ───────────────────────────────────────────────────── */
+/* Tela cheia por cima do site: o jogo não convive com a página, ele substitui.
+   O fundo animado continua atrás, só que abafado. */
+.play-tela {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(5, 6, 9, 0.86);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.play-sair {
+  position: absolute;
+  top: 20px; right: 22px;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-dim);
+  padding: 8px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.play-sair:hover { color: var(--ink); border-color: rgba(var(--accent-rgb), 0.5); }
+
+.play-palco {
+  display: flex;
+  align-items: stretch;
+  gap: 26px;
+  height: 100%;
+  max-height: 900px;
+}
+
+/* O canvas manda na largura: ele tem proporção fixa (720×960) e a altura
+   disponível é quem decide o tamanho — assim o campo nunca corta. */
+.play-canvas-wrap { position: relative; height: 100%; aspect-ratio: 720 / 960; }
+.play-canvas {
+  display: block;
+  width: 100%; height: 100%;
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(var(--accent-rgb), 0.16), transparent 60%),
+    linear-gradient(170deg, rgba(18, 23, 32, 0.96), rgba(8, 10, 14, 0.98));
+  border: 1px solid rgba(var(--accent-rgb), 0.26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 30px 80px rgba(0, 0, 0, 0.6);
+  cursor: none;
+  touch-action: none;
+}
+
+.play-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  text-align: center;
+  border-radius: 18px;
+  background: rgba(6, 8, 12, 0.72);
+}
+.play-overlay h1 {
+  font-size: clamp(30px, 4.6vh, 52px);
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  max-width: 14ch;
+}
+.play-overlay p { font-size: 14px; line-height: 1.6; color: var(--ink-dim); max-width: 38ch; }
+.play-tag {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase;
+  color: var(--accent);
+}
+.play-dica { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-mute); }
+
+.play-registro { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.play-registro input {
+  width: 200px;
+  padding: 13px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 14px;
+}
+.play-registro input:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.6); }
+
+/* ── Placar ── */
+.play-placar {
+  width: 268px;
+  display: flex; flex-direction: column;
+  padding: 22px 20px;
+  border-radius: 18px;
+  background: rgba(10, 12, 17, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+.play-placar h2 { font-size: 19px; letter-spacing: -0.01em; }
+.play-placar-sub {
+  font-family: var(--font-mono);
+  font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-mute);
+  margin: 6px 0 16px;
+}
+.play-placar-vazio { font-size: 12.5px; color: var(--ink-mute); }
+.play-placar ol { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.play-placar li {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.play-placar li.lider { background: rgba(var(--accent-rgb), 0.14); }
+.play-placar .pos { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); }
+.play-placar li.lider .pos { color: var(--accent); }
+.play-placar .nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-dim); }
+.play-placar li.lider .nome { color: var(--ink); }
+.play-placar .pts { font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
+
+/* Telas baixas ou estreitas: o placar sai de lado e vira uma faixa embaixo. */
+@media (max-width: 900px), (max-height: 620px) {
+  .play-tela { padding: 12px; align-items: flex-start; }
+  .play-palco { flex-direction: column; gap: 12px; max-height: none; height: auto; width: 100%; align-items: center; }
+  .play-canvas-wrap { height: auto; width: min(100%, 58vh); }
+  .play-placar { width: min(100%, 58vh); max-height: 190px; }
+}
+
+/* Placar do minigame dentro do console */
+.mg-placar { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.mg-placar li {
+  display: grid;
+  grid-template-columns: 30px 1fr 60px 90px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.mg-placar li span:first-child,
+.mg-placar li span:nth-child(3),
+.mg-placar li span:last-child { font-family: var(--font-mono); font-size: 11px; color: var(--ink-dim); }
+.mg-placar li span:nth-child(3) { color: var(--ink); text-align: right; }
+.mg-placar li span:last-child { text-align: right; color: var(--ink-mute); }
+
+/* ── Celular do Instagram, no fim da home ────────────────────────────────── */
+/* Fica fora da tela até o visitante chegar ao pé da página; então sobe do canto
+   esquerdo, com um pedaço do aparelho ainda abaixo da borda — é o que dá a
+   sensação de estar saindo dali, em vez de flutuar. */
+.insta-fone {
+  position: fixed;
+  /* A inclinação joga o canto de cima para fora da caixa: com a tela em print
+     o aparelho fica mais alto, o desvio cresce junto, e a 46px o canto já
+     encostava na borda esquerda. Medido: a 60px sobra 20px de folga. */
+  left: 60px;
+  bottom: -74px;                /* o pé do aparelho fica sempre além da borda */
+  z-index: 880;
+  width: 204px;
+  transform: translateY(120%) rotate(-7deg);
+  transform-origin: 50% 100%;
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 720ms cubic-bezier(0.16, 0.9, 0.25, 1), opacity 420ms ease;
+}
+.insta-fone.no-ar {
+  transform: translateY(0) rotate(-7deg);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.insta-corpo {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 9px 9px 26px;
+  border-radius: 30px;
+  background: linear-gradient(160deg, #2b3240, #0d1016 42%, #171b23);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 -6px 26px rgba(0, 0, 0, 0.5),
+    0 26px 60px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  transition: transform 320ms cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+.insta-fone.no-ar .insta-corpo:hover { transform: translateY(-12px); }
+
+/* a ilha dinâmica */
+.insta-ilha {
+  position: absolute;
+  top: 17px; left: 50%;
+  transform: translateX(-50%);
+  width: 52px; height: 13px;
+  border-radius: 999px;
+  background: #05070a;
+  z-index: 2;
+}
+
+.insta-tela {
+  border-radius: 23px;
+  overflow: hidden;
+  background: #0a0c11;
+  padding: 30px 9px 10px;
+}
+
+.insta-topo { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.insta-foto-perfil {
+  width: 24px; height: 24px; flex: none;
+  border-radius: 999px;
+  overflow: hidden;
+  /* o anel do story, na cor de destaque em vez do degradê do Instagram: o
+     celular é nosso, não uma imitação da interface deles */
+  box-shadow: 0 0 0 1.5px rgba(var(--accent-rgb), 0.9);
+}
+.insta-foto-perfil img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.insta-usuario {
+  flex: 1;
+  font-size: 11px; font-weight: 600;
+  color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.insta-seguir {
+  font-size: 9.5px; font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  flex: none;
+}
+.insta-chamada {
+  font-family: var(--font-mono);
+  font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-mute);
+  margin-bottom: 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.insta-grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+.insta-celula { display: block; aspect-ratio: 1; overflow: hidden; border-radius: 3px; background: rgba(255,255,255,0.05); }
+.insta-celula img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.insta-x {
+  position: absolute;
+  top: -6px; right: -6px;
+  z-index: 3;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px;
+  background: rgba(12, 14, 19, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--ink-dim);
+}
+.insta-x:hover { color: var(--ink); border-color: rgba(var(--accent-rgb), 0.6); }
+
+/* Num celular de verdade, um celular desenhado no canto é só estorvo em cima do
+   conteúdo — e o rodapé já leva ao perfil. */
+@media (max-width: 900px) {
+  .insta-fone { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .insta-fone { transition: opacity 300ms ease; transform: translateY(0) rotate(-7deg); }
+}
+
+/* Grade de fotos do Instagram dentro do console */
+.insta-admin-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.insta-admin-celula {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.insta-admin-celula img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.insta-admin-celula .hc-x { position: absolute; top: 5px; right: 5px; background: rgba(8,9,13,0.85); border-radius: 6px; }
+.insta-admin-mover { position: absolute; bottom: 5px; left: 5px; display: flex; gap: 4px; }
+.insta-admin-mover button {
+  width: 20px; height: 20px;
+  border-radius: 6px;
+  background: rgba(8, 9, 13, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--ink-dim);
+  font-size: 13px; line-height: 1;
+}
+.insta-admin-mover button:hover { color: var(--ink); }
+.insta-admin-add {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer;
+  border-style: dashed;
+  color: var(--ink-mute);
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.insta-admin-add:hover { color: var(--ink-dim); border-color: rgba(var(--accent-rgb), 0.5); }
+
+/* Tela do celular quando é um print do perfil: a foto ocupa o aparelho inteiro,
+   ancorada no topo — é o cabeçalho do perfil que precisa aparecer, e o pé do
+   aparelho vive abaixo da borda da tela de qualquer jeito. */
+.insta-tela--print { padding: 0; aspect-ratio: 44 / 94; }
+.insta-tela--print img {
+  display: block;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+.insta-convite {
+  position: absolute;
+  left: 9px; right: 9px; bottom: 92px;
+  z-index: 2;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px 7px 11px;
+  border-radius: 12px;
+  background: rgba(8, 10, 14, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.insta-convite-txt {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.insta-admin-print {
+  width: 92px;
+  aspect-ratio: 44 / 94;
+  object-fit: cover;
+  object-position: top center;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }

@@ -53,6 +53,23 @@ const Icon = ({ name, size = 16, stroke = 1.6, ...rest }) => {
   }
 };
 
+/* Uma mídia enviada pelo console pode ser foto, gif ou um vídeo curto — o
+   servidor aceita os três no mesmo upload. O tipo sai da URL: o Cloudinary
+   guarda vídeo sob /video/upload/, e o disco local mantém a extensão do
+   arquivo original. Gif não entra aqui de propósito: ele é <img>, como foto. */
+const EH_VIDEO_URL = (url) =>
+  typeof url === "string" &&
+  (/\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i.test(url) || /\/video\/upload\//.test(url));
+
+/* Quem pediu menos movimento não leva um vídeo tocando sozinho na tela. */
+const SEM_MOVIMENTO = typeof window !== "undefined" && window.matchMedia
+  && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* Endereços vindos do console viram href de verdade: só passam os esquemas que
+   navegam. Sem isto, um "javascript:..." digitado no painel seria código
+   rodando na página de quem visita. */
+const LINK_SEGURO = (url) => /^(https?:\/\/|mailto:|tel:)/i.test(String(url || "").trim());
+
 /* Custom cursor */
 const CustomCursor = () => null;
 
@@ -115,7 +132,8 @@ const SpotlightCard = ({ children, className = "", color = "red", style = {}, ov
     blue:   { base: 220, spread: 200 },
     purple: { base: 280, spread: 300 },
     green:  { base: 120, spread: 200 },
-    red:    { base: 355, spread: 0 },
+    // segue a cor de destaque publicada no console (ver FRAMETY_APPLY_ACCENT)
+    red:    { base: 'var(--accent-hue, 355)', spread: 0 },
     orange: { base: 30,  spread: 200 }
   };
 
@@ -141,8 +159,11 @@ const SpotlightCard = ({ children, className = "", color = "red", style = {}, ov
     '--spread':         spread,
     '--radius':         '14',
     '--border':         '2',
-    '--backdrop':       'rgba(255,255,255,0.04)',
-    '--backup-border':  'var(--backdrop)',
+    // Vidro escuro: o branco a 4% sumia sobre o fundo animado. A base quase preta
+    // segura o contraste do conteúdo e a borda sai da cor de destaque — é o
+    // contorno azul que separa cada item do fundo.
+    '--backdrop':       'rgba(8,9,13,0.72)',
+    '--backup-border':  'rgba(var(--accent-rgb), 0.30)',
     '--size':           '250',
     '--outer':          '1',
     '--border-size':    'calc(var(--border, 2) * 1px)',

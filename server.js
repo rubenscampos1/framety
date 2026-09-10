@@ -116,6 +116,51 @@ const SEED = {
     empreendimentos: ['360 MALL', 'BURITI GARDEN', 'FAZENDA CANOA', 'INSTITUCIONAL', 'L ESSENCE', 'METROPOLITAN MARISTA', 'QUINTA DAS MANGUEIRAS'],
     categorias: ['Institucional', 'Imersivo', 'Externa'],
   },
+  /* O celular que sobe no fim da home chamando para seguir o perfil. As fotos
+     são enviadas no console: não há API do Instagram aqui, e depender de uma
+     traria token, renovação e um feed que quebra sozinho quando ele expira. */
+  instagram: {
+    ativo: true,
+    perfil: "",
+    usuario: "",
+    chamada: "Acompanhe os bastidores",
+    print: "",     // print da tela do perfil; quando existe, é ele na tela
+    fotos: [],     // grade montada à mão, usada quando não há print
+  },
+
+  /* Minigame escondido em /play. O placar guarda os 20 últimos jogos; o carro
+     é a imagem enviada no console, que vira a barrinha do jogador. */
+  minigame: { carroUrl: "" },
+  placar: [],
+
+  /* Marca: o ícone da aba e a prévia que aparece ao colar o link no WhatsApp,
+     no Telegram, no Facebook. As páginas de categoria e de vídeo continuam
+     trazendo a própria capa — o que está aqui é o padrão e as páginas fixas. */
+  branding: {
+    favicon: "",
+    ogTitulo: "",
+    ogDescricao: "",
+    ogImagem: "",
+    paginas: {},
+  },
+
+  /* Novidades: o cartão que aparece na home e a página /novidades, um mini
+     blog montado por blocos. Tudo editado no console. */
+  novidades: {
+    ativo: true,
+    card: {
+      etiqueta: "Novidades",
+      titulo: "O que está saindo do forno",
+      texto: "Bastidores, lançamentos e o que a Framety anda produzindo.",
+      botao: "Saiba mais",
+      imagem: "",
+    },
+    pagina: {
+      titulo: "Novidades",
+      resumo: "Bastidores, lançamentos e destaques da Framety.",
+      blocos: [],
+    },
+  },
   linkRedirects: [
     { slug: 'rodolfo', target: 'https://www.google.com.br', category: 'Clientes', clicks: 3, createdAt: '2026-07-06T22:01:58.018Z', lastAccessedAt: '2026-07-06T22:03:46.309Z' },
   ],
@@ -183,12 +228,14 @@ function sanitizeHtml(str) {
     if (!ALLOWED_TAGS.has(t)) return '';
     if (full.startsWith('</')) return `</${t}>`;
     const allowedSet = ALLOWED_ATTRS[t];
-    if (!allowedSet) return `<${t}>`;
     const safeAttrs = [];
     attrs.replace(/([a-zA-Z][a-zA-Z0-9-]*)\s*=\s*("([^"]*)"|'([^']*)')/g, (_, name, _q, v1, v2) => {
       const n = name.toLowerCase();
       const v = v1 ?? v2;
-      if (allowedSet.has(n) && /^https?:\/\//i.test(v)) safeAttrs.push(`${n}="${v.replace(/"/g, '&quot;')}"`);
+      // class passa em qualquer tag da allowlist (só nomes de classe) — os
+      // textos da home usam coisas como <span class="strike">.
+      if (n === 'class') { if (/^[A-Za-z0-9 _-]{0,80}$/.test(v)) safeAttrs.push(`class="${v}"`); return; }
+      if (allowedSet && allowedSet.has(n) && /^https?:\/\//i.test(v)) safeAttrs.push(`${n}="${v.replace(/"/g, '&quot;')}"`);
     });
     return `<${t}${safeAttrs.length ? ' ' + safeAttrs.join(' ') : ''}>`;
   });
@@ -371,7 +418,7 @@ app.use((req, res, next) => {
     // regra de `content` abaixo, e caindo lá as imagens do deck não chegavam
     // em tempo real para as outras sessões.
     if (/^\/api\/(storyboards|sb)\b/.test(p) || /^\/api\/upload\/storyboard\b/.test(p)) domain = 'storyboards';
-    else if (/^\/api\/(videos|categories|clients|upload|ai-section|tutorial|reel|partners)/.test(p)) domain = 'content';
+    else if (/^\/api\/(videos|categories|clients|upload|ai-section|tutorial|reel|partners|site-content|theme|novidades)/.test(p)) domain = 'content';
     else if (/^\/api\/(locucoes|producoes\/status)/.test(p)) domain = 'locucoes';
     else if (/^\/api\/redirects/.test(p)) domain = 'redirects';
     if (domain) broadcast(domain);
@@ -412,7 +459,7 @@ app.use((req, res, next) => {
 });
 
 // ── SPA Routing (Friendly URLs) ───────────────────────────────────────────────
-const SPA_ROUTES = ['/', '/Framety', '/framety', '/framety/*', '/console', '/console/*', '/presentation', '/presentation/*', '/cadastroparceiro', '/tutorial', '/producoes', '/assistir', '/assistir/*', '/screendimension', '/screendimension/*', '/sb', '/sb/*', '/storyboards', '/storyboards/*'];
+const SPA_ROUTES = ['/', '/Framety', '/framety', '/framety/*', '/console', '/console/*', '/presentation', '/presentation/*', '/cadastroparceiro', '/tutorial', '/novidades', '/play', '/producoes', '/assistir', '/assistir/*', '/screendimension', '/screendimension/*', '/sb', '/sb/*', '/storyboards', '/storyboards/*'];
 
 app.get(SPA_ROUTES, (req, res) => {
   const entryPath = path.join(DIR, 'Framety.html');
@@ -420,11 +467,21 @@ app.get(SPA_ROUTES, (req, res) => {
 
   let html = fs.readFileSync(entryPath, 'utf8');
 
-  let title = "Framety";
-  let desc = "Cinema© para marcas que pensam em movimento. Uma empresa do Grupo Skyline.";
-  let image = "/framety_social_preview.png";
+  const marca = db.branding || {};
+  let title = marca.ogTitulo || "Framety";
+  let desc = marca.ogDescricao || "Cinema© para marcas que pensam em movimento. Uma empresa do Grupo Skyline.";
+  let image = marca.ogImagem || "/framety_social_preview.png";
 
   const p = req.path.toLowerCase();
+
+  // Prévia escolhida no console para esta página. Vence o padrão e perde para
+  // categoria/vídeo logo abaixo, que trazem a capa do próprio conteúdo.
+  const daPagina = (marca.paginas || {})[p === '/' ? '/framety' : p];
+  if (daPagina) {
+    if (daPagina.titulo)    title = daPagina.titulo;
+    if (daPagina.descricao) desc  = daPagina.descricao;
+    if (daPagina.imagem)    image = daPagina.imagem;
+  }
 
   const catMatch = p.match(/\/framety\/categoria\/([^/]+)/);
   if (catMatch) {
@@ -507,6 +564,18 @@ app.get(SPA_ROUTES, (req, res) => {
   `;
 
   html = html.replace(/<title>.*?<\/title>/, metaHtml);
+
+  // Ícone da aba enviado pelo console. O type="image/png" do HTML sai junto: o
+  // arquivo pode ser png, webp ou svg, e declarar o tipo errado é pior do que
+  // não declarar nenhum.
+  if (marca.favicon) {
+    const ico = escapeHtml(absoluteUrl(req, marca.favicon));
+    html = html.replace(
+      /<link rel="icon"[^>]*>\s*<link rel="apple-touch-icon"[^>]*>/,
+      `<link rel="icon" href="${ico}" sizes="any">\n    <link rel="apple-touch-icon" href="${ico}">`
+    );
+  }
+
   res.send(html);
 });
 
@@ -648,6 +717,10 @@ app.get('/api/data', (req, res) => {
     clients: sorted(db.clients),
     reel: { url: db.settings.reel_url || '', name: db.settings.reel_name || '' },
     aiSection: db.settings.aiSection || JSON.parse(JSON.stringify(SEED.settings.aiSection)),
+    // Textos da home editados no console. `null` = usar o padrao do content.js.
+    content: db.settings.siteContent || null,
+    // Cor de destaque do site (aba Home do console). Vazio = a cor padrão.
+    theme: { accent: db.settings.accent || '' },
   });
 });
 
@@ -928,6 +1001,237 @@ app.post('/api/tutorial', requireAuth, (req, res) => {
   if (typeof title === 'string') db.settings.tutorial_title = title.slice(0, 240);
   if (typeof subtitle === 'string') db.settings.tutorial_subtitle = subtitle.slice(0, 240);
   if (typeof text === 'string') db.settings.tutorial_text = sanitizeHtml(text);
+  save();
+  res.json({ ok: true });
+});
+
+// ── Textos da home (content.js) editados pelo console ────────────────────────
+// O site sempre parte do padrão em content.js; o que é salvo aqui vai por cima
+// (ver FRAMETY_APPLY_CONTENT). Guardamos o blob inteiro, mas passado por uma
+// limpeza: só string/number/boolean/objeto/lista, com limites de tamanho, e os
+// campos *Html — que a landing injeta com dangerouslySetInnerHTML — pelo
+// sanitizador de HTML já usado no tutorial.
+const CONTENT_MAX_DEPTH = 6;
+const CONTENT_MAX_STR = 4000;
+const CONTENT_MAX_ITEMS = 60;
+const CONTENT_MAX_KEYS = 80;
+function cleanContent(value, key = '', depth = 0) {
+  if (depth > CONTENT_MAX_DEPTH) return null;
+  if (value === null) return null;
+  if (typeof value === 'string') {
+    const v = value.slice(0, CONTENT_MAX_STR);
+    return /Html$/.test(key) ? sanitizeHtml(v) : v.replace(/<[^>]*>/g, '');
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) return value.slice(0, CONTENT_MAX_ITEMS).map(v => cleanContent(v, key, depth + 1));
+  if (typeof value === 'object') {
+    const out = {};
+    for (const k of Object.keys(value).slice(0, CONTENT_MAX_KEYS)) {
+      if (!/^[A-Za-z0-9_]{1,40}$/.test(k)) continue;
+      out[k] = cleanContent(value[k], k, depth + 1);
+    }
+    return out;
+  }
+  return null;
+}
+
+app.post('/api/site-content', requireAuth, (req, res) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return res.status(400).json({ error: 'Conteúdo inválido.' });
+  }
+  const clean = cleanContent(body);
+  if (JSON.stringify(clean).length > 200000) {
+    return res.status(413).json({ error: 'Conteúdo muito grande.' });
+  }
+  db.settings.siteContent = clean;
+  save();
+  res.json({ ok: true, content: clean });
+});
+
+// Cor de destaque. Só o hex de 6 dígitos entra — o valor vira variável CSS no
+// <html> de quem abre o site, então nada além de cor pode passar por aqui.
+/* ── Instagram (o celular do rodapé) ────────────────────────────────────────
+   Leitura pública, escrita só pelo console. O endereço do perfil é guardado
+   como texto e validado de novo na página antes de virar link. */
+const INSTA_MAX_FOTOS = 9;
+
+function limparInstagram(entrada) {
+  const d = entrada && typeof entrada === 'object' ? entrada : {};
+  const txt = (v, n) => (typeof v === 'string' ? v.replace(/<[^>]*>/g, '').trim().slice(0, n) : '');
+  const fotos = Array.isArray(d.fotos) ? d.fotos : [];
+  return {
+    ativo: d.ativo !== false,
+    perfil: txt(d.perfil, 300),
+    usuario: txt(d.usuario, 40),
+    chamada: txt(d.chamada, 80),
+    print: txt(d.print, 500),
+    fotos: fotos.filter(f => typeof f === 'string').map(f => txt(f, 500)).filter(Boolean).slice(0, INSTA_MAX_FOTOS),
+  };
+}
+
+app.get('/api/instagram', (req, res) => {
+  res.json(db.instagram || JSON.parse(JSON.stringify(SEED.instagram)));
+});
+
+app.post('/api/instagram', requireAuth, (req, res) => {
+  db.instagram = limparInstagram(req.body);
+  save();
+  res.json({ ok: true, instagram: db.instagram });
+});
+
+/* ── Minigame ────────────────────────────────────────────────────────────────
+   Gravar pontuação é público: quem joga não tem login. Por isso a entrada é
+   validada com rigor — nome curto e sem marcação, pontos inteiros com teto — e
+   limitada por IP. Sem o limite, uma linha de curl enche a lista em segundos.
+   A lista guarda os 20 ÚLTIMOS jogos; a ordem de líder é feita na tela. */
+const PLACAR_TAM = 20;
+const placarHist = new Map();
+function placarAllow(ip) {
+  const agora = Date.now();
+  const arr = (placarHist.get(ip) || []).filter(t => agora - t < 3600000);
+  if (arr.length >= 20) { placarHist.set(ip, arr); return false; }
+  arr.push(agora);
+  placarHist.set(ip, arr);
+  return true;
+}
+
+app.get('/api/placar', (req, res) => {
+  res.json({
+    placar: db.placar || [],
+    carroUrl: (db.minigame && db.minigame.carroUrl) || "",
+  });
+});
+
+app.post('/api/placar', (req, res) => {
+  if (!placarAllow(req.ip)) return res.status(429).json({ error: 'Muitos registros seguidos. Tente daqui a pouco.' });
+  const nome = String(req.body && req.body.nome || '').replace(/<[^>]*>/g, '').trim().slice(0, 24) || 'Anônimo';
+  const bruto = Number(req.body && req.body.pontos);
+  if (!Number.isFinite(bruto) || bruto < 0) return res.status(400).json({ error: 'Pontuação inválida.' });
+  const pontos = Math.min(99999, Math.floor(bruto));
+  db.placar = [...(db.placar || []), { nome, pontos, quando: Date.now() }].slice(-PLACAR_TAM);
+  save();
+  res.json({ ok: true, placar: db.placar });
+});
+
+/* Ajustes do jogo ficam com o console: trocar o carro e zerar o placar. */
+app.post('/api/minigame', requireAuth, (req, res) => {
+  const carro = String(req.body && req.body.carroUrl || '').replace(/<[^>]*>/g, '').trim().slice(0, 500);
+  db.minigame = { carroUrl: carro };
+  if (req.body && req.body.limparPlacar) db.placar = [];
+  save();
+  res.json({ ok: true, minigame: db.minigame, placar: db.placar || [] });
+});
+
+/* ── Marca e prévia de link ──────────────────────────────────────────────────
+   Só as rotas fixas entram em "paginas": categoria e vídeo já montam a prévia
+   com a capa do próprio conteúdo, e aceitar caminho livre aqui deixaria alguém
+   pendurar meta tags em qualquer endereço do site. */
+const ROTAS_COM_PREVIA = ['/framety', '/novidades', '/tutorial', '/cadastroparceiro', '/screendimension'];
+
+function limparBranding(entrada) {
+  /* Sem cleanContent aqui: ele descarta qualquer chave fora de [A-Za-z0-9_], e
+     as chaves de "paginas" SÃO caminhos ("/novidades"). A limpeza é feita campo
+     a campo — corta o tamanho e tira tags, porque estes valores vão para dentro
+     de atributos de <meta> (onde ainda passam por escapeHtml). */
+  const d = entrada && typeof entrada === 'object' ? entrada : {};
+  const txt = (v, n) => (typeof v === 'string' ? v.replace(/<[^>]*>/g, '').trim().slice(0, n) : '');
+  const paginas = {};
+  const vindas = d.paginas && typeof d.paginas === 'object' ? d.paginas : {};
+  for (const rota of ROTAS_COM_PREVIA) {
+    const v = vindas[rota];
+    if (!v || typeof v !== 'object') continue;
+    const item = { titulo: txt(v.titulo, 120), descricao: txt(v.descricao, 300), imagem: txt(v.imagem, 500) };
+    if (item.titulo || item.descricao || item.imagem) paginas[rota] = item;
+  }
+  return {
+    favicon: txt(d.favicon, 500),
+    ogTitulo: txt(d.ogTitulo, 120),
+    ogDescricao: txt(d.ogDescricao, 300),
+    ogImagem: txt(d.ogImagem, 500),
+    paginas,
+  };
+}
+
+app.get('/api/branding', (req, res) => {
+  res.json(db.branding || JSON.parse(JSON.stringify(SEED.branding)));
+});
+
+app.post('/api/branding', requireAuth, (req, res) => {
+  db.branding = limparBranding(req.body);
+  save();
+  res.json({ ok: true, branding: db.branding });
+});
+
+/* ── Novidades (cartão da home + página /novidades) ──────────────────────────
+   Leitura pública, escrita só pelo console. O conteúdo passa pela mesma limpeza
+   dos textos da home (cleanContent): campos *Html são sanitizados, o resto perde
+   qualquer tag. O id do YouTube é extraído aqui e guardado sozinho — assim a
+   página nunca monta um embed com uma URL arbitrária. */
+function idDoYoutube(v) {
+  const m = String(v || "").match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  if (m) return m[1];
+  return /^[A-Za-z0-9_-]{11}$/.test(String(v || "").trim()) ? String(v).trim() : "";
+}
+
+function limparNovidades(entrada) {
+  const base = JSON.parse(JSON.stringify(SEED.novidades));
+  const dado = cleanContent(entrada && typeof entrada === "object" ? entrada : {});
+  const card = dado.card || {};
+  const pagina = dado.pagina || {};
+  const blocos = Array.isArray(pagina.blocos) ? pagina.blocos.slice(0, 60) : [];
+  return {
+    ativo: dado.ativo !== false,
+    card: {
+      etiqueta: card.etiqueta ?? base.card.etiqueta,
+      titulo:   card.titulo   ?? base.card.titulo,
+      texto:    card.texto    ?? base.card.texto,
+      botao:    card.botao    ?? base.card.botao,
+      imagem:   typeof card.imagem === "string" ? card.imagem : "",
+    },
+    pagina: {
+      titulo: pagina.titulo ?? base.pagina.titulo,
+      resumo: pagina.resumo ?? base.pagina.resumo,
+      blocos: blocos.map((b, i) => {
+        const tipo = ["texto", "imagem", "video"].includes(b.tipo) ? b.tipo : "texto";
+        return {
+          id: typeof b.id === "string" && b.id ? b.id.slice(0, 40) : "b" + Date.now() + i,
+          tipo,
+          titulo: b.titulo || "",
+          textoHtml: tipo === "texto" ? sanitizeHtml(String(b.textoHtml || "")) : "",
+          imagem: tipo === "imagem" ? String(b.imagem || "") : "",
+          youtube: tipo === "video" ? idDoYoutube(b.youtube) : "",
+          legenda: b.legenda || "",
+        };
+      }),
+    },
+  };
+}
+
+app.get('/api/novidades', (req, res) => {
+  res.json(db.novidades || JSON.parse(JSON.stringify(SEED.novidades)));
+});
+
+app.post('/api/novidades', requireAuth, (req, res) => {
+  db.novidades = limparNovidades(req.body);
+  save();
+  res.json({ ok: true, novidades: db.novidades });
+});
+
+app.post('/api/theme', requireAuth, (req, res) => {
+  const accent = String((req.body && req.body.accent) || '').trim();
+  if (accent && !/^#[0-9a-fA-F]{6}$/.test(accent)) {
+    return res.status(400).json({ error: 'Cor inválida. Use o formato #RRGGBB.' });
+  }
+  if (accent) db.settings.accent = accent.toUpperCase();
+  else delete db.settings.accent;   // vazio = volta para a cor padrão
+  save();
+  res.json({ ok: true, accent: db.settings.accent || '' });
+});
+
+// Volta a home para os textos padrão do content.js.
+app.delete('/api/site-content', requireAuth, (req, res) => {
+  delete db.settings.siteContent;
   save();
   res.json({ ok: true });
 });
@@ -1536,6 +1840,14 @@ setInterval(() => {
   if (!db.locucoesCad) { db.locucoesCad = JSON.parse(JSON.stringify(SEED.locucoesCad)); _migrated = true; }
   if (!db.linkRedirects) { db.linkRedirects = JSON.parse(JSON.stringify(SEED.linkRedirects)); _migrated = true; }
   if (!db.storyboards) { db.storyboards = []; _migrated = true; }
+  // Chaves novas: o banco gravado não as tem, e loadDB devolve o que está
+  // gravado — sem estas linhas elas só nasceriam na primeira gravação pelo
+  // console. Cada uma só preenche quando falta, então nada existente é tocado.
+  if (!db.novidades)  { db.novidades  = JSON.parse(JSON.stringify(SEED.novidades));  _migrated = true; }
+  if (!db.branding)   { db.branding   = JSON.parse(JSON.stringify(SEED.branding));   _migrated = true; }
+  if (!db.minigame)   { db.minigame   = JSON.parse(JSON.stringify(SEED.minigame));   _migrated = true; }
+  if (!db.placar)     { db.placar     = [];                                          _migrated = true; }
+  if (!db.instagram)  { db.instagram  = JSON.parse(JSON.stringify(SEED.instagram));  _migrated = true; }
   // Storyboards criados antes da URL amigável ganham seu caminho agora.
   db.storyboards.forEach(s => { if (!s.pathSlug) { s.pathSlug = sbBuildPath(s); _migrated = true; } });
   if (!db.settings.aiSection) db.settings.aiSection = JSON.parse(JSON.stringify(SEED.settings.aiSection));

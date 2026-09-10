@@ -1,7 +1,12 @@
 /* presentation.jsx — clean YouTube-like presentation mode */
 
 const PresentationMode = ({ onExit, onOpenVideo }) => {
-  const [activeCat, setActiveCat] = React.useState("all");
+  /* Uma seleção só para as três listas da coluna. Padrão e formato do
+     empreendimento não filtram POR CIMA da categoria: eles são outra maneira de
+     recortar o acervo, no mesmo nível dela — escolher "Altíssimo" mostra os
+     vídeos daquele padrão, de qualquer categoria. (No site aberto essa
+     classificação não aparece: é conversa comercial.) */
+  const [sel, setSel] = React.useState({ tipo: "todos", valor: null });
   const [search, setSearch] = React.useState("");
   const [sort, setSort] = React.useState("recent");
   const [loading, setLoading] = React.useState(true);
@@ -15,8 +20,12 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
   }, []);
 
   const cats = window.FRAMETY_DATA.categories;
-  let videos = window.FRAMETY_DATA.videos.filter(v => v.status !== "draft");
-  if (activeCat !== "all") videos = videos.filter(v => v.category === activeCat);
+  const publicados = window.FRAMETY_DATA.videos.filter(v => v.status !== "draft");
+  const conta = (campo, valor) => publicados.filter(v => (v[campo] || "") === valor).length;
+  let videos = publicados;
+  if (sel.tipo === "cat")     videos = videos.filter(v => v.category === sel.valor);
+  if (sel.tipo === "padrao")  videos = videos.filter(v => (v.padrao  || "") === sel.valor);
+  if (sel.tipo === "formato") videos = videos.filter(v => (v.formato || "") === sel.valor);
   if (search) videos = videos.filter(v => v.title.toLowerCase().includes(search.toLowerCase()) || (v.client || "").toLowerCase().includes(search.toLowerCase()));
   if (sort === "views") {
     const parseViews = (v) => {
@@ -84,19 +93,43 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
          <aside className="pres-side glass-strong glass">
           <div className="pres-side-group">
             <div className="pres-side-label">— Categorias</div>
-            <button className={"pres-side-item " + (activeCat==="all"?"active":"")} onClick={()=>setActiveCat("all")} data-cursor="hover">
+            <button className={"pres-side-item " + (sel.tipo==="todos"?"active":"")} onClick={()=>setSel({tipo:"todos",valor:null})} data-cursor="hover">
               <span className="ico"><Icon name="folder" size={14}/></span>
               <span>Todos os vídeos</span>
               <span className="num">{window.FRAMETY_DATA.videos.filter(v => v.status !== "draft").length}</span>
             </button>
             {cats.map(c => (
-              <button key={c.id} className={"pres-side-item " + (activeCat===c.id?"active":"")} onClick={()=>setActiveCat(c.id)} data-cursor="hover">
+              <button key={c.id} className={"pres-side-item " + (sel.tipo==="cat"&&sel.valor===c.id?"active":"")} onClick={()=>setSel({tipo:"cat",valor:c.id})} data-cursor="hover">
                 <span className={`ico-thumb ${c.bgClass}`}/>
                 <span>{c.name}</span>
                 <span className="num">{c.count}</span>
               </button>
             ))}
           </div>
+          {/* As duas listas abaixo escolhem no mesmo nível das categorias: uma
+              seleção de cada vez. A lista fechada fica sempre à vista (esconder o
+              que ainda não foi classificado escondia a própria existência do
+              recorte); quem está zerado fica apagado e leva ao aviso de vazio. */}
+          <div className="pres-side-group">
+            <div className="pres-side-label">— Padrão do empreendimento</div>
+            {["Altíssimo","Alto","Médio","Baixo"].map(o => (
+              <button key={o} className={"pres-side-item compact " + (sel.tipo==="padrao"&&sel.valor===o?"active":"") + (conta("padrao", o) ? "" : " vazio")} onClick={()=>setSel({tipo:"padrao",valor:o})} data-cursor="hover">
+                <span>{o}</span>
+                <span className="num">{conta("padrao", o)}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="pres-side-group">
+            <div className="pres-side-label">— Formato</div>
+            {["Condomínio vertical","Condomínio horizontal","Business"].map(o => (
+              <button key={o} className={"pres-side-item compact " + (sel.tipo==="formato"&&sel.valor===o?"active":"") + (conta("formato", o) ? "" : " vazio")} onClick={()=>setSel({tipo:"formato",valor:o})} data-cursor="hover">
+                <span>{o}</span>
+                <span className="num">{conta("formato", o)}</span>
+              </button>
+            ))}
+          </div>
+
           <div className="pres-side-group">
             <div className="pres-side-label">— Ordenar</div>
             <button className={"pres-side-item compact " + (sort==="recent"?"active":"")} onClick={()=>setSort("recent")} data-cursor="hover">
@@ -109,7 +142,9 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
         </aside>
 
         <main className="pres-main">
-            {activeCat === "all" && !search && featured && (
+            {/* O destaque é a capa de "tudo": com qualquer filtro ligado ele mostraria um
+                vídeo fora do recorte pedido. */}
+            {sel.tipo === "todos" && !search && featured && (
               <SpotlightCard
                 color="red"
                 className="pres-hero"
@@ -154,16 +189,24 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
               </SpotlightCard>
             )}
 
-            {cats.filter(c => activeCat === "all" || c.id === activeCat).map(cat => {
-              const items = videos.filter(v => v.category === cat.id);
+            {/* Em "todos os vídeos" o acervo continua vindo separado por categoria.
+                Escolhido um padrão ou um formato, o recorte é ELE — uma faixa só,
+                com o nome do recorte no título e vídeos de qualquer categoria. */}
+            {(sel.tipo === "padrao" || sel.tipo === "formato"
+              ? [{ id: sel.valor, name: sel.valor, itens: videos }]
+              : cats
+                  .filter(c => sel.tipo === "todos" || c.id === sel.valor)
+                  .map(c => ({ id: c.id, name: c.name, itens: videos.filter(v => v.category === c.id) }))
+            ).map(faixa => {
+              const items = faixa.itens;
               if (items.length === 0) return null;
               return (
-                <section key={cat.id} className="pres-row">
+                <section key={faixa.id} className="pres-row">
                   <header className="pres-row-head">
-                    <h2>{cat.name}</h2>
+                    <h2>{faixa.name}</h2>
                     <span className="pres-row-count">{items.length} {items.length === 1 ? "vídeo" : "vídeos"}</span>
-                    {activeCat === "all" && (
-                      <button className="pres-row-more" onClick={() => setActiveCat(cat.id)} data-cursor="hover">
+                    {sel.tipo === "todos" && (
+                      <button className="pres-row-more" onClick={() => setSel({ tipo: "cat", valor: faixa.id })} data-cursor="hover">
                         Ver tudo <Icon name="arrow-right" size={12} />
                       </button>
                     )}
@@ -171,6 +214,9 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
                   <div className="pres-grid">
                     {items.map(v => {
                       const thumb = window.getThumbUrl ? window.getThumbUrl(v) : null;
+                      // A faixa de padrão/formato mistura categorias: o fundo do
+                      // card sai da categoria do próprio vídeo.
+                      const cat = cats.find(c => c.id === v.category) || {};
                       return (
                         <SpotlightCard
                           key={v.id}
@@ -205,8 +251,10 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
             })}
 
           {videos.length === 0 && (
-            <div style={{padding:80,textAlign:"center",color:"var(--ink-dim)",fontFamily:"var(--font-mono)",fontSize:12,letterSpacing:"0.15em"}}>
-              Nenhum vídeo encontrado.
+            <div style={{padding:80,textAlign:"center",color:"rgba(255,255,255,0.8)",fontFamily:"var(--font-mono)",fontSize:12,letterSpacing:"0.15em"}}>
+              {sel.tipo === "padrao" || sel.tipo === "formato"
+                ? "Nenhum vídeo com essa classificação ainda."
+                : "Nenhum vídeo encontrado."}
             </div>
           )}
          </main>

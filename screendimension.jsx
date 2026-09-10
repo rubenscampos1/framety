@@ -154,7 +154,10 @@ const SDPreview3D = ({ res }) => {
     const Wc=(r.Wc||1920)*W, Ws=(r.Ws||1920)*W, H=(r.H||1080)*W;
     const fTop=(r.fTop||1920)*W, fBase=(r.fBase||1920)*W, fDep=(r.fDepth||1080)*W;
     const base = Math.max(Wc, Ws, H, fBase, fDep, fTop);
-    const accent = 0xE63946, blue = 0x3a7bd5, teal = 0x2a9d8f;
+    // Três cores para separar as peças do desenho. O acento saiu do vermelho
+    // junto com o resto do site, mas num azul mais claro que o `blue` daqui —
+    // no azul do site as duas peças ficariam indistinguíveis.
+    const accent = 0x5EC8F2, blue = 0x3a7bd5, teal = 0x2a9d8f;
     const zFar = -fDep, zNear = 0, midZ = (zFar + zNear) / 2;
 
     // helpers vetoriais
@@ -403,14 +406,14 @@ const SD_CSS = `
 .sd-page{ min-height:100vh; background:#08080a; color:#f2f2f4; font-family:var(--font-sans, 'Inter', system-ui, sans-serif);
   padding:14px clamp(14px,3vw,34px) 16px; display:flex; flex-direction:column; gap:9px; }
 .sd-head{ display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; max-width:1320px; width:100%; margin:0 auto; padding-bottom:9px; border-bottom:1px solid #1e1e24; }
-.sd-kicker{ font-family:var(--font-mono, monospace); font-size:10px; letter-spacing:0.26em; color:var(--accent,#E63946); margin-bottom:4px; }
+.sd-kicker{ font-family:var(--font-mono, monospace); font-size:10px; letter-spacing:0.26em; color:var(--accent,#2E86C1); margin-bottom:4px; }
 .sd-title{ font-family:var(--font-mono,monospace); font-size:clamp(21px,2.6vw,30px); font-weight:800; letter-spacing:-0.01em; margin:0; color:#f4f4f6; }
-.sd-title-ac{ color:var(--accent,#E63946); }
+.sd-title-ac{ color:var(--accent,#2E86C1); }
 .sd-head-r{ display:flex; align-items:flex-end; gap:16px; }
 .sd-altfield{ display:flex; flex-direction:column; gap:5px; }
 .sd-altfield-lbl{ font-size:11.5px; color:#d6d6db; display:flex; gap:7px; align-items:baseline; }
 .sd-altfield-lbl em{ font-style:normal; font-size:10px; color:#77777f; }
-.sd-export{ flex-shrink:0; background:var(--accent,#E63946); color:#fff; border:none; border-radius:999px; padding:11px 20px; font-size:12.5px; font-weight:600; cursor:pointer; transition:filter .15s, opacity .15s; }
+.sd-export{ flex-shrink:0; background:var(--accent,#2E86C1); color:#fff; border:none; border-radius:999px; padding:11px 20px; font-size:12.5px; font-weight:600; cursor:pointer; transition:filter .15s, opacity .15s; }
 .sd-export:hover{ filter:brightness(1.08); }
 .sd-export:disabled{ opacity:.55; cursor:default; }
 
@@ -419,7 +422,7 @@ const SD_CSS = `
 .sd-badge{ display:inline-block; margin-left:8px; font-family:var(--font-mono,monospace); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:#ffcf9e; border:1px solid #4a3a22; background:#1c150c; border-radius:999px; padding:2px 8px; }
 
 .sd-input-wrap{ display:inline-flex; align-items:center; background:#08080a; border:1px solid #2b2b33; border-radius:9px; overflow:hidden; transition:border-color .15s; }
-.sd-input-wrap:focus-within{ border-color:var(--accent,#E63946); }
+.sd-input-wrap:focus-within{ border-color:var(--accent,#2E86C1); }
 .sd-input-wrap input{ width:56px; background:transparent; border:none; outline:none; color:#fff; font-size:12px; padding:5px 5px 5px 8px; font-variant-numeric:tabular-nums; text-align:right; }
 .sd-input-wrap b{ padding:0 7px 0 2px; color:#77777f; font-weight:500; font-size:10.5px; }
 .sd-input-lg input{ width:100px; font-size:16px; padding:9px 8px 9px 12px; }
@@ -432,7 +435,7 @@ const SD_CSS = `
 .sd-stage{ padding:12px 14px 12px; display:flex; flex-direction:column; align-items:center; gap:10px; overflow:auto; }
 .sd-altrow{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:center; width:100%; padding:8px 12px; background:#08080a; border:1px solid #2b2b33; border-radius:10px; }
 .sd-altrow-lbl{ font-size:12.5px; color:#d6d6db; }
-.sd-altrow-lbl em{ font-style:normal; color:var(--accent,#E63946); font-size:11px; }
+.sd-altrow-lbl em{ font-style:normal; color:var(--accent,#2E86C1); font-size:11px; }
 .sd-wallrow{ display:flex; align-items:flex-start; justify-content:center; gap:10px; }
 .sd-cell{ display:flex; flex-direction:column; align-items:center; gap:5px; }
 .sd-screen{ position:relative; background:linear-gradient(160deg,#4576b8,#2f5990); border-radius:4px; box-shadow:0 5px 18px rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; min-width:20px; min-height:20px; }
@@ -443,7 +446,7 @@ const SD_CSS = `
 .sd-cellin-lbl em{ font-style:normal; color:#66666e; font-size:9px; }
 .sd-res{ font-family:var(--font-mono,monospace); font-size:9.5px; color:#8a8a92; text-align:center; line-height:1.45; }
 .sd-res b{ color:#e8e8ea; font-weight:700; }
-.sd-res-r{ color:var(--accent,#E63946); font-weight:700; }
+.sd-res-r{ color:var(--accent,#2E86C1); font-weight:700; }
 .sd-res-r::before{ content:"·"; margin:0 5px; color:#55555c; }
 .sd-res2{ display:block; font-size:8.5px; color:#6c6c74; margin-top:1px; }
 .sd-cell-floor{ margin-top:2px; }

@@ -13,3 +13,17 @@ os-sheet.config.json
 _sbtest/uploads/
 _sbtest/db.json
 _sbtest/db.json.tmp
+
+# App de desktop da Produções — dependências, cópias sincronizadas e instalador
+os-desktop/node_modules/
+os-desktop/dist/
+os-desktop/.dev/
+os-desktop/sheets.js
+os-desktop/app/vendor/
+os-desktop/app/os-doc.jsx
+os-desktop/app/primitives.jsx
+os-desktop/app/styles.css
+os-desktop/app/os-skyline-logo.png
+os-desktop/app/os-framety-logo.png
+os-desktop/app/fav-icon2.png
+os-desktop/app/icon.ico

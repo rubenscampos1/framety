@@ -75,6 +75,30 @@
     getPartners:   ()      => req('GET',    '/api/partners'),
     deletePartner: (id)    => req('DELETE', `/api/partners/${id}`),
 
+    // Textos da home — o site lê junto com /api/data; só o console grava.
+    saveSiteContent:  (data) => req('POST',   '/api/site-content', data),
+    resetSiteContent: ()     => req('DELETE', '/api/site-content'),
+
+    // Cor de destaque do site
+    saveAccent: (accent) => req('POST', '/api/theme', { accent }),
+
+    // Novidades — leitura pública (cartão da home e página), escrita no console
+    getNovidades:  ()     => req("GET",  "/api/novidades"),
+    saveNovidades: (data) => req("POST", "/api/novidades", data),
+
+    // Marca: ícone da aba e prévia de link
+    getBranding:  ()     => req("GET",  "/api/branding"),
+    saveBranding: (data) => req("POST", "/api/branding", data),
+
+    // Minigame de /play
+    getPlacar:      ()     => req("GET",  "/api/placar"),
+    salvarPontos:   (data) => req("POST", "/api/placar", data),
+    salvarMinigame: (data) => req("POST", "/api/minigame", data),
+
+    // Celular do Instagram no fim da home
+    getInstagram:  ()     => req("GET",  "/api/instagram"),
+    saveInstagram: (data) => req("POST", "/api/instagram", data),
+
     // Tutorial — public read, admin write
     getTutorial:   ()      => req('GET',    '/api/tutorial'),
     saveTutorial:  (data)  => req('POST',   '/api/tutorial',       data),

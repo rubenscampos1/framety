@@ -13,11 +13,18 @@
     <link rel="preconnect" href="https://unpkg.com" crossorigin>
     <link rel="dns-prefetch" href="https://i.ytimg.com">
     <link rel="dns-prefetch" href="https://www.youtube.com">
-    <!-- Gibson não está disponível como webfont aberto. Usamos Outfit (geometric humanist sans, free, próximo do Gibson) como fallback principal. -->
+    <!-- Albert Sans é a tipografia do site. Vem do Google Fonts, e não da Adobe,
+         porque o CSP do server.js já libera fonts.googleapis/gstatic — usar a
+         Adobe Fonts exigiria abrir use.typekit.net no CSP e um kit próprio, para
+         chegar na mesma família. Os pesos são os que o CSS usa: 300 a 800.
+         A JetBrains Mono continua para as etiquetas técnicas (ver styles.css). -->
     <link
-        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Albert+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <!-- three.js serve ao fundo animado (wave-bg.js). unpkg é o único CDN que o
+         CSP do server.js libera para script. Os dois com defer: a ordem é mantida. -->
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js" defer></script>
     <script src="wave-bg.js" defer></script>
     <script src="letter-swap.js" defer></script>
     <script src="content.js"></script>
@@ -41,10 +48,14 @@
     <script type="text/babel" src="primitives.jsx"></script>
     <script type="text/babel" src="landing.jsx"></script>
     <script type="text/babel" src="category.jsx"></script>
+    <script type="text/babel" src="os-doc.jsx"></script>
     <script type="text/babel" src="admin.jsx"></script>
     <script type="text/babel" src="presentation.jsx"></script>
     <script type="text/babel" src="partner.jsx"></script>
     <script type="text/babel" src="tutorial.jsx"></script>
+    <script type="text/babel" src="novidades.jsx"></script>
+    <script type="text/babel" src="minigame.jsx"></script>
+    <script type="text/babel" src="instafone.jsx"></script>
     <script type="text/babel" src="storyboard.jsx"></script>
     <script type="text/babel" src="screendimension.jsx"></script>
     <script type="text/babel" src="app.jsx"></script>
