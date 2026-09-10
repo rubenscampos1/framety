@@ -258,7 +258,7 @@ const Hero = ({ onNav }) => {
       <div className="hero-bg">
         {reelUrl ? (
           <>
-            <video className="hero-video" src={reelUrl} autoPlay loop muted playsInline />
+            <video className="hero-video" src={VIDEO_CDN(reelUrl)} autoPlay loop muted playsInline />
             <div className="hero-video-overlay" />
           </>
         ) : (
@@ -420,7 +420,7 @@ const CategoriesSection = ({ onOpenCategory }) => {
               </button>
               <div className="folder-cover-wrap">
                 {c.coverUrl
-                  ? <img className="folder-cover" src={c.coverUrl} alt="" loading="lazy" />
+                  ? <img className="folder-cover" src={IMG_CDN(c.coverUrl, 600)} alt="" loading="lazy" />
                   : <div className={`folder-cover is-gradient ${c.bgClass || "bg-comm"}`} />}
               </div>
               <div className="folder-face">
@@ -503,7 +503,7 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
           <div className="client-page-logo">
             <div className="client-page-logo-mark">
               {client.logoUrl
-                ? <img src={client.logoUrl} alt={client.name} loading="lazy" decoding="async" />
+                ? <img src={IMG_CDN(client.logoUrl, 240)} alt={client.name} loading="lazy" decoding="async" />
                 : <span className="client-page-logo-initials">{clientInitials(client.name)}</span>}
             </div>
           </div>
@@ -640,7 +640,7 @@ const ClientsMarquee = ({ onOpenVideo }) => {
               {mqTrack.map((c, i) => (
                 <div key={c.id + "-" + i} className="mq-item" onClick={() => openClientPage(c)} title={c.name}>
                   {c.logoUrl
-                    ? <img src={c.logoUrl} alt={c.name} className="mq-logo" loading="lazy" />
+                    ? <img src={IMG_CDN(c.logoUrl, 240)} alt={c.name} className="mq-logo" loading="lazy" />
                     : <span className="mq-initials">{clientInitials(c.name)}</span>}
                 </div>
               ))}

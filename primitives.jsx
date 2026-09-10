@@ -70,6 +70,32 @@ const SEM_MOVIMENTO = typeof window !== "undefined" && window.matchMedia
    rodando na página de quem visita. */
 const LINK_SEGURO = (url) => /^(https?:\/\/|mailto:|tel:)/i.test(String(url || "").trim());
 
+/* ── Mídia servida pelo Cloudinary ────────────────────────────────────────────
+   O arquivo enviado pelo console vai para o Cloudinary como veio: PNG de 2MB,
+   vídeo de 30MB. Pedir uma transformação na URL faz ele entregar convertido e
+   no tamanho necessário, guardando o resultado em cache. O que está no banco
+   continua sendo o original — isto aqui é só a forma de servir, e some sem
+   deixar rastro se um dia mudar de ideia.
+
+   Medido neste site: a maior thumb caiu de 2.255KB para 41KB, e o reel da capa
+   de 29,5MB para 12MB.
+
+   f_auto entrega WebP/AVIF a quem aceita, q_auto escolhe a compressão pela
+   imagem, e c_limit nunca amplia — pedir 800 de uma foto de 600 devolve 600.
+   URL que não é do Cloudinary (upload local em desenvolvimento, thumb do
+   YouTube) passa direto. */
+const CDN_RE = /^(https?:\/\/res\.cloudinary\.com\/[^/]+\/(?:image|video)\/upload\/)(.*)$/i;
+const cdnCom = (url, receita) => {
+  const m = String(url || "").match(CDN_RE);
+  if (!m) return url;
+  if (m[2].startsWith(receita + "/")) return url;   // já pedida antes
+  return m[1] + receita + "/" + m[2];
+};
+/* Larguras: o dobro do espaço que a imagem ocupa na tela, para telas densas. */
+const IMG_CDN = (url, largura = 800) => cdnCom(url, "f_auto,q_auto,c_limit,w_" + largura);
+/* O reel é mudo — ac_none tira a trilha inteira — e vive sob um véu escuro. */
+const VIDEO_CDN = (url, largura = 1600) => cdnCom(url, "q_auto,vc_auto,c_limit,w_" + largura + ",ac_none");
+
 /* Custom cursor */
 const CustomCursor = () => null;
 

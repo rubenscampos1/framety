@@ -10,8 +10,8 @@ const getVimeoId = (url) => {
   const m = url.match(/vimeo\.com\/(\d+)/);
   return m ? m[1] : null;
 };
-const getThumbUrl = (v) => {
-  if (v.thumbUrl) return v.thumbUrl;
+const getThumbUrl = (v, largura = 800) => {
+  if (v.thumbUrl) return IMG_CDN(v.thumbUrl, largura);
   const ytId = getYouTubeId(v.videoUrl);
   // hqdefault always exists (maxresdefault 404s for non-HD videos → broken thumb).
   if (ytId) return `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
@@ -22,7 +22,7 @@ const ClientBadge = ({ name, size = 24 }) => {
   const client = (window.FRAMETY_DATA.clients || []).find(c => c.name === name);
   const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
   if (client?.logoUrl) {
-    return <img src={client.logoUrl} alt={name} loading="lazy" decoding="async"
+    return <img src={IMG_CDN(client.logoUrl, 240)} alt={name} loading="lazy" decoding="async"
       style={{width:size,height:size,objectFit:"contain",borderRadius:3,display:"block"}} />;
   }
   return (

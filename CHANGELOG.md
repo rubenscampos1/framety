@@ -5,6 +5,23 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Mídia servida pelo Cloudinary já convertida e no tamanho certo.** O arquivo
+  continua no banco como veio; o que mudou foi a URL com que a página o pede.
+  - **O reel da capa era 29,5MB** — mais do que todo o resto do site somado.
+    Agora vai com q_auto, largura limitada a 1600 e **sem trilha de áudio**
+    (ac_none): ele toca mudo, a faixa era peso puro. Medido: **12MB**, 59% a
+    menos. Com q_auto:eco e 1280 desceria a 6,7MB, ao custo de artefato visível
+    no céu — que é metade da imagem.
+  - **Uma única thumb era um PNG de 2.255KB.** Com f_auto (WebP/AVIF para quem
+    aceita), q_auto e c_limit na largura de uso: **41KB**. Cinquenta e cinco
+    vezes menor, mesma imagem na tela.
+  - As larguras são o dobro do espaço em tela, para telas densas: 800 para
+    thumbs de vídeo, 600 para capa de categoria, 240 para logo de cliente. O
+    c_limit nunca amplia — pedir 800 de uma foto de 600 devolve 600.
+  - Passa direto o que não é do Cloudinary: upload local em desenvolvimento,
+    thumb do YouTube, campo vazio. E aplicar duas vezes não duplica a receita.
+  - O storyboard ficou de fora de propósito: o PDF precisa da imagem cheia.
+
 - **Fim da faixa preta no topo do vídeo.** A entrada da página deslizava o
   `<main>` 20px para cima; como a capa é colada na borda de cima, durante esse
   trajeto o fundo da página aparecia acima dela, numa faixa preta atravessando a
