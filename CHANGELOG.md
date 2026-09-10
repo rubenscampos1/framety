@@ -5,6 +5,12 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Fim da faixa preta no topo do vídeo.** A entrada da página deslizava o
+  `<main>` 20px para cima; como a capa é colada na borda de cima, durante esse
+  trajeto o fundo da página aparecia acima dela, numa faixa preta atravessando a
+  tela — a cada carga e a cada volta para a home. A entrada agora é só
+  opacidade: deslizar 20px acrescentava pouco e a faixa custava caro.
+
 - **Celular do Instagram no fim da home.** Chegando ao pé da página, um aparelho
   sobe do canto esquerdo, inclinado, mostrando o feed e um botão "Seguir";
   clicar leva ao perfil em aba nova. Sobe e desce conforme o visitante vai e
