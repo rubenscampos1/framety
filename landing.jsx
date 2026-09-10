@@ -232,9 +232,93 @@ const Nav = ({ current, onNav, onLogoClick, ripples }) => {
   );
 };
 
+/* ── Tarjas pretas do reel ────────────────────────────────────────────────────
+   O reel é exportado em cinemascope: o arquivo é 16:9, mas com barras pretas
+   coladas em cima e embaixo. Como a capa é colada na borda superior da tela, a
+   barra de cima aparecia como uma faixa preta atravessando o topo do site.
+
+   A medida não é chutada nem fixa: a capa busca dois quadros do próprio vídeo
+   (o Cloudinary entrega qualquer segundo como JPEG) e procura, em miniatura,
+   onde a imagem começa e termina. Fica o MENOR corte entre os dois quadros —
+   uma cena escura sozinha faria a conta enxergar tarja onde não há.
+
+   Com as tarjas medidas, o vídeo é ampliado o bastante para elas saírem da
+   moldura. Custo de nitidez: quase nenhum, porque o vídeo já era reduzido para
+   caber na tela — o trecho útil sai de 1080px de fonte para 900px de tela, uma
+   ampliação de 8%.
+
+   Sem Cloudinary (upload local, em desenvolvimento) a medição não roda e o
+   vídeo fica como está. */
+const REEL_QUADROS = [5, 12];        // segundos amostrados
+const REEL_TARJA_MIN = 0.015;        // abaixo disto não é tarja, é cena escura
+const REEL_ESCALA_MAX = 1.7;         // trava de segurança
+
+const quadroDoReel = (url, segundo) => {
+  const m = String(url || "").match(/^(https?:\/\/res\.cloudinary\.com\/[^/]+\/video\/upload\/)(?:[^/]*\/)*(v\d+\/.+)\.\w+$/i);
+  if (!m) return null;
+  return `${m[1]}so_${segundo},w_320,c_limit/${m[2]}.jpg`;
+};
+
+const medirTarjas = (img) => {
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  let d;
+  try { d = ctx.getImageData(0, 0, c.width, c.height).data; }
+  catch (e) { return null; }                       // canvas sujo: desiste
+  const brilho = (y) => {
+    let s = 0, n = 0;
+    for (let x = 0; x < c.width; x += 4) { const i = (y * c.width + x) * 4; s += (d[i] + d[i + 1] + d[i + 2]) / 3; n++; }
+    return s / n;
+  };
+  let topo = 0, base = 0;
+  while (topo < c.height && brilho(topo) < 12) topo++;
+  while (base < c.height && brilho(c.height - 1 - base) < 12) base++;
+  if (topo + base >= c.height) return null;        // quadro inteiro preto
+  return { topo: topo / c.height, base: base / c.height };
+};
+
+const useReelSemTarja = (url) => {
+  const [ajuste, setAjuste] = React.useState(null);
+
+  React.useEffect(() => {
+    setAjuste(null);
+    const urls = REEL_QUADROS.map((s) => quadroDoReel(url, s)).filter(Boolean);
+    if (!urls.length) return;
+    let vivo = true;
+
+    Promise.all(urls.map((u) => new Promise((ok) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => ok(medirTarjas(img));
+      img.onerror = () => ok(null);
+      img.src = u;
+      setTimeout(() => ok(null), 9000);
+    }))).then((medidas) => {
+      if (!vivo) return;
+      const boas = medidas.filter(Boolean);
+      if (!boas.length) return;
+      const topo = Math.min(...boas.map((m) => m.topo));
+      const base = Math.min(...boas.map((m) => m.base));
+      if (topo + base < REEL_TARJA_MIN) return;    // vídeo já é cheio
+      const util = 1 - topo - base;
+      const escala = Math.min(1 / util, REEL_ESCALA_MAX);
+      // as tarjas costumam ser desiguais: recentraliza o trecho útil
+      const centro = topo + util / 2;
+      setAjuste({ escala, desloc: (0.5 - centro) * escala * 100 });
+    });
+
+    return () => { vivo = false; };
+  }, [url]);
+
+  return ajuste;
+};
+
 const Hero = ({ onNav }) => {
   const [t, setT] = useS(0);
   const [reelUrl, setReelUrl] = useS(window.getStoredReelUrl ? window.getStoredReelUrl() : "");
+  const corteReel = useReelSemTarja(reelUrl);
   const content = window.FRAMETY_CONTENT.hero;
 
   useEff(() => {
@@ -258,7 +342,8 @@ const Hero = ({ onNav }) => {
       <div className="hero-bg">
         {reelUrl ? (
           <>
-            <video className="hero-video" src={VIDEO_CDN(reelUrl)} autoPlay loop muted playsInline />
+            <video className="hero-video" src={VIDEO_CDN(reelUrl)} autoPlay loop muted playsInline
+                   style={corteReel ? { transform: `translateY(${corteReel.desloc}%) scale(${corteReel.escala})` } : null} />
             <div className="hero-video-overlay" />
           </>
         ) : (

@@ -5,6 +5,23 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **A faixa preta no topo era do arquivo do reel, não da página.** O vídeo é
+  exportado em cinemascope: o quadro é 1920×1080, mas com tarjas pretas coladas
+  em cima (115px) e embaixo (136px). Como a capa é colada na borda superior da
+  tela, a tarja de cima virava uma faixa atravessando o topo do site. O ajuste
+  anterior, na animação de entrada, não podia resolver isso — era outro
+  problema, no mesmo lugar.
+  - **A medida não é fixa nem chutada.** A capa busca dois quadros do próprio
+    vídeo (o Cloudinary entrega qualquer segundo como JPEG), procura em
+    miniatura onde a imagem começa e termina, e fica com o MENOR corte entre os
+    dois — uma cena escura sozinha faria a conta enxergar tarja onde não há.
+    Assim vale para qualquer reel que venha a ser enviado, com tarja ou sem.
+  - Medido no reel atual: ampliação de 1,295 e recentragem de 1,08%, porque as
+    tarjas são desiguais. **Custo de nitidez: 8%** — o trecho útil sai de 1080px
+    de fonte para 900px de tela, então continua havendo mais pixel do que tela.
+  - Sem Cloudinary (upload local, em desenvolvimento) a medição não roda e o
+    vídeo fica como está.
+
 - **Mídia servida pelo Cloudinary já convertida e no tamanho certo.** O arquivo
   continua no banco como veio; o que mudou foi a URL com que a página o pede.
   - **O reel da capa era 29,5MB** — mais do que todo o resto do site somado.
