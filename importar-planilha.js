@@ -137,31 +137,53 @@ async function api(metodo, rota, corpo) {
   return dado;
 }
 
-/* Pergunta a senha no terminal, sem eco: ela não aparece na tela, não fica no
-   histórico do shell e não passa por argumento de linha de comando. */
-const TECLA_ENTER = [String.fromCharCode(13), String.fromCharCode(10)];
-const TECLA_CTRL_C = String.fromCharCode(3);
-const TECLA_APAGA = [String.fromCharCode(127), String.fromCharCode(8)];
+/* Pergunta a senha no terminal, mostrando asteriscos: ela não fica no
+   histórico do shell nem passa por argumento de linha de comando.
+
+   O terminal pode entregar a linha inteira de uma vez — é o que acontece ao
+   colar, e também em terminais que só enviam no Enter. Por isso cada pedaço
+   recebido é percorrido caractere a caractere: a primeira versão disto
+   comparava o pedaço inteiro com Enter, nunca reconhecia, e a senha não
+   entrava nunca.
+
+   Sem terminal de verdade (rodando por um botão, um script, um agendador),
+   não há como perguntar: aí vale a variável FRAMETY_SENHA. */
+const ENTER = [String.fromCharCode(13), String.fromCharCode(10)];
+const CTRL_C = String.fromCharCode(3);
+const APAGA = [String.fromCharCode(127), String.fromCharCode(8)];
 
 function perguntarSenha() {
   return new Promise((ok) => {
-    if (!process.stdin.isTTY) return ok('');          // rodando sem terminal
+    if (!process.stdin.isTTY || !process.stdin.setRawMode) {
+      console.error('\n  Este terminal não deixa perguntar a senha com segurança.');
+      console.error('  Rode assim, no PowerShell:');
+      console.error('     $env:FRAMETY_SENHA="suasenha"; node importar-planilha.js --valendo\n');
+      return ok('');
+    }
     process.stdout.write('  Senha do console: ');
     process.stdin.setRawMode(true);
     process.stdin.resume();
+    process.stdin.setEncoding('utf8');
     let buf = '';
-    process.stdin.on('data', function escutar(ch) {
-      const c = ch.toString('utf8');
-      if (TECLA_ENTER.includes(c)) {
-        process.stdin.setRawMode(false);
-        process.stdin.pause();
-        process.stdin.removeListener('data', escutar);
-        process.stdout.write(String.fromCharCode(10));
-        return ok(buf);
+    const terminar = (escutar) => {
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdin.removeListener('data', escutar);
+      process.stdout.write(String.fromCharCode(10));
+      ok(buf);
+    };
+    process.stdin.on('data', function escutar(pedaco) {
+      for (const c of String(pedaco)) {
+        if (ENTER.includes(c)) return terminar(escutar);
+        if (c === CTRL_C) { process.stdout.write(String.fromCharCode(10)); process.exit(1); }
+        if (APAGA.includes(c)) {
+          if (buf) { buf = buf.slice(0, -1); process.stdout.write('\b \b'); }
+          continue;
+        }
+        if (c < ' ') continue;                    // teclas de controle
+        buf += c;
+        process.stdout.write('*');
       }
-      if (c === TECLA_CTRL_C) { process.stdout.write(String.fromCharCode(10)); process.exit(1); }
-      if (TECLA_APAGA.includes(c)) { buf = buf.slice(0, -1); return; }
-      buf += c;
     });
   });
 }
