@@ -5,6 +5,14 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Corrigido: vídeos que são Shorts do YouTube não abriam nem mostravam capa.**
+  O site só reconhecia `watch?v=`, `embed/` e `youtu.be/` — um endereço
+  `youtube.com/shorts/…` não devolvia identificador nenhum, e sem ele não há
+  player nem miniatura. São 14 vídeos no ar nessa situação. Passou a reconhecer
+  `shorts/` e `live/` também, nos quatro lugares que liam o endereço: página de
+  categoria, formulário do console, modo de apresentação e a prévia de link do
+  servidor. (Os scripts de importação e a leitura de duração já reconheciam.)
+
 - **Um highlight só para o site inteiro.** Cada lugar tinha o seu jeito de dizer
   "este é o selecionado": uns com o azul cheio e texto branco, outros com um véu
   de 10%, alguns ainda no vermelho do tema antigo. Agora todos leem de

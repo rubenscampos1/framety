@@ -58,7 +58,7 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
   const featuredCat = cats.find(c => c.id === featured?.category);
 
   const featThumb = featured ? (window.getThumbUrl ? window.getThumbUrl(featured) : null) : null;
-  const ytId = featured?.videoUrl?.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)?.[1];
+  const ytId = featured?.videoUrl?.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)?.[1];
 
    return (
      <div className="pres-shell page-enter" data-screen-label="08 Apresentação">

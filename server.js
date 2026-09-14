@@ -507,7 +507,7 @@ app.get(SPA_ROUTES, (req, res) => {
       if (vid.thumbUrl) {
         image = vid.thumbUrl;
       } else {
-        const ytMatch = vid.videoUrl?.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+        const ytMatch = vid.videoUrl?.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
         if (ytMatch) image = `https://img.youtube.com/vi/${ytMatch[1]}/maxresdefault.jpg`;
       }
     }

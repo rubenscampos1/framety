@@ -2468,7 +2468,7 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
   React.useEffect(() => { if (descRef.current) descRef.current.innerHTML = initialData?.description || ""; }, []);
 
   const [framePicker, setFramePicker] = React.useState(false);
-  const ytId = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)?.[1];
+  const ytId = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)?.[1];
   // YouTube frame options (moments of the video). hqdefault = início (alta res);
   // 1/2/3.jpg = ¼ / meio / ¾ do vídeo. maxresdefault 404s em vídeos não-HD.
   const ytFrames = ytId ? {
