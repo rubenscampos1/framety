@@ -5,6 +5,36 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **O baralho do processo parou de piscar.** O cartão subia, saía de debaixo do
+  ponteiro, perdia o hover, caía, recebia de novo — e oscilava sozinho com o
+  mouse parado no mesmo lugar.
+  - A causa era alvo e movimento serem a mesma coisa. Agora são duas camadas: o
+    `<article>` é a área de mouse e **nunca se mexe**; quem sobe é um
+    `.dc-interno` dentro dele. As áreas se encostam, cobrindo o baralho inteiro,
+    então o destaque só troca quando o ponteiro chega ao cartão vizinho.
+  - A subida caiu de 420ms para **190ms**: o movimento acompanha o mouse em vez
+    de arrastar atrás dele. Cor e brilho continuam em 380ms, onde a demora não
+    aparece.
+
+- **Telas grandes: o site inteiro é ampliado em bloco.** Num 4K a 100%, o
+  conteúdo ficava do tamanho de sempre dentro de uma tela três vezes maior.
+  - **A estratégia anterior era a oposta e foi removida**: alargava o contêiner
+    (2000px em 2K, 3000px em 4K, 5600px em 8K), aumentava as colunas da grade e
+    remendava tamanhos à mão. Isso *espalhava* o conteúdo em vez de aumentá-lo —
+    linhas longuíssimas e a letra do mesmo tamanho. As duas juntas enchiam a
+    tela inteira, sem margem nenhuma.
+  - O layout tem **3102 valores em px fixo contra 30 clamp()**: reescrever em
+    unidade relativa seria trocar três mil números e ainda assim perder a
+    proporção entre eles. Ampliar em bloco preserva o desenho exato — a mesma
+    cara, só maior.
+  - A escada pede **largura E altura**: numa tela larga e baixa, ampliar pela
+    largura faria o conteúdo não caber na vertical.
+  - **As 29 unidades de viewport foram divididas pela ampliação.** Sem isso, uma
+    capa de 100vh com o site em 1,9 renderizaria 1,9 telas de altura: o zoom
+    amplia o que é px, mas 100vh continua sendo a tela, medida por fora.
+  - Medido: 1366 e 375 sem ampliação, 1920 em 1,15, 2560 em 1,35, 3840 em 1,9.
+    Em todas, a capa cabe exata na tela e não há rolagem horizontal.
+
 - **O ponteiro some e o carro obedece de qualquer canto da tela.** Enquanto a
   partida corre, o jogo prende o ponteiro ao campo: o cursor desaparece, o mouse
   não sai da janela e o movimento chega como deslocamento em vez de posição.

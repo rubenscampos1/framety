@@ -167,13 +167,38 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
 .chip-hint-desktop { display: block; }
 
 .container { max-width: 1440px; margin: 0 auto; padding: 0 48px; }
+
+/* ── Telas grandes: o site inteiro é ampliado em bloco ───────────────────────
+   O layout foi escrito em pixel — são mais de três mil valores fixos contra
+   trinta clamp(). Num monitor 4K a 100%, isso deixa o conteúdo do tamanho de
+   sempre dentro de uma tela três vezes maior: tudo parece miúdo, encolhido no
+   meio. Reescrever tudo em unidade relativa seria trocar três mil números e
+   ainda assim perder a proporção entre eles.
+
+   Ampliar em bloco mantém o desenho exatamente igual — só maior. É a definição
+   de "mesma cara em qualquer resolução".
+
+   A escada pede largura E altura: numa tela larga e baixa (ultrawide), ampliar
+   pela largura faria o conteúdo não caber na vertical.
+
+   --zoom acompanha o valor porque as unidades de viewport precisam dele: veja
+   o calc() em volta de cada 100vh acima. */
+:root { --zoom: 1; }
+
+@media (min-width: 1800px) and (min-height: 800px)  { :root { zoom: 1.15; --zoom: 1.15; } }
+@media (min-width: 2200px) and (min-height: 1000px) { :root { zoom: 1.35; --zoom: 1.35; } }
+@media (min-width: 2800px) and (min-height: 1300px) { :root { zoom: 1.6;  --zoom: 1.6;  } }
+@media (min-width: 3400px) and (min-height: 1500px) { :root { zoom: 1.9;  --zoom: 1.9;  } }
+@media (min-width: 5200px) and (min-height: 2200px) { :root { zoom: 2.6;  --zoom: 2.6;  } }
+
+
 @media (max-width: 720px) { .container { padding: 0 20px; } }
 
 .section { padding: 140px 0; position: relative; }
 @media (max-width: 720px) { .section { padding: 80px 0; } }
 
 /* App scaffold */
-.app { position: relative; min-height: 100vh; background: transparent; }
+.app { position: relative; min-height: calc(100vh / var(--zoom)); background: transparent; }
 
 /* ---------- Navbar ---------- */
 .logo-img-dual {
@@ -296,7 +321,7 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
 /* ---------- Hero ---------- */
 .hero {
   position: relative;
-  min-height: 100vh;
+  min-height: calc(100vh / var(--zoom));
   display: flex; align-items: flex-end;
   /* Fundo maior desde que o texto da capa passou a existir: com 80px a última
      linha do subtexto encostava na barra do REC, que é absoluta no rodapé. */
@@ -1342,8 +1367,8 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
 
 /* our own fullscreen: the whole player (iframe + drag overlay + bar) fills the
    screen, so drag-to-look keeps working in fullscreen. */
-.cplayer:fullscreen { position: fixed; inset: 0; width: 100vw; height: 100vh; background: #000; }
-.cplayer:-webkit-full-screen { position: fixed; inset: 0; width: 100vw; height: 100vh; background: #000; }
+.cplayer:fullscreen { position: fixed; inset: 0; width: calc(100vw / var(--zoom)); height: calc(100vh / var(--zoom)); background: #000; }
+.cplayer:-webkit-full-screen { position: fixed; inset: 0; width: calc(100vw / var(--zoom)); height: calc(100vh / var(--zoom)); background: #000; }
 .cplayer-capture {
   position: absolute; inset: 0;
   z-index: 5;
@@ -1499,7 +1524,7 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
 /* ---------- Category page ---------- */
 .cat-page {
   padding: 100px 0 60px;
-  min-height: 100vh;
+  min-height: calc(100vh / var(--zoom));
   transition: padding-top 0.45s cubic-bezier(.4,0,.2,1);
 }
 body.in-cat-page {
@@ -2646,7 +2671,7 @@ dotlottie-player::part(container) {
 
 /* ---------- Clients marquee ---------- */
 .mq-stage {
-  width: 100vw;
+  width: calc(100vw / var(--zoom));
   margin-left: calc(-50vw + 50%);
   overflow: hidden;
 }
@@ -3857,7 +3882,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 
 /* ── Partner form (public page) ─────────────────────────────── */
 .partner-shell {
-  min-height: 100vh;
+  min-height: calc(100vh / var(--zoom));
   background: var(--bg);
   display: flex;
   align-items: center;
@@ -4314,7 +4339,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   .modal-backdrop { padding: 0; align-items: flex-end; }
   .modal-frame {
     border-radius: 20px 20px 0 0 !important;
-    max-height: 92vh;
+    max-height: calc(92vh / var(--zoom));
     overflow-y: auto;
     margin: 0;
     width: 100%;
@@ -4619,7 +4644,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
 @media (max-width: 720px) {
   .process-steps { gap: 16px; }
   .cat-client-dropdown-menu {
-    max-height: 50vh;
+    max-height: calc(50vh / var(--zoom));
     overflow-y: auto;
   }
   .modal-sug-track { gap: 10px; }
@@ -4797,7 +4822,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
 @media (max-width: 720px) {
   .admin-modal {
     border-radius: 20px 20px 0 0 !important;
-    max-height: 92vh;
+    max-height: calc(92vh / var(--zoom));
     overflow-y: auto;
     padding: 24px 20px 40px;
     width: 100% !important;
@@ -5555,8 +5580,8 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
 @media (max-width: 720px) {
   .modal-frame {
     border-radius: 0 !important;
-    width: 100vw !important;
-    max-height: 100vh !important;
+    width: calc(100vw / var(--zoom)) !important;
+    max-height: calc(100vh / var(--zoom)) !important;
   }
   .modal-frame-glass {
     padding: 0 !important;
@@ -5734,7 +5759,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
    TUTORIAL PAGE — public help / support page
    ============================================================ */
 .tutorial-shell {
-  min-height: 100vh;
+  min-height: calc(100vh / var(--zoom));
   background: var(--bg);
   display: flex;
   align-items: flex-start;
@@ -6195,8 +6220,8 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
     border-radius: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
-    max-height: 100vh !important;
-    height: 100vh !important;
+    max-height: calc(100vh / var(--zoom)) !important;
+    height: calc(100vh / var(--zoom)) !important;
     overflow-y: auto;
     border: none !important;
     background: var(--bg) !important;
@@ -6382,8 +6407,8 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   /* Hide everything except the player when in landscape */
   .modal-landscape .modal-frame {
     border-radius: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
+    width: calc(100vw / var(--zoom)) !important;
+    height: calc(100vh / var(--zoom)) !important;
     max-width: none !important;
     max-height: none !important;
     overflow: hidden !important;
@@ -6409,8 +6434,8 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
     background: rgba(0,0,0,0.5) !important;
   }
   .modal-landscape .modal-player {
-    width: 100vw !important;
-    height: 100vh !important;
+    width: calc(100vw / var(--zoom)) !important;
+    height: calc(100vh / var(--zoom)) !important;
     aspect-ratio: auto !important;
     margin: 0 !important;
     position: absolute !important;
@@ -6647,60 +6672,28 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   .modal-landscape .modal-player iframe,
   .modal-landscape .modal-player .yt-iframe-wrapper,
   .modal-landscape .modal-player .ytcustom-wrapper {
-    width: 100vw !important;
-    height: 100vh !important;
+    width: calc(100vw / var(--zoom)) !important;
+    height: calc(100vh / var(--zoom)) !important;
     inset: 0 !important;
   }
 }
 
 /* ══════════════════════════════════════════════════════════════
-   HIGH-RESOLUTION SCALING — 2K · 4K · 8K
-   Mantém o mesmo design e alinhamento em telas grandes.
-   O bg (wave, dark) sempre preenche a tela inteira.
-   O conteúdo cresce dentro de containers maiores.
+   TELAS GRANDES — 2K · 4K · 8K
+
+   Aqui existia a estratégia oposta: alargar o contêiner (2000px em 2K,
+   3000px em 4K, 5600px em 8K), aumentar o número de colunas da grade e
+   remendar à mão alguns tamanhos — logo, botão, altura de cartão. Ela
+   espalhava o conteúdo pela tela em vez de aumentá-lo: as linhas de texto
+   ficavam longuíssimas e a letra continuava do mesmo tamanho, que é
+   exatamente a sensação de "ficou tudo pequeno" num 4K.
+
+   Quem cuida disso agora é a escada de ampliação lá em cima, junto do
+   .container. Ela aumenta o site inteiro em bloco, então a proporção entre
+   todas as peças é preservada — a mesma cara, só maior. As duas abordagens
+   não podem conviver: somadas, o contêiner ampliado enchia a tela inteira
+   e sobrava zero margem.
 ══════════════════════════════════════════════════════════════ */
-
-/* 2K  (≥ 2560px) */
-@media (min-width: 2560px) {
-  .container { max-width: 2000px; padding: 0 80px; }
-  .nav { max-width: 2000px; }
-  .client-page-header,
-  .client-page-hero  { padding-left: 80px; padding-right: 80px; }
-  .client-page-grid  { padding-left: 80px; padding-right: 80px; }
-  .cat-grid          { grid-template-columns: repeat(5, 1fr); }
-  .client-page-grid  { grid-template-columns: repeat(5, 1fr); }
-  .modal-frame       { max-width: 1600px; }
-}
-
-/* 4K  (≥ 3840px) */
-@media (min-width: 3840px) {
-  .container { max-width: 3000px; padding: 0 120px; }
-  .nav { max-width: 3000px; }
-  .client-page-header,
-  .client-page-hero  { padding-left: 120px; padding-right: 120px; }
-  .client-page-grid  { padding-left: 120px; padding-right: 120px; }
-  .cat-grid          { grid-template-columns: repeat(6, 1fr); }
-  .client-page-grid  { grid-template-columns: repeat(6, 1fr); }
-  .modal-frame       { max-width: 2400px; }
-  /* Scale up base elements proportionally */
-  .nav-logo img:first-child { height: 120px !important; }
-  .nav-logo img:nth-child(2) { height: 68px !important; }
-  .nav-logo img:last-child   { height: 68px !important; }
-  .btn { font-size: 16px; padding: 14px 28px; }
-  .chip-card { min-height: 80px; }
-}
-
-/* 8K  (≥ 7680px) */
-@media (min-width: 7680px) {
-  .container { max-width: 5600px; padding: 0 200px; }
-  .nav { max-width: 5600px; }
-  .client-page-header,
-  .client-page-hero  { padding-left: 200px; padding-right: 200px; }
-  .client-page-grid  { padding-left: 200px; padding-right: 200px; padding-top: 60px; gap: 28px; }
-  .cat-grid          { grid-template-columns: repeat(8, 1fr); gap: 24px; }
-  .client-page-grid  { grid-template-columns: repeat(8, 1fr); }
-  .modal-frame       { max-width: 4800px; }
-}
 
 /* ============================================================
    AI SECTION
@@ -7217,7 +7210,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   flex-wrap: wrap;
 }
 .os-desk {
-  min-height: calc(100vh - 60px);
+  min-height: calc(calc(100vh / var(--zoom)) - 60px);
   padding: 36px 20px;
   display: flex;
   justify-content: center;
@@ -7446,7 +7439,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
 .playlist-sidebar {
   flex: 0 0 380px;
   display: flex; flex-direction: column; gap: 8px;
-  max-height: calc(100vh - 116px);
+  max-height: calc(calc(100vh / var(--zoom)) - 116px);
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -7500,7 +7493,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   .playlist-landscape .playlist-body { padding: 0 !important; }
   .playlist-landscape .playlist-player {
     position: fixed; inset: 0; z-index: 600;
-    width: 100vw !important; height: 100vh !important; aspect-ratio: auto !important;
+    width: calc(100vw / var(--zoom)) !important; height: calc(100vh / var(--zoom)) !important; aspect-ratio: auto !important;
     border-radius: 0 !important; box-shadow: none !important;
   }
 }
@@ -8101,7 +8094,7 @@ body.home-pronta .whisper.no-ar .whisper-w {
   position: fixed;
   top: 108px; right: 22px;
   z-index: 400;
-  width: 320px; max-width: calc(100vw - 32px);
+  width: 320px; max-width: calc(calc(100vw / var(--zoom)) - 32px);
   border-radius: 16px;
   overflow: hidden;
   border: 1px solid rgba(var(--accent-rgb), 0.32);
@@ -8173,7 +8166,7 @@ body.home-pronta .whisper.no-ar .whisper-w {
 
 /* ---------- Novidades: a página ---------- */
 .nov-pagina {
-  min-height: 100vh;
+  min-height: calc(100vh / var(--zoom));
   padding: 120px 0 110px;
   background: transparent;
 }
@@ -8318,12 +8311,25 @@ body.home-pronta .whisper.no-ar .whisper-w {
      adicionar um cartão no console. */
   padding: 26px 0 calc((var(--dc-n, 5) - 1) * 42px + 26px);
 }
+/* A ÁREA DE MOUSE. Fica parada no lugar de repouso do cartão, sempre — é o que
+   mata o piscar: o alvo do ponteiro não é a coisa que se move.
+   As áreas se encostam uma na outra, cobrindo o baralho inteiro, então o
+   cartão em destaque só troca quando o ponteiro chega ao cartão vizinho. */
 .dc-card {
   grid-area: stack;
   position: relative;
   /* encolhe se forem muitos, para o último não sair da coluna */
   width: min(330px, calc(100% - (var(--dc-n, 5) - 1) * 52px));
   min-height: 128px;
+  transform: skewY(-8deg);
+  translate: calc(var(--i) * 52px) calc(var(--i) * 42px);
+  user-select: none;
+  cursor: default;
+}
+/* O CARTÃO EM SI: aparência e movimento. */
+.dc-interno {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -8338,16 +8344,14 @@ body.home-pronta .whisper.no-ar .whisper-w {
     inset 0 1px 0 rgba(255, 255, 255, 0.14),     /* fio de luz na borda de cima */
     0 0 30px rgba(var(--accent-rgb), 0.20),      /* halo */
     0 18px 40px rgba(0, 0, 0, 0.42);
-  transform: skewY(-8deg);
-  translate: calc(var(--i) * 52px) calc(var(--i) * 42px);
   filter: grayscale(0.25);
-  transition: translate 420ms cubic-bezier(0.22, 0.8, 0.3, 1),
-              filter 420ms ease, border-color 420ms ease, box-shadow 420ms ease;
-  user-select: none;
-  cursor: default;
+  /* Subida curta e rápida: o movimento acompanha o mouse em vez de arrastar
+     atrás dele. Cor e brilho podem demorar mais, ninguém repara. */
+  transition: translate 190ms cubic-bezier(0.2, 0.9, 0.3, 1),
+              filter 380ms ease, border-color 380ms ease, box-shadow 380ms ease;
 }
 /* véu que apaga o cartão parado */
-.dc-card::before {
+.dc-interno::before {
   content: "";
   position: absolute; inset: 0;
   border-radius: inherit;
@@ -8356,7 +8360,7 @@ body.home-pronta .whisper.no-ar .whisper-w {
   pointer-events: none;
 }
 /* máscara que dissolve a borda direita no fundo, como no componente original */
-.dc-card::after {
+.dc-interno::after {
   content: "";
   position: absolute;
   top: -1px; right: -1px; bottom: -1px;
@@ -8366,18 +8370,18 @@ body.home-pronta .whisper.no-ar .whisper-w {
   transition: opacity 420ms ease;
   pointer-events: none;
 }
-.dc-card:hover {
-  z-index: 5;                         /* sem isto, um cartão de trás sobe e continua coberto */
+.dc-card:hover { z-index: 5; }        /* sem isto, um cartão de trás sobe e continua coberto */
+.dc-card:hover .dc-interno {
   filter: none;
   border-color: rgba(var(--accent-rgb), 0.6);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
     0 0 44px rgba(var(--accent-rgb), 0.32),
     0 26px 60px rgba(0, 0, 0, 0.55);
-  translate: calc(var(--i) * 52px) calc(var(--i) * 42px - 46px);
+  translate: 0 -46px;
 }
-.dc-card:hover::before,
-.dc-card:hover::after { opacity: 0; }
+.dc-card:hover .dc-interno::before,
+.dc-card:hover .dc-interno::after { opacity: 0; }
 
 .dc-topo { display: flex; align-items: center; gap: 9px; }
 .dc-icone {
@@ -8414,13 +8418,17 @@ body.home-pronta .whisper.no-ar .whisper-w {
   }
   .dc-card {
     width: 100%; min-height: 0;
-    transform: none; translate: none; filter: none;
+    transform: none; translate: none;
+  }
+  .dc-interno {
+    position: static;
+    filter: none;
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.09),
       0 0 22px rgba(var(--accent-rgb), 0.12);
   }
-  .dc-card::before, .dc-card::after { display: none; }
-  .dc-card:hover { translate: none; }
+  .dc-interno::before, .dc-interno::after { display: none; }
+  .dc-card:hover .dc-interno { translate: none; }
 }
 
 /* Botão no pé do quadro de contato. Ele não estica: fica do tamanho do próprio

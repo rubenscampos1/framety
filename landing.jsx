@@ -1131,14 +1131,21 @@ const ProcessCards = ({ cards }) => {
   return (
     <div className="dc-stack" style={{ "--dc-n": cards.length }}>
       {cards.map((c, i) => (
+        /* Duas camadas de propósito: o <article> é o alvo do mouse e NUNCA se
+           mexe; quem sobe é o .dc-interno, dentro dele. Quando os dois eram a
+           mesma coisa, o cartão subia, saía de debaixo do ponteiro, perdia o
+           hover, caía, recebia de novo — e piscava sem parar com o mouse
+           parado no mesmo lugar. */
         <article key={i} className="dc-card" style={{ "--i": i }}>
-          <div className="dc-topo">
-            <span className="dc-icone">
-              <Icon name={PROCESS_CARD_ICONS[i % PROCESS_CARD_ICONS.length]} size={13} />
-            </span>
-            <h3 className="dc-titulo">{c.title}</h3>
+          <div className="dc-interno">
+            <div className="dc-topo">
+              <span className="dc-icone">
+                <Icon name={PROCESS_CARD_ICONS[i % PROCESS_CARD_ICONS.length]} size={13} />
+              </span>
+              <h3 className="dc-titulo">{c.title}</h3>
+            </div>
+            {c.sub && <p className="dc-sub">{c.sub}</p>}
           </div>
-          {c.sub && <p className="dc-sub">{c.sub}</p>}
         </article>
       ))}
     </div>
