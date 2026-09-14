@@ -14,6 +14,13 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
     espessura vai junto, em `scrollbar-width: thin` — as duas propriedades
     andam em par. As regras `-webkit-` ficam de reserva para o Safari, que
     ainda não entende as padronizadas.
+  - **Ela entra depois da abertura**, não junto com ela: começa transparente e
+    ganha cor quando a página termina de aparecer, pelo mesmo `body.home-pronta`
+    que destrava as entradas em cascata. Como a marca vive no `<body>` e a barra
+    é do `<html>`, a regra usa `:has()` para olhar de cima para baixo.
+  - **O espaço dela é reservado desde o primeiro quadro** — só a cor entra
+    depois. Fosse a largura a mudar, a página inteira daria um pulo de 10px no
+    fim da abertura.
   - No celular ela segue escondida: ali o sistema desenha um indicador que
     aparece durante a rolagem e some sozinho.
 

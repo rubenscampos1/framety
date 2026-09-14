@@ -2402,11 +2402,24 @@ body.in-cat-page.cat-peek .cat-page {
 /* Declarar scrollbar-color faz o Chrome desenhar a barra padrão e ignorar as
    regras -webkit- acima. Como o padrão é mais largo, a espessura vai junto:
    as duas propriedades andam em par. O Safari ainda não as entende — para ele
-   valem as regras -webkit-, que ficam de reserva. */
+   valem as regras -webkit-, que ficam de reserva.
+
+   A barra começa transparente e só aparece quando a abertura termina, junto
+   com o resto da página. O gatilho é a marca body.home-pronta, a mesma que
+   destrava as entradas em cascata; como ela vive no <body> e quem tem a barra
+   é o <html>, é preciso o :has() para olhar de cima para baixo.
+   O espaço dela é reservado desde o começo — só a cor entra depois. Fosse a
+   largura a mudar, a página inteira daria um pulo de 10px no fim da abertura. */
 html {
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 700ms ease;
+}
+html:has(body.home-pronta) {
   scrollbar-color: rgba(255,255,255,0.85) rgba(255,255,255,0.06);
 }
+html::-webkit-scrollbar-thumb { background-color: transparent; transition: background-color 700ms ease; }
+html:has(body.home-pronta)::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.85); }
 
 /* ---------- Iris transition (presentation open) ---------- */
 /* Preloader */
