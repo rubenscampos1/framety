@@ -2383,11 +2383,30 @@ body.in-cat-page.cat-peek .cat-page {
 .gap-12 { gap: 12px; }
 .gap-24 { gap: 24px; }
 
-/* ---------- Scrollbar ---------- */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+/* ---------- Barra de rolagem ----------
+   Ela estava branca a 8% de opacidade: sobre um fundo quase preto, isso é o
+   mesmo que invisível — não dava para saber onde se está na página. Agora é
+   branca de verdade, com um trilho de leve para mostrar o percurso.
+   O Firefox não aceita ::-webkit-scrollbar; para ele existe scrollbar-color,
+   logo abaixo. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.06); }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.85);
+  border-radius: 999px;
+  /* a borda transparente afina o polegar sem estreitar a área de clique */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #fff; background-clip: content-box; }
+/* Declarar scrollbar-color faz o Chrome desenhar a barra padrão e ignorar as
+   regras -webkit- acima. Como o padrão é mais largo, a espessura vai junto:
+   as duas propriedades andam em par. O Safari ainda não as entende — para ele
+   valem as regras -webkit-, que ficam de reserva. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.85) rgba(255,255,255,0.06);
+}
 
 /* ---------- Iris transition (presentation open) ---------- */
 /* Preloader */

@@ -5,6 +5,18 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Barra de rolagem branca e visível.** Ela existia, mas o polegar estava em
+  branco a 8% de opacidade — sobre um fundo quase preto, o mesmo que invisível:
+  não dava para saber onde se está na página.
+  - **Declarar `scrollbar-color` faz o Chrome desenhar a barra padrão e ignorar
+    as regras `::-webkit-scrollbar`.** Descobri isso medindo: a largura
+    reservada continuava 15px em vez dos 10px que eu tinha pedido. Por isso a
+    espessura vai junto, em `scrollbar-width: thin` — as duas propriedades
+    andam em par. As regras `-webkit-` ficam de reserva para o Safari, que
+    ainda não entende as padronizadas.
+  - No celular ela segue escondida: ali o sistema desenha um indicador que
+    aparece durante a rolagem e some sozinho.
+
 - **Formato do vídeo imersivo**, em lista aberta. Semicircular, Tradicional e
   Trapézio saem de fábrica, e o console acrescenta e remove — a sala imersiva
   ganha formato novo com o tempo, então fixar três no código seria apertado.
