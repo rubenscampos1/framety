@@ -5,6 +5,14 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **O card não fica mais transparente ao passar o mouse.** Ao entrar o ponteiro,
+  a thumb sai para o preview do YouTube ocupar o lugar — e nesse intervalo não
+  havia nada por baixo: o card virava um buraco com o fundo da página passando
+  através. Agora a thumb tem base preta. Vale também para vídeo sem thumb e para
+  preview que não carrega.
+  - Efeito colateral de o card ter deixado de ter fundo próprio: o fundo escuro
+    vinha do SpotlightCard, que foi desligado para tirar o contorno azul.
+
 - **Grid de vídeos: o card virou a thumb.** Fora a barra preta de baixo, fora o
   contorno azul fixo; ficou o retângulo 16:9 da imagem, com o título dentro dela
   e o brilho de destaque só ao passar o mouse — o mesmo do resto do site.

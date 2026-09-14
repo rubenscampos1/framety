@@ -1726,6 +1726,11 @@ body.in-cat-page.cat-peek .cat-page {
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: 12px;
+  /* Base preta debaixo de tudo. Ao passar o mouse, a thumb sai para o preview
+     do YouTube entrar, e nesse intervalo não havia nada por baixo: o card
+     ficava transparente e o fundo da página aparecia através dele. Vale também
+     para vídeo sem thumb e para preview que não carrega. */
+  background-color: #0a0c11;
 }
 .cat-card-overlay {
   position: absolute; inset: 0;
