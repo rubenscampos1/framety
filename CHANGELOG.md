@@ -5,6 +5,12 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **"Vídeos em destaque:" desceu mais 80px**, quase encostando na primeira
+  fileira do corredor. Quem desce o título é o palco subindo, e não mais espaço
+  em cima: aumentar o respiro empurraria título e palco juntos, e a distância
+  entre os dois ficaria igual. O cabeçalho sobe de camada para o palco, que vem
+  depois no fluxo, não cobrir o texto.
+
 - **Corrigido: vídeos que são Shorts do YouTube não abriam nem mostravam capa.**
   O site só reconhecia `watch?v=`, `embed/` e `youtu.be/` — um endereço
   `youtube.com/shorts/…` não devolvia identificador nenhum, e sem ele não há

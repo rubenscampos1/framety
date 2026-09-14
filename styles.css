@@ -8150,6 +8150,12 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
    sempre. */
 @media (min-width: 901px) {
   .section.featured { padding-top: 110px; }
+  /* Quem desce o título em relação aos cards é o palco subindo, não mais espaço
+     em cima: aumentar o padding empurra título E palco juntos, e a distância
+     entre os dois fica igual. O cabeçalho sobe de camada para o palco, que vem
+     por cima no fluxo, não cobrir o texto. */
+  .featured-head { position: relative; z-index: 2; }
+  .section.featured .ish-stage { margin-top: -80px; }
   /* Os 64px que separavam o título do resto viravam folga dobrada: somados ao
      vão do corredor davam 175px embaixo contra 110px em cima. */
   .featured-head, .featured-head .section-head { margin-bottom: 0; }
