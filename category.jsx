@@ -273,6 +273,9 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
   const [view, setView] = React.useState("grid");
   const [previewId, setPreviewId] = React.useState(null);
   const [dropOpen, setDropOpen] = React.useState(false);
+  /* Formato do imersivo — só existe nesta categoria, então o filtro também. */
+  const [formatoFiltro, setFormatoFiltro] = React.useState("todos");
+  const [formatoAberto, setFormatoAberto] = React.useState(false);
   const [shareCopied, setShareCopied] = React.useState(false);
   const hoverTimer = React.useRef(null);
 
@@ -291,6 +294,7 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
     window.history.replaceState(null, "", `/framety/categoria/${catId}${qs}`);
   }, [clientFilter, catId]);
 
+  const formatosImersivos = window.FRAMETY_DATA.formatosImersivos || [];
   const catClientNames = [...new Set(allVids.map(v => v.client))];
   const catClients     = catClientNames.map(n => clients.find(c => c.name === n) || { id: n, name: n });
 
@@ -301,7 +305,9 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
   /* Sem a barra de empreendimentos, o que chega aqui já é o resultado final.
      Ela listava um botão por empreendimento; com quase cem vídeos cadastrados
      virou uma parede de botões, e o nome do empreendimento já é o título. */
-  const filtered = vidsByClient;
+  const filtered = formatoFiltro === "todos"
+    ? vidsByClient
+    : vidsByClient.filter(v => (v.formatoImersivo || "") === formatoFiltro);
 
   const handleCardEnter = (v) => {
     if (IS_TOUCH) return; // no hover-preview on touch — cards stay static ("cru")
@@ -386,6 +392,43 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
               )}
             </div>
 
+            {/* Formato do imersivo. Aparece só onde o campo existe — numa
+                categoria de comercial seria um filtro que não filtra nada. */}
+            {catId === "imersivo" && formatosImersivos.length > 0 && (
+              <div className="cat-client-dropdown" onClick={e => e.stopPropagation()}>
+                <button
+                  className={`cat-client-dropdown-btn${formatoFiltro !== "todos" ? " has-filter" : ""}`}
+                  onClick={() => setFormatoAberto(o => !o)}>
+                  <span>{formatoFiltro !== "todos" ? formatoFiltro : "Todos os formatos"}</span>
+                  <span style={{color:"var(--ink-mute)",marginLeft:2}}>
+                    <Icon name="chevron-down" size={11}/>
+                  </span>
+                </button>
+                {formatoAberto && (
+                  <div className="cat-client-dropdown-menu">
+                    <button className={formatoFiltro === "todos" ? "active" : ""}
+                      onClick={() => { setFormatoFiltro("todos"); setFormatoAberto(false); }}>
+                      <span>Todos os formatos</span>
+                      <span className="dd-count">{vidsByClient.length}</span>
+                    </button>
+                    {formatosImersivos.map(f => (
+                      <button key={f} className={formatoFiltro === f ? "active" : ""}
+                        onClick={() => { setFormatoFiltro(f); setFormatoAberto(false); }}>
+                        <span>{f}</span>
+                        <span className="dd-count">{vidsByClient.filter(v => (v.formatoImersivo || "") === f).length}</span>
+                      </button>
+                    ))}
+                    {/* quem ainda não foi classificado precisa ser achável */}
+                    <button className={formatoFiltro === "" ? "active" : ""}
+                      onClick={() => { setFormatoFiltro(""); setFormatoAberto(false); }}>
+                      <span style={{color:"var(--ink-mute)"}}>Sem formato</span>
+                      <span className="dd-count">{vidsByClient.filter(v => !v.formatoImersivo).length}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
 
           <div className="cat-view-toggle">
@@ -416,7 +459,7 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
                   onMouseLeave={handleCardLeave}
                   style={{ '--radius': 12, '--backdrop': 'transparent', '--backup-border': 'transparent' }}>
                   <div className={`cat-card-thumb${thumb || isPreview ? "" : ` ${cat?.bgClass||"bg-comm"}`}`}
-                    style={!isPreview && thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"cover",backgroundPosition:"center"} : {}}>
+                    style={!isPreview && thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"var(--zoom-thumb, cover)",backgroundPosition:"center"} : {}}>
 
                     {/* YouTube preview iframe on hover */}
                     {isPreview && ytId && (

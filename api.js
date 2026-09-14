@@ -102,6 +102,9 @@
     // Duração real dos vídeos, buscada no YouTube
     buscarDuracoes: (todos) => req("POST", "/api/videos/duracoes", { todos: !!todos }),
 
+    // Lista de formatos de vídeo imersivo
+    salvarFormatosImersivos: (formatos) => req("POST", "/api/formatos-imersivos", { formatos }),
+
     // Tutorial — public read, admin write
     getTutorial:   ()      => req('GET',    '/api/tutorial'),
     saveTutorial:  (data)  => req('POST',   '/api/tutorial',       data),

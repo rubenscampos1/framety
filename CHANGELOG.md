@@ -5,6 +5,27 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Formato do vídeo imersivo**, em lista aberta. Semicircular, Tradicional e
+  Trapézio saem de fábrica, e o console acrescenta e remove — a sala imersiva
+  ganha formato novo com o tempo, então fixar três no código seria apertado.
+  - Aparece nos três lugares: **filtro** na categoria Imersivo, **campo** no
+    cadastro do vídeo e **grupo** na coluna do modo de apresentação.
+  - No cadastro ele só aparece quando a categoria é Imersivo — num comercial
+    seria mais um campo vazio para ignorar.
+  - **O valor já gravado entra nas opções mesmo que tenha saído da lista.** Sem
+    isso, editar outra coisa no vídeo apagaria o formato sem querer.
+  - O filtro da categoria tem "Sem formato": os 30 imersivos entraram sem
+    classificação, e o que não foi classificado precisa ser achável.
+  - O editor da lista fica na aba Categorias, que é a mesma ideia — recorte do
+    acervo definido no console.
+
+- **Zoom maior na imagem dos cards** do grid (115%). A thumb do YouTube traz
+  margem sobrando, e no imersivo a imagem útil é uma faixa no meio do quadro:
+  sem o zoom, o card virava uma tarja preta com um retângulo pequeno no centro.
+  - O tamanho do fundo é escrito no próprio elemento, e inline vence folha de
+    estilo — por isso ele passou a ler uma variável CSS, que é onde o
+    enquadramento se ajusta sem tocar no JSX.
+
 - **Duração real, lida do YouTube.** Ela era um campo digitado à mão, e por isso
   quase todo card mostrava o mesmo "03:00" de exemplo. Agora o servidor lê o
   `lengthSeconds` da página do vídeo — não precisa de chave de API — e guarda no

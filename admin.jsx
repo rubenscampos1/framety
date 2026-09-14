@@ -401,7 +401,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
         {tab === "overview" && <OverviewPanel vids={vids} cats={cats} clients={clients} setTab={setTab}/>}
         {tab === "videos" && <VideosPanel vids={vids} setVids={setVids} cats={cats} clients={clients}/>}
         {tab === "clientes" && <ClientsPanel clients={clients} setClients={setClients} vids={vids} setVids={setVids}/>}
-        {tab === "categorias" && <CategoriesPanel cats={cats} setCats={setCats}/>}
+        {tab === "categorias" && <><CategoriesPanel cats={cats} setCats={setCats}/><FormatosImersivosPanel/></>}
         {tab === "reel" && <><ReelPanel reelName={reelName} onUpload={handleReelUpload} onRemove={removeReel}/><AccentPanel/><HomeCopyPanel/><InstaPanel/></>}
         {tab === "ia" && <AIPanel/>}
         {tab === "seguranca" && <SecurityPanel/>}
@@ -934,6 +934,61 @@ const ClientsPanel = ({ clients, setClients, vids, setVids }) => {
 };
 
 /* =========================== Categories =========================== */
+/* Lista de formatos de vídeo imersivo (Semicircular, Tradicional, Trapézio…).
+   Fica junto das categorias porque é a mesma ideia: recorte do acervo que o
+   console define. */
+const FormatosImersivosPanel = () => {
+  const [formatos, setFormatos] = React.useState(() => [...(window.FRAMETY_DATA.formatosImersivos || [])]);
+  const [salvando, setSalvando] = React.useState(false);
+  const [salvo, setSalvo] = React.useState(false);
+
+  const salvar = async (lista) => {
+    setSalvando(true);
+    try {
+      const r = await window.API.salvarFormatosImersivos(lista);
+      setFormatos(r.formatos);
+      window.FRAMETY_DATA.formatosImersivos = r.formatos;
+      setSalvo(true); setTimeout(() => setSalvo(false), 2200);
+    } catch (ex) {
+      window.__adminToast?.("Erro ao salvar: " + (ex?.error || ex));
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <div className="hc-panel">
+      <h3>Formatos de vídeo imersivo</h3>
+      <p className="hc-lead">
+        Aparecem como filtro na categoria Imersivo, no cadastro do vídeo e no modo de apresentação.
+        Tirar um da lista não apaga o formato dos vídeos que já o usam.
+      </p>
+      <div className="hc-field">
+        {formatos.map((f, i) => (
+          <div className="hc-row" key={i}>
+            <input type="text" value={f} onChange={(e) => {
+              const n = [...formatos]; n[i] = e.target.value; setFormatos(n);
+            }} />
+            <button className="hc-x" title="Remover" data-cursor="hover"
+              onClick={() => salvar(formatos.filter((_, j) => j !== i))}>
+              <Icon name="trash" size={13} />
+            </button>
+          </div>
+        ))}
+        <button className="hc-add" onClick={() => setFormatos([...formatos, ""])} data-cursor="hover">
+          <Icon name="plus" size={12} /> Adicionar formato
+        </button>
+      </div>
+      <div className="hc-actions">
+        <button className="btn btn-accent" onClick={() => salvar(formatos)} disabled={salvando} data-cursor="hover">
+          {salvando ? "Salvando…" : "Salvar formatos"} <Icon name="arrow-right" size={14} />
+        </button>
+        {salvo && <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#22e07c" }}>✓ salvo</span>}
+      </div>
+    </div>
+  );
+};
+
 const CategoriesPanel = ({ cats, setCats }) => {
   const [dragId,         setDragId]         = React.useState(null);
   const [bgPickerFor,    setBgPickerFor]    = React.useState(null);
@@ -2366,6 +2421,7 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
   // Classificação do empreendimento — listas fixas, combinadas com o comercial.
   const [padrao,  setPadrao]  = React.useState(initialData?.padrao  || "");
   const [formato, setFormato] = React.useState(initialData?.formato || "");
+  const [formatoImersivo, setFormatoImersivo] = React.useState(initialData?.formatoImersivo || "");
   const [cat,      setCat]      = React.useState(initialData?.category || cats[0]?.id || "");
   const [views,    setViews]    = React.useState(initialData?.views || "—");
   const [tags,     setTags]     = React.useState((initialData?.tags||[]).join(", "));
@@ -2415,6 +2471,7 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
       title:    title || "Novo projeto",
       category: cat,
       catLabel: c?.name || "Categoria",
+      formatoImersivo: cat === "imersivo" ? formatoImersivo : "",
       client:   clientNm || "—",
       year:     year || "2026",
       duration: duration || "00:00",
@@ -2512,6 +2569,20 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
               {VIDEO_FORMATOS.map(o => <option key={o.value} value={o.value} style={{background:"#0b0b0f"}}>{o.label}</option>)}
             </select>
           </div>
+          {/* Só faz sentido em vídeo imersivo — em comercial seria mais um
+              campo vazio para ignorar. A lista vem do console, e o valor já
+              gravado entra nas opções mesmo que alguém o tenha tirado de lá:
+              senão editar outra coisa no vídeo apagaria o formato sem querer. */}
+          {cat === "imersivo" && (
+            <div className="field">
+              <label>Formato do imersivo</label>
+              <select value={formatoImersivo} onChange={(e)=>setFormatoImersivo(e.target.value)} style={F}>
+                <option value="" style={{background:"#0b0b0f"}}>— não informado —</option>
+                {[...new Set([...(window.FRAMETY_DATA.formatosImersivos || []), formatoImersivo].filter(Boolean))]
+                  .map(o => <option key={o} value={o} style={{background:"#0b0b0f"}}>{o}</option>)}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Description — contenteditable with paste-image support */}

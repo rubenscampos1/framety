@@ -8828,3 +8828,12 @@ body.home-pronta .whisper.no-ar .whisper-w {
   transition: color 0.25s ease;
 }
 .cat-card:hover .cat-card-legenda { color: #fff; }
+
+/* Zoom da imagem dentro do card do grid. O tamanho do fundo é escrito no
+   próprio elemento (e inline vence CSS), então ele lê esta variável: mexer
+   aqui muda o enquadramento sem tocar no JSX.
+   115% porque a thumb do YouTube traz margem sobrando, e nos imersivos a
+   imagem útil é uma faixa no meio do quadro — sem o zoom, o card virava uma
+   tarja preta com um retângulo pequeno no centro. */
+.cat-grid .cat-card-thumb,
+.client-page-grid .cat-card-thumb { --zoom-thumb: 115%; }

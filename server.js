@@ -57,6 +57,9 @@ const SEED = {
         { id: 'ai-5', title: 'Visual Understanding', imageUrl: '' },
       ],
     },
+    /* Formatos de vídeo imersivo. É lista aberta: o console acrescenta e
+       remove, porque a sala imersiva ganha formato novo com o tempo. */
+    formatosImersivos: ["Semicircular", "Tradicional", "Trapézio"],
     tutorial_video_url: 'https://www.youtube.com/watch?v=myIpuwCCIOA',
     tutorial_title: 'Recebeu a primeira versão do seu vídeo e não sabe como solicitar alterações?',
     tutorial_subtitle: 'Siga este guia rápido para esclarecer suas dúvidas!',
@@ -717,6 +720,7 @@ app.get('/api/data', (req, res) => {
     clients: sorted(db.clients),
     reel: { url: db.settings.reel_url || '', name: db.settings.reel_name || '' },
     aiSection: db.settings.aiSection || JSON.parse(JSON.stringify(SEED.settings.aiSection)),
+    formatosImersivos: db.settings.formatosImersivos || JSON.parse(JSON.stringify(SEED.settings.formatosImersivos)),
     // Textos da home editados no console. `null` = usar o padrao do content.js.
     content: db.settings.siteContent || null,
     // Cor de destaque do site (aba Home do console). Vazio = a cor padrão.
@@ -733,6 +737,22 @@ app.put('/api/videos/reorder', requireAuth, (req, res) => {
   });
   save();
   res.json({ ok: true });
+});
+
+/* Lista de formatos imersivos. Trocar um nome não mexe nos vídeos que já o
+   usam: quem guarda o valor é o vídeo, e o console mostra o que estiver lá
+   mesmo que tenha saído da lista. */
+app.post('/api/formatos-imersivos', requireAuth, (req, res) => {
+  const bruta = Array.isArray(req.body && req.body.formatos) ? req.body.formatos : [];
+  const limpos = [];
+  for (const f of bruta) {
+    const t = String(f || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (t && !limpos.some(x => x.toLowerCase() === t.toLowerCase())) limpos.push(t);
+    if (limpos.length >= 20) break;
+  }
+  db.settings.formatosImersivos = limpos;
+  save();
+  res.json({ ok: true, formatos: limpos });
 });
 
 /* ── Duração real, vinda do YouTube ──────────────────────────────────────────
@@ -1915,6 +1935,7 @@ setInterval(() => {
   if (!db.settings.aiSection.items) db.settings.aiSection.items = JSON.parse(JSON.stringify(SEED.settings.aiSection.items));
   if (db.settings.producoes_pass == null) db.settings.producoes_pass = SEED.settings.producoes_pass;
   if (db.settings.recovery_token == null) db.settings.recovery_token = SEED.settings.recovery_token;
+  if (!db.settings.formatosImersivos) { db.settings.formatosImersivos = JSON.parse(JSON.stringify(SEED.settings.formatosImersivos)); _migrated = true; }
   if (db.settings.tutorial_video_url == null) db.settings.tutorial_video_url = SEED.settings.tutorial_video_url;
   if (db.settings.tutorial_title == null) db.settings.tutorial_title = SEED.settings.tutorial_title;
   if (db.settings.tutorial_subtitle == null) db.settings.tutorial_subtitle = SEED.settings.tutorial_subtitle;

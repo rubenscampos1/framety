@@ -614,7 +614,7 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
                   style={{ '--radius': 12, '--backdrop': 'transparent', '--backup-border': 'transparent' }}>
 
                   <div className={`cat-card-thumb${thumb || isPrev ? "" : ` ${cat?.bgClass || "bg-comm"}`}`}
-                    style={!isPrev && thumb ? { backgroundImage: `url(${thumb})`, backgroundSize: "cover", backgroundPosition: "center" } : {}}>
+                    style={!isPrev && thumb ? { backgroundImage: `url(${thumb})`, backgroundSize: "var(--zoom-thumb, cover)", backgroundPosition: "center" } : {}}>
 
                     {isPrev && ytId && (
                       <iframe

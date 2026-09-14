@@ -25,6 +25,7 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
   let videos = publicados;
   if (sel.tipo === "cat")     videos = videos.filter(v => v.category === sel.valor);
   if (sel.tipo === "padrao")  videos = videos.filter(v => (v.padrao  || "") === sel.valor);
+  if (sel.tipo === "formatoImersivo") videos = videos.filter(v => (v.formatoImersivo || "") === sel.valor);
   if (sel.tipo === "formato") videos = videos.filter(v => (v.formato || "") === sel.valor);
   if (search) videos = videos.filter(v => v.title.toLowerCase().includes(search.toLowerCase()) || (v.client || "").toLowerCase().includes(search.toLowerCase()));
   if (sort === "views") {
@@ -110,6 +111,16 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
               seleção de cada vez. A lista fechada fica sempre à vista (esconder o
               que ainda não foi classificado escondia a própria existência do
               recorte); quem está zerado fica apagado e leva ao aviso de vazio. */}
+          <div className="pres-side-group">
+            <div className="pres-side-label">— Formato do imersivo</div>
+            {(window.FRAMETY_DATA.formatosImersivos || []).map(o => (
+              <button key={o} className={"pres-side-item compact " + (sel.tipo==="formatoImersivo"&&sel.valor===o?"active":"") + (conta("formatoImersivo", o) ? "" : " vazio")} onClick={()=>setSel({tipo:"formatoImersivo",valor:o})} data-cursor="hover">
+                <span>{o}</span>
+                <span className="num">{conta("formatoImersivo", o)}</span>
+              </button>
+            ))}
+          </div>
+
           <div className="pres-side-group">
             <div className="pres-side-label">— Padrão do empreendimento</div>
             {["Altíssimo","Alto","Médio","Baixo","Popular"].map(o => (
