@@ -798,29 +798,80 @@ async function duracaoDoYoutube(url) {
    folhas seguidas, e seria uma leitura da página do YouTube para cada uma. */
 const tirasEmCache = new Map();
 
+/* Cabeçalhos de navegador de verdade. O Cookie de consentimento importa: vindo
+   de um servidor, sem ele o YouTube às vezes devolve a tela de "aceite os
+   termos" em vez da página do vídeo — e aí não há receita nenhuma para ler.
+   Foi o que acontecia no Render enquanto aqui, de casa, funcionava. */
+const CABECALHOS_YT = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+  'Cookie': 'CONSENT=YES+cb.20210328-17-p0.pt+FX+100',
+};
+/* Chave pública do player do YouTube na web — a mesma que qualquer navegador
+   usa ao abrir um vídeo. */
+const CHAVE_PLAYER_YT = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+
+const prazo = () => (AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined);
+
+/* A receita bruta, por dois caminhos. O primeiro é o endpoint que o próprio
+   player usa: devolve JSON, não muda de forma quando o YouTube mexe no HTML, e
+   não cai na tela de consentimento. O segundo é a página do vídeo, para o dia
+   em que o primeiro mudar. */
+async function especDaTira(id) {
+  try {
+    const r = await fetch('https://www.youtube.com/youtubei/v1/player?key=' + CHAVE_PLAYER_YT, {
+      method: 'POST',
+      signal: prazo(),
+      headers: Object.assign({ 'Content-Type': 'application/json' }, CABECALHOS_YT),
+      body: JSON.stringify({
+        videoId: id,
+        context: { client: { clientName: 'WEB', clientVersion: '2.20240101.00.00', hl: 'pt', gl: 'BR' } },
+      }),
+    });
+    if (r.ok) {
+      const j = await r.json();
+      const spec = j && j.storyboards && j.storyboards.playerStoryboardSpecRenderer
+        && j.storyboards.playerStoryboardSpecRenderer.spec;
+      if (spec) return { spec, seg: parseInt((j.videoDetails || {}).lengthSeconds, 10) || 0, via: 'player' };
+    }
+  } catch (e) { /* cai para a página */ }
+
+  const r2 = await fetch('https://www.youtube.com/watch?v=' + id, { signal: prazo(), headers: CABECALHOS_YT });
+  if (!r2.ok) return { erro: 'o YouTube respondeu ' + r2.status };
+  const html = await r2.text();
+
+  const marca = '"playerStoryboardSpecRenderer":{"spec":"';
+  const i = html.indexOf(marca);
+  if (i < 0) {
+    /* Distinguir "vídeo sem tira" de "não foi possível ler a página" poupa meia
+       hora de caça ao erro errado. */
+    const pareceVideo = html.indexOf('"videoDetails"') >= 0;
+    return { erro: pareceVideo ? 'este vídeo não tem tira de quadros' : 'não consegui ler a página do vídeo' };
+  }
+  const fimSpec = html.indexOf('"', i + marca.length);
+  let spec;
+  /* O trecho é um texto JSON: o próprio JSON.parse desfaz os escapes (e o & vem
+     escapado), sem precisar sair trocando caractere na mão. */
+  try { spec = JSON.parse('"' + html.slice(i + marca.length, fimSpec) + '"'); }
+  catch (e) { return { erro: 'não entendi a receita da tira' }; }
+
+  const mDur = '"lengthSeconds":"';
+  const iDur = html.indexOf(mDur);
+  return { spec, seg: iDur < 0 ? 0 : (parseInt(html.slice(iDur + mDur.length), 10) || 0), via: 'pagina' };
+}
+
+/* A receita fica guardada por dez minutos: quem mexe no slider pede várias
+   folhas seguidas, e seria uma consulta ao YouTube para cada uma. */
 async function receitaDaTira(id) {
   const guardado = tirasEmCache.get(id);
   if (guardado && Date.now() - guardado.quando < 10 * 60 * 1000) return guardado.receita;
 
-  const parar = AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined;
-  const r = await fetch('https://www.youtube.com/watch?v=' + id, {
-    signal: parar,
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
-  });
-  if (!r.ok) return null;
-  const html = await r.text();
+  let bruto;
+  try { bruto = await especDaTira(id); }
+  catch (e) { return { erro: 'não consegui falar com o YouTube' }; }
+  if (!bruto || bruto.erro) return { erro: (bruto && bruto.erro) || 'não consegui ler a tira' };
 
-  const marca = '"playerStoryboardSpecRenderer":{"spec":"';
-  const i = html.indexOf(marca);
-  if (i < 0) return null;                       // vídeo curto demais, ao vivo ou privado
-  const fim = html.indexOf('"', i + marca.length);
-  /* O trecho é um texto JSON: o próprio JSON.parse desfaz os escapes (e o & vem
-     escapado), sem precisar sair trocando caractere na mão. */
-  let spec;
-  try { spec = JSON.parse('"' + html.slice(i + marca.length, fim) + '"'); }
-  catch (e) { return null; }
-
-  const partes = spec.split('|');
+  const partes = String(bruto.spec).split('|');
   const base = partes[0];
   const niveis = partes.slice(1).map((p, n) => {
     const c = p.split('#');
@@ -829,13 +880,10 @@ async function receitaDaTira(id) {
   });
   /* O nível 0 é uma folha única de miniaturas minúsculas, sem intervalo; dos
      outros, o último é o de melhor resolução. */
-  const nivel = niveis.filter(n => n.intervalo > 0 && n.largura > 0).pop();
-  if (!nivel) return null;
+  const nivel = niveis.filter(n => n.intervalo > 0 && n.largura > 0 && n.quadros > 0).pop();
+  if (!nivel) return { erro: 'este vídeo não tem tira de quadros' };
 
-  const mDur = '"lengthSeconds":"';
-  const iDur = html.indexOf(mDur);
-  const seg = iDur < 0 ? 0 : (parseInt(html.slice(iDur + mDur.length), 10) || 0);
-  const receita = Object.assign({}, nivel, { base, duracao: seg });
+  const receita = Object.assign({}, nivel, { base, duracao: bruto.seg, via: bruto.via });
   tirasEmCache.set(id, { quando: Date.now(), receita });
   return receita;
 }
@@ -847,7 +895,7 @@ app.get('/api/youtube/storyboard/:id', requireAuth, async (req, res) => {
   if (!ID_YT_OK(req.params.id)) return res.status(400).json({ error: 'id inválido' });
   try {
     const t = await receitaDaTira(req.params.id);
-    if (!t) return res.status(404).json({ error: 'este vídeo não tem tira de quadros' });
+    if (!t || t.erro) return res.status(404).json({ error: (t && t.erro) || 'não consegui ler a tira' });
     res.json({
       quadros: t.quadros, colunas: t.colunas, linhas: t.linhas,
       largura: t.largura, altura: t.altura,
@@ -868,8 +916,10 @@ app.get('/api/youtube/sb/:id/:folha', async (req, res) => {
   if (!ID_YT_OK(req.params.id) || !(folha >= 0 && folha < 200)) return res.status(400).end();
   try {
     const t = await receitaDaTira(req.params.id);
-    if (!t) return res.status(404).end();
-    if (folha >= Math.ceil(t.quadros / (t.colunas * t.linhas))) return res.status(404).end();
+    /* Com corpo, e não só o código: é por aqui que dá para descobrir de fora
+       por que a tira não veio — a outra rota exige sessão. */
+    if (!t || t.erro) return res.status(404).json({ error: (t && t.erro) || 'não consegui ler a tira' });
+    if (folha >= Math.ceil(t.quadros / (t.colunas * t.linhas))) return res.status(404).json({ error: 'folha fora da tira' });
     const url = t.base
       .split('$L').join(String(t.nivel))
       .split('$N').join(t.nome.split('$M').join(String(folha)))

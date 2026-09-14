@@ -2497,7 +2497,9 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
     setTira(null); setTiraErro("");
     window.API.tiraDoYoutube(ytId)
       .then(t => { if (!vivo) return; setTira(t); setQuadro(Math.floor(t.quadros / 2)); })
-      .catch(e => { if (vivo) setTiraErro((e && e.error) || "este vídeo não tem tira de quadros"); });
+      /* A mensagem vem do servidor: ele sabe se o vídeo não tem tira, se o
+         YouTube não respondeu ou se a página veio diferente do esperado. */
+      .catch(e => { if (vivo) setTiraErro((e && e.error) || "não consegui carregar a tira de quadros"); });
     return () => { vivo = false; };
   }, [framePicker, ytId]);
 
