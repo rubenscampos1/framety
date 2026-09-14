@@ -2127,7 +2127,21 @@ body.in-cat-page.cat-peek .cat-page {
   padding: 28px 20px;
   display: flex; flex-direction: column; gap: 8px;
   transition: opacity 0.18s ease, padding 0.28s cubic-bezier(.4,0,.2,1);
+  /* A lista cresceu (Novidades, Marca, Minigame) e passou da altura da tela:
+     sem tratar o transbordo, o fim do menu — Segurança, Apresentação, Sair —
+     ficava inalcançável. min-height:0 é o que permite ao item do grid encolher
+     abaixo do próprio conteúdo; sem ele, overflow não tem efeito.
+     A barra daqui é discreta de propósito: a branca da página seria pesada
+     demais numa coluna de 240px. */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.22) transparent;
 }
+.admin-side::-webkit-scrollbar { width: 6px; }
+.admin-side::-webkit-scrollbar-track { background: transparent; }
+.admin-side::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); border-radius: 999px; border: 0; }
 /* precisa vir depois das duas regras acima: mesma especificidade, ganha a última */
 @media (prefers-reduced-motion: reduce) {
   .admin-shell, .admin-side { transition: none; }

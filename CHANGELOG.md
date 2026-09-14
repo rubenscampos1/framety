@@ -5,6 +5,15 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **O menu do console deixou de ser cortado embaixo.** A lista cresceu com as
+  abas novas (Novidades, Marca & prévia, Minigame) e passou da altura da tela;
+  sem tratar o transbordo, o fim dela — Segurança, Modo apresentação e Sair —
+  ficava inalcançável. Agora a coluna rola.
+  - **`min-height: 0` é o que faz funcionar**: sem ele, o item do grid não
+    encolhe abaixo do próprio conteúdo e `overflow` não tem efeito nenhum.
+  - A barra de rolagem dali é discreta (6px, cinza), não a branca da página:
+    numa coluna de 240px a branca seria pesada demais.
+
 - **Cabeçalho da categoria mais baixo: 285px viraram 184.** Ele comia mais
   espaço que uma fileira inteira de cards antes de o primeiro vídeo aparecer.
   - O que mais pesava não era o título, era a **coluna de informações à direita**
