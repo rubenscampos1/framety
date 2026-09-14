@@ -5,6 +5,12 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Em 1920x1080 o site volta ao tamanho escrito.** O primeiro degrau da escada
+  de ampliação abria em 1800px, então a resolução mais comum de monitor já
+  pegava 15% de zoom: tudo um pouco grande demais, e 140px de altura útil a
+  menos. O degrau passou a abrir em 2000px. A escada acima segue igual — 1.15
+  a partir de 2048, 1.35 em 2560, 1.9 em 4K.
+
 - **"Iniciar projeto", no topo, leva ao mesmo lugar que "Entre em contato"**, o
   botão do quadro lá no pé da página. É o mesmo endereço, editável no console:
   mudar um muda os dois. Se ele ficar vazio (ou deixar de ser um link de

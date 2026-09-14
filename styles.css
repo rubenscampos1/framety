@@ -184,11 +184,16 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
    A escada pede largura E altura: numa tela larga e baixa (ultrawide), ampliar
    pela largura faria o conteúdo não caber na vertical.
 
+   O primeiro degrau só começa DEPOIS de 1920x1080, que é a resolução para a
+   qual o site foi desenhado: ali o tamanho certo é o tamanho escrito. Ampliar
+   já nela (o degrau antigo abria em 1800px) deixava tudo um pouco grande demais
+   e ainda comia 140px de altura útil.
+
    --zoom acompanha o valor porque as unidades de viewport precisam dele: veja
    o calc() em volta de cada 100vh acima. */
 :root { --zoom: 1; }
 
-@media (min-width: 1800px) and (min-height: 800px)  { :root { zoom: 1.15; --zoom: 1.15; } }
+@media (min-width: 2000px) and (min-height: 900px)  { :root { zoom: 1.15; --zoom: 1.15; } }
 @media (min-width: 2200px) and (min-height: 1000px) { :root { zoom: 1.35; --zoom: 1.35; } }
 @media (min-width: 2800px) and (min-height: 1300px) { :root { zoom: 1.6;  --zoom: 1.6;  } }
 @media (min-width: 3400px) and (min-height: 1500px) { :root { zoom: 1.9;  --zoom: 1.9;  } }
