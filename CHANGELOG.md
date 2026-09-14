@@ -5,20 +5,19 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
-- **Slider para escolher o quadro exato da capa**, no seletor de momento do
-  formulário de vídeo. Além das quatro capas (início/¼/meio/¾), dá para varrer o
-  vídeo inteiro: o quadro aparece na prévia e "Usar este quadro" envia aquela
-  imagem como thumbnail.
-  - Os quadros saem da tira que o YouTube usa no arrastar da linha do tempo —
-    um a cada dois segundos, a 320x180. É menos do que as capas (480x360), e é
-    o preço de escolher o momento; para máxima qualidade continua valendo
-    "Carregar imagem" com um print.
-  - Duas rotas novas no servidor porque o navegador não alcança nenhuma das
-    pontas: a receita da tira está na página do vídeo (outro domínio) e as
-    folhas vêm sem CORS, o que impediria recortar o quadro no canvas. A receita
-    fica em cache por dez minutos — mexer no slider pede várias folhas seguidas.
-  - A imagem enviada é o recorte de verdade, guardado como qualquer outra capa:
-    nada depende de endereço assinado do YouTube, que expira.
+- **Slider para escolher o segundo exato da capa, a partir do arquivo do
+  vídeo.** No seletor de momento, "Abrir arquivo do vídeo" carrega o arquivo no
+  próprio navegador; o slider varre a duração inteira e "Usar este quadro" envia
+  aquele instante como thumbnail. O arquivo não sai da máquina — só a imagem
+  final é enviada — e a capa sai na resolução do original (1920x1080 num teste,
+  contra os 480x360 das capas do YouTube).
+  - Primeiro tentei tirar os quadros do YouTube, da fita que aparece ao arrastar
+    a linha do tempo do player. **Funciona da minha máquina e não funciona do
+    servidor publicado**: a receita dessa fita some da página quando o pedido
+    vem de um datacenter (conferido — a página chega inteira, 1,1MB, com os
+    dados do vídeo e sem tela de consentimento, só sem a fita), e o endpoint do
+    player responde UNPLAYABLE para todos os clientes. Esse caminho foi
+    removido em vez de ficar como uma opção que falha em produção.
 
 - **"Vídeos em destaque:" desceu mais 80px**, quase encostando na primeira
   fileira do corredor. Quem desce o título é o palco subindo, e não mais espaço
