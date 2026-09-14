@@ -5,6 +5,11 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **O item ativo do menu do console é branco com texto em azul escuro.** Era um
+  vermelho de 10% com o texto na cor de destaque — sobra do tema antigo. O azul
+  sai de `--accent-deep`, que o próprio console reescreve junto com a Cor de
+  destaque: não é mais uma cor solta na folha de estilo.
+
 - **Corrigido: a capa exibida voltou a ser o quadro escolhido no console.** Ao
   aumentar a resolução das capas eu troquei `1.jpg` por `hqdefault.jpg` — que
   não é o mesmo quadro, é a capa padrão do YouTube. Quem escolheu o frame de um

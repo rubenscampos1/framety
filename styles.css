@@ -2167,7 +2167,7 @@ body.in-cat-page.cat-peek .cat-page {
   transition: all 0.2s ease;
 }
 .admin-nav-item:hover { background: rgba(255,255,255,0.03); color: var(--ink); }
-.admin-nav-item.active { background: rgba(255,45,45,0.1); color: var(--accent); }
+.admin-nav-item.active { background: #fff; color: var(--accent-deep); }
 .admin-nav-item .ico {
   width: 16px; height: 16px;
   display: flex; align-items: center; justify-content: center;
@@ -4227,7 +4227,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   transform: scaleY(0.4);
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
-.admin-nav-item.active::before { opacity: 1; transform: scaleY(1); }
+.admin-nav-item.active::before { opacity: 1; transform: scaleY(1); background: var(--accent-deep); }
 
 /* ── Cat list item — left accent reveal on hover ─────────── */
 .cat-list-item { position: relative; }
