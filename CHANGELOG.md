@@ -5,6 +5,19 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Corrigido: a capa exibida voltou a ser o quadro escolhido no console.** Ao
+  aumentar a resolução das capas eu troquei `1.jpg` por `hqdefault.jpg` — que
+  não é o mesmo quadro, é a capa padrão do YouTube. Quem escolheu o frame de um
+  quarto do vídeo via outro. (Medido: `1.jpg` e `hq1.jpg` diferem 4 numa escala
+  de 0 a 255; `1.jpg` e `hqdefault.jpg` diferem 26.)
+  - O mesmo quadro existe em vários tamanhos só trocando o prefixo: `hq1`
+    (480x360), `sd1` (640x480), `maxres1` (1280x720). Agora o site lê o NÚMERO
+    do quadro — que é a escolha de quem cadastrou — e mexe só no prefixo.
+  - Cards e listas pedem `hq1/hq2/hq3`, que existem sempre: nesses lugares a
+    capa entra como fundo de CSS, onde não há como tratar erro de carregamento.
+  - O corredor de destaques tenta `maxres` → `sd` → `hq`, parando no primeiro
+    que existir de verdade.
+
 - **Cadastrar cliente sem sair do formulário do vídeo.** O dropdown de cliente
   ganhou "+ Novo cliente…": escolher a opção troca o menu por um campo de nome,
   Enter cria e já deixa o cliente selecionado. A logo continua na aba Clientes,

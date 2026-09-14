@@ -10,55 +10,83 @@ const getVimeoId = (url) => {
   const m = url.match(/vimeo\.com\/(\d+)/);
   return m ? m[1] : null;
 };
-/* A capa gravada no vídeo pode ser uma imagem do próprio YouTube — os cadastros
-   importados vieram assim, e vários apontam para 1.jpg / 3.jpg, que são os
-   quadrinhos de 120x90 da barra de progresso. Reconhecer o endereço permite
-   pedir o mesmo quadro no tamanho que se precisa, em vez de exibir a miniatura
-   da miniatura. */
-const idDaCapaYoutube = (url) => {
+/* A capa gravada no vídeo pode ser uma imagem do próprio YouTube: os cadastros
+   importados vieram assim, e o seletor de frame do console grava 1.jpg, 2.jpg
+   ou 3.jpg — o quadro a um quarto, na metade e a três quartos do vídeo. Esses
+   arquivos têm 120x90.
+
+   O MESMO quadro existe maior, só trocando o prefixo: hq1 (480x360), sd1
+   (640x480) e maxres1 (1280x720). Por isso a leitura abaixo separa o número do
+   quadro do prefixo de tamanho — o quadro é a escolha de quem cadastrou e não
+   pode mudar; o tamanho é com o site. */
+const capaYoutube = (url) => {
   const s = String(url || "");
   const i = s.indexOf("img.youtube.com/vi/");
   if (i < 0) return null;
-  const id = s.slice(i + "img.youtube.com/vi/".length).split("/")[0];
-  return id.length === 11 ? id : null;
+  const partes = s.slice(i + "img.youtube.com/vi/".length).split("/");
+  const id = partes[0] || "";
+  if (id.length !== 11) return null;
+  const arquivo = (partes[1] || "").split("?")[0];
+  const ponto = arquivo.lastIndexOf(".");
+  const base = ponto > 0 ? arquivo.slice(0, ponto) : arquivo;   // maxres1 | hq1 | 1 | hqdefault
+  const numero = base.slice(-1);
+  const prefixo = base.slice(0, -1);
+  const eQuadro = base.length > 0
+    && ["1", "2", "3"].indexOf(numero) >= 0
+    && ["", "hq", "mq", "sd", "maxres"].indexOf(prefixo) >= 0;
+  return { id, arquivo, quadro: eQuadro ? numero : null };
 };
+const enderecoYt = (id, arquivo) => "https://img.youtube.com/vi/" + id + "/" + arquivo;
+/* Do maior para o menor, sempre no mesmo quadro. */
+const escadaYt = (id, quadro) => (quadro
+  ? ["maxres" + quadro, "sd" + quadro, "hq" + quadro]
+  : ["maxresdefault", "sddefault", "hqdefault"]).map(f => enderecoYt(id, f + ".jpg"));
+
 const getThumbUrl = (v, largura = 800) => {
-  const capaYt = idDaCapaYoutube(v.thumbUrl);
-  if (capaYt) return `https://img.youtube.com/vi/${capaYt}/hqdefault.jpg`;
+  const capa = capaYoutube(v.thumbUrl);
+  if (capa) {
+    /* hq1/hq2/hq3 existem sempre, e aqui isso importa: em vários lugares a capa
+       entra como fundo de CSS, onde não há como tratar erro de carregamento —
+       pedir maxres sem rede de segurança deixaria o card cinza. */
+    if (capa.quadro) return enderecoYt(capa.id, "hq" + capa.quadro + ".jpg");
+    if (!capa.arquivo || capa.arquivo === "default.jpg") return enderecoYt(capa.id, "hqdefault.jpg");
+    return v.thumbUrl;   // já é uma capa de tamanho decente, gravada assim
+  }
   if (v.thumbUrl) return IMG_CDN(v.thumbUrl, largura);
   const ytId = getYouTubeId(v.videoUrl);
   // hqdefault always exists (maxresdefault 404s for non-HD videos → broken thumb).
-  if (ytId) return `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+  if (ytId) return enderecoYt(ytId, "hqdefault.jpg");
   return null;
 };
 
-/* A mesma capa, na maior resolução que existir. hqdefault tem 480x360 e
-   aparece lavada num card de meia tela; maxresdefault tem 1280x720, mas só
-   existe se o vídeo foi enviado em HD — daí vir com endereço reserva em vez de
-   um endereço só. Quem usa põe o reserva em data-reserva e o onError em
-   thumbReserva; sem isso um vídeo antigo ficaria com o quadro vazio. */
+/* A mesma capa, na maior resolução que existir — e no mesmo quadro. Como a
+   versão grande pode não existir, vem com uma lista de reserva: quem usa põe a
+   lista em data-reserva e o onError/onLoad em thumbReserva. */
 const getThumbHD = (v, largura = 1600) => {
-  /* Capa do YouTube (inclusive a gravada no vídeo) vira maxresdefault; o resto
-     é arquivo nosso, e aí é o Cloudinary que entrega no tamanho pedido. */
-  const ytId = idDaCapaYoutube(v.thumbUrl) || (v.thumbUrl ? null : getYouTubeId(v.videoUrl));
-  if (!ytId && v.thumbUrl) return { src: IMG_CDN(v.thumbUrl, largura), reserva: "" };
-  if (ytId) return {
-    src: `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`,
-    reserva: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
-  };
+  const capa = capaYoutube(v.thumbUrl);
+  if (capa) {
+    const urls = escadaYt(capa.id, capa.quadro);
+    return { src: urls[0], reserva: urls.slice(1).join(",") };
+  }
+  if (v.thumbUrl) return { src: IMG_CDN(v.thumbUrl, largura), reserva: "" };
+  const ytId = getYouTubeId(v.videoUrl);
+  if (ytId) {
+    const urls = escadaYt(ytId, null);
+    return { src: urls[0], reserva: urls.slice(1).join(",") };
+  }
   return { src: null, reserva: "" };
 };
 const thumbReserva = (e) => {
   const img = e.currentTarget;
-  const r = img.dataset.reserva;
-  if (!r) return;                       // já trocou uma vez: não entra em laço
-  /* Quando não existe maxresdefault, o YouTube responde 404 mas manda no corpo
-     uma imagem cinza de 120x90 — e o navegador chama isso de carregamento bem
-     sucedido. Esperar pelo onError deixava o card com a tal imagem cinza; por
-     isso a conferência é o tamanho do que chegou. */
+  const lista = (img.dataset.reserva || "").split(",").filter(Boolean);
+  if (!lista.length) return;   // acabaram as reservas: não entra em laço
+  /* Quando a versão grande não existe, o YouTube responde 404 mas manda no
+     corpo uma imagem cinza de 120x90 — e o navegador chama isso de
+     carregamento bem sucedido. Esperar pelo onError deixava o card com a tal
+     imagem cinza; por isso a conferência é o tamanho do que chegou. */
   if (e.type === "load" && img.naturalWidth > 120) return;
-  img.dataset.reserva = "";
-  img.src = r;
+  img.dataset.reserva = lista.slice(1).join(",");
+  img.src = lista[0];
 };
 
 const ClientBadge = ({ name, size = 24 }) => {
