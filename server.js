@@ -840,13 +840,23 @@ async function especDaTira(id) {
   if (!r2.ok) return { erro: 'o YouTube respondeu ' + r2.status };
   const html = await r2.text();
 
-  const marca = '"playerStoryboardSpecRenderer":{"spec":"';
-  const i = html.indexOf(marca);
-  if (i < 0) {
-    /* Distinguir "vídeo sem tira" de "não foi possível ler a página" poupa meia
-       hora de caça ao erro errado. */
-    const pareceVideo = html.indexOf('"videoDetails"') >= 0;
-    return { erro: pareceVideo ? 'este vídeo não tem tira de quadros' : 'não consegui ler a página do vídeo' };
+  /* Procura em dois passos em vez de casar um texto inteiro de uma vez: a
+     ordem das chaves no JSON da página muda, e exigir
+     '"playerStoryboardSpecRenderer":{"spec":"' grudado falhava à toa. */
+  const iRend = html.indexOf('playerStoryboardSpecRenderer');
+  const marca = '"spec":"';
+  const i = iRend < 0 ? -1 : html.indexOf(marca, iRend);
+  if (i < 0 || i - iRend > 400) {
+    /* Contar o que a página tinha poupa meia hora de caça ao erro errado —
+       "vídeo sem tira", "veio a tela de consentimento" e "veio outra coisa" se
+       parecem de fora e pedem correções diferentes. */
+    return { erro: 'este vídeo não tem tira de quadros', pistas: {
+      bytes: html.length,
+      temVideoDetails: html.indexOf('"videoDetails"') >= 0,
+      temPalavraStoryboard: html.indexOf('storyboard') >= 0,
+      temRenderer: iRend >= 0,
+      pedeConsentimento: html.indexOf('consent.youtube.com') >= 0 || html.indexOf('Before you continue') >= 0,
+    } };
   }
   const fimSpec = html.indexOf('"', i + marca.length);
   let spec;
@@ -868,8 +878,8 @@ async function receitaDaTira(id) {
 
   let bruto;
   try { bruto = await especDaTira(id); }
-  catch (e) { return { erro: 'não consegui falar com o YouTube' }; }
-  if (!bruto || bruto.erro) return { erro: (bruto && bruto.erro) || 'não consegui ler a tira' };
+  catch (e) { return { erro: 'não consegui falar com o YouTube: ' + (e && e.message) }; }
+  if (!bruto || bruto.erro) return { erro: (bruto && bruto.erro) || 'não consegui ler a tira', pistas: bruto && bruto.pistas };
 
   const partes = String(bruto.spec).split('|');
   const base = partes[0];
@@ -918,7 +928,7 @@ app.get('/api/youtube/sb/:id/:folha', async (req, res) => {
     const t = await receitaDaTira(req.params.id);
     /* Com corpo, e não só o código: é por aqui que dá para descobrir de fora
        por que a tira não veio — a outra rota exige sessão. */
-    if (!t || t.erro) return res.status(404).json({ error: (t && t.erro) || 'não consegui ler a tira' });
+    if (!t || t.erro) return res.status(404).json({ error: (t && t.erro) || 'não consegui ler a tira', pistas: t && t.pistas });
     if (folha >= Math.ceil(t.quadros / (t.colunas * t.linhas))) return res.status(404).json({ error: 'folha fora da tira' });
     const url = t.base
       .split('$L').join(String(t.nivel))
