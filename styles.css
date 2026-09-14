@@ -8781,3 +8781,10 @@ body.home-pronta .whisper.no-ar .whisper-w {
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
+
+/* Enquanto a partida corre, o cursor some da tela inteira do jogo — não só de
+   cima do campo. Com o ponteiro preso o navegador já o esconde; isto cobre o
+   caso em que prender não é permitido (página embutida, navegador antigo), que
+   é justamente quando a seta aparecia atravessada no meio do jogo. */
+.play-tela.jogando,
+.play-tela.jogando * { cursor: none !important; }

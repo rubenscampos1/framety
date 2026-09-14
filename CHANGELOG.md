@@ -5,6 +5,22 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **O ponteiro some e o carro obedece de qualquer canto da tela.** Enquanto a
+  partida corre, o jogo prende o ponteiro ao campo: o cursor desaparece, o mouse
+  não sai da janela e o movimento chega como deslocamento em vez de posição.
+  Resolve as duas queixas de uma vez — a seta deixa de atravessar o jogo, e a
+  mão longe do campo continua valendo, porque não existe mais dentro e fora.
+  - **Prender é pedido no clique de "Começar"**, que é o gesto que o navegador
+    exige; o fim da partida devolve o cursor, necessário para digitar o nome.
+  - **Quando prender não é permitido** (página embutida num painel, navegador
+    antigo), nada quebra: o controle volta a ser por posição, mas ouvindo o
+    documento inteiro em vez de só o campo — o carro continua respondendo de
+    qualquer lugar da tela. E o cursor some assim mesmo, por CSS, na tela
+    inteira do jogo enquanto se joga.
+  - Toda recusa do navegador é engolida: promessa rejeitada sem tratamento
+    virava erro vermelho no console de quem só queria jogar.
+  - Nada disso toca o placar: a mudança é só na tela do jogo.
+
 - **A faixa preta no topo era do arquivo do reel, não da página.** O vídeo é
   exportado em cinemascope: o quadro é 1920×1080, mas com tarjas pretas coladas
   em cima (115px) e embaixo (136px). Como a capa é colada na borda superior da

@@ -284,7 +284,27 @@ const MiniGame = ({ onSair }) => {
     setRegistrado(false);
   }, []);
 
-  const comecar = React.useCallback(() => { novaPartida(); setFase("jogando"); }, [novaPartida]);
+  const comecar = React.useCallback(() => {
+    novaPartida();
+    setFase("jogando");
+    /* unadjustedMovement tira a aceleração do mouse do sistema: num jogo, o
+       mesmo gesto precisa andar sempre a mesma distância. Quem não conhece a
+       opção recusa a promessa — aí vai o pedido simples. E quem não permite
+       prender o ponteiro (a página embutida num painel, por exemplo) recusa os
+       dois: o jogo segue no controle por posição, que é a rede de segurança.
+       Toda recusa é engolida aqui; promessa rejeitada sem tratamento vira erro
+       vermelho no console de quem só queria jogar. */
+    const cv = canvasRef.current;
+    if (cv && cv.requestPointerLock) {
+      const pedir = (opcoes) => {
+        try {
+          const p = opcoes ? cv.requestPointerLock(opcoes) : cv.requestPointerLock();
+          if (p && p.catch) p.catch(() => { if (opcoes) pedir(null); });
+        } catch (e) { if (opcoes) pedir(null); }
+      };
+      pedir({ unadjustedMovement: true });
+    }
+  }, [novaPartida]);
 
   /* ── laço ── */
   React.useEffect(() => {
@@ -446,35 +466,66 @@ const MiniGame = ({ onSair }) => {
     return () => cancelAnimationFrame(raf);
   }, [fase, carro]);
 
-  /* ── controles ── */
+  /* ── controles ──
+     Enquanto se joga, o ponteiro fica preso ao campo: o cursor some, o mouse
+     não sai da janela e o movimento chega como deslocamento, não como posição.
+     Isso resolve as duas coisas de uma vez — a seta do mouse deixa de passar
+     por cima do jogo, e o carro obedece mesmo com a mão longe do campo, porque
+     não existe mais "dentro" e "fora".
+
+     Se o navegador recusar (ou o visitante apertar Esc, que solta o ponteiro),
+     nada quebra: o controle volta a ser por posição absoluta, e agora ouvindo o
+     documento inteiro em vez de só o canvas, para o carro continuar respondendo
+     com o ponteiro em qualquer lugar da tela. */
   React.useEffect(() => {
     const cv = canvasRef.current;
     if (!cv) return;
 
-    const paraLogico = (clienteX) => {
-      const r = cv.getBoundingClientRect();
-      return ((clienteX - r.left) / r.width) * JOGO_L;
+    const porLogico = () => JOGO_L / (cv.getBoundingClientRect().width || 1);
+    const mover = (x) => {
+      const e = estadoRef.current;
+      if (e) e.alvoX = Math.max(CARRO_L / 2, Math.min(JOGO_L - CARRO_L / 2, x));
     };
-    const mover = (x) => { if (estadoRef.current) estadoRef.current.alvoX = x; };
 
-    const onMouse = (ev) => mover(paraLogico(ev.clientX));
-    const onToque = (ev) => { if (ev.touches[0]) { ev.preventDefault(); mover(paraLogico(ev.touches[0].clientX)); } };
+    const onMouse = (ev) => {
+      const e = estadoRef.current;
+      if (!e) return;
+      if (document.pointerLockElement === cv) mover(e.alvoX + ev.movementX * porLogico());
+      else mover((ev.clientX - cv.getBoundingClientRect().left) * porLogico());
+    };
+    const onToque = (ev) => {
+      if (!ev.touches[0]) return;
+      ev.preventDefault();
+      mover((ev.touches[0].clientX - cv.getBoundingClientRect().left) * porLogico());
+    };
     const onTecla = (ev) => {
       const e = estadoRef.current;
       if (!e) return;
-      if (ev.key === "ArrowLeft")  { e.alvoX = Math.max(CARRO_L / 2, e.alvoX - 60); ev.preventDefault(); }
-      if (ev.key === "ArrowRight") { e.alvoX = Math.min(JOGO_L - CARRO_L / 2, e.alvoX + 60); ev.preventDefault(); }
+      if (ev.key === "ArrowLeft")  { mover(e.alvoX - 60); ev.preventDefault(); }
+      if (ev.key === "ArrowRight") { mover(e.alvoX + 60); ev.preventDefault(); }
     };
 
-    cv.addEventListener("mousemove", onMouse);
+    // no documento, não no canvas: preso, o evento nem chega ao canvas; solto,
+    // é o que faz o carro obedecer de qualquer canto da tela
+    document.addEventListener("mousemove", onMouse);
     cv.addEventListener("touchmove", onToque, { passive: false });
     window.addEventListener("keydown", onTecla);
     return () => {
-      cv.removeEventListener("mousemove", onMouse);
+      document.removeEventListener("mousemove", onMouse);
       cv.removeEventListener("touchmove", onToque);
       window.removeEventListener("keydown", onTecla);
     };
   }, []);
+
+  /* Fim de jogo devolve o cursor — ele é necessário para digitar o nome e
+     clicar nos botões. Prender de novo acontece no clique de "Começar", que é
+     o gesto que o navegador exige para permitir. */
+  React.useEffect(() => {
+    const cv = canvasRef.current;
+    if (fase !== "jogando" && cv && document.pointerLockElement === cv) {
+      document.exitPointerLock();
+    }
+  }, [fase]);
 
   /* Espaço começa; Esc sai. */
   React.useEffect(() => {
@@ -509,7 +560,7 @@ const MiniGame = ({ onSair }) => {
   const lideres = [...placar].sort((a, b) => b.pontos - a.pontos);
 
   return (
-    <div className="play-tela" data-screen-label="10 Play">
+    <div className={"play-tela" + (fase === "jogando" ? " jogando" : "")} data-screen-label="10 Play">
       <button className="play-sair" onClick={onSair} data-cursor="hover">
         <Icon name="x" size={14} /> Sair
       </button>
