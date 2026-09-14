@@ -5,6 +5,23 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Capas tiradas do próprio player do YouTube, por captura de tela.** "Gerar 8
+  capas do player" abre o vídeo em tela cheia, roda, e o navegador fotografa
+  cada momento — oito ao longo do vídeo, mais um slider para qualquer segundo.
+  O quadro escolhido vira a capa.
+  - É o único caminho possível para um segundo arbitrário de um vídeo do
+    YouTube: o servidor não recebe a fita de quadros (comprovado com sonda no
+    Render) e o navegador não pode ler pixels de dentro do iframe. Com a
+    permissão de captura, quem lê os pixels é a própria página — do que está na
+    tela, não de dentro do iframe.
+  - O quadro sai do tamanho que o player tem na tela; por isso ele cresce para
+    a tela inteira durante a captura (~1475x830 numa janela de 1920x1080,
+    contra 480x360 das capas do YouTube). Janela maior, capa maior.
+  - Um escudo transparente cobre o player enquanto se captura: sem ele o
+    ponteiro acenderia o nome do vídeo e os controles em cima do quadro.
+  - O quadro é pego com o vídeo TOCANDO, nunca pausado: pausado o YouTube
+    desenha o símbolo de pausa por cima. O tempo mostrado é o que o player
+    relata no instante da foto, não o pedido.
 - **Oito sugestões de capa** quando o arquivo do vídeo é aberto, espalhadas
   pela duração inteira: clicar numa leva o slider até ali, e daí dá para afinar
   no segundo. Do YouTube isso não existe — ele publica **quatro** quadros por

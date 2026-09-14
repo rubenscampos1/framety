@@ -2484,6 +2484,29 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
   const [arqTam, setArqTam] = React.useState("");
   const [arqErro, setArqErro] = React.useState("");
   const [sugestoes, setSugestoes] = React.useState([]);
+
+  /* Captura de tela do player do YouTube. É o único jeito de tirar um quadro
+     qualquer de um vídeo do YouTube: o servidor não consegue a fita de quadros
+     (o YouTube não a entrega a datacenter) e o navegador não pode ler pixels de
+     dentro do iframe. Com a permissão de captura, quem lê os pixels é a própria
+     página — do que está na tela, não de dentro do iframe.
+
+     O que sai daqui vale o tamanho do player na tela; por isso ele cresce para
+     a tela inteira durante a captura. */
+  const playerRef = React.useRef(null);        // player do YouTube (API)
+  const molduraRef = React.useRef(null);       // o retângulo exato do vídeo
+  const capVideoRef = React.useRef(null);      // <video> que recebe a captura
+  const telaCapRef = React.useRef(null);       // prévia do quadro capturado
+  const fluxoRef = React.useRef(null);         // MediaStream, para desligar
+  const ultimaTelaRef = React.useRef(null);    // canvas do último quadro pego
+  const [capturando, setCapturando] = React.useState(false);   // modo tela cheia
+  const [capPasso, setCapPasso] = React.useState("");
+  const [capErro, setCapErro] = React.useState("");
+  const [capDur, setCapDur] = React.useState(0);
+  const [capSeg, setCapSeg] = React.useState(0);
+  const [capTam, setCapTam] = React.useState("");
+  const [capSugestoes, setCapSugestoes] = React.useState([]);
+  const [prontoParaCapturar, setProntoParaCapturar] = React.useState(false);
   const [gerando, setGerando] = React.useState(false);
   const gerandoRef = React.useRef(false);
   const ytId = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)?.[1];
@@ -2498,6 +2521,178 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
   // Default when nothing chosen: a frame from the MIDDLE of the video.
   const autoThumb = ytFrames ? ytFrames.meio : null;
   const previewThumb = thumbUrl || autoThumb;
+
+  /* O player precisa da API do YouTube para aceitar ordens de tempo. */
+  React.useEffect(() => {
+    if (!framePicker || !ytId) return;
+    let morto = false;
+    setProntoParaCapturar(false);
+    const montar = () => {
+      if (morto || !window.YT || !window.YT.Player) return;
+      const alvo = document.getElementById("cap-player-" + ytId);
+      if (!alvo) return;
+      playerRef.current = new window.YT.Player(alvo, {
+        videoId: ytId,
+        playerVars: {
+          controls: 0, modestbranding: 1, rel: 0, showinfo: 0, iv_load_policy: 3,
+          playsinline: 1, disablekb: 1, fs: 0, autoplay: 0,
+          origin: window.location.origin,
+        },
+        events: {
+          onReady: (e) => {
+            if (morto) return;
+            e.target.mute();
+            setCapDur(e.target.getDuration() || 0);
+            setProntoParaCapturar(true);
+          },
+        },
+      });
+    };
+    if (window.YT && window.YT.Player) { setTimeout(montar, 0); }
+    else {
+      if (!document.getElementById("yt-iframe-api")) {
+        const s = document.createElement("script");
+        s.id = "yt-iframe-api";
+        s.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(s);
+      }
+      const antes = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => { if (antes) antes(); montar(); };
+    }
+    return () => {
+      morto = true;
+      try { playerRef.current && playerRef.current.destroy && playerRef.current.destroy(); } catch (e) {}
+      playerRef.current = null;
+      pararCaptura();
+    };
+  }, [framePicker, ytId]);
+
+  const pararCaptura = () => {
+    const f = fluxoRef.current;
+    if (f) { f.getTracks().forEach(t => t.stop()); fluxoRef.current = null; }
+    if (capVideoRef.current) capVideoRef.current.srcObject = null;
+    setCapturando(false);
+  };
+
+  /* Recorta, do quadro capturado da aba, exatamente o retângulo do vídeo. */
+  const pegarQuadro = () => {
+    const v = capVideoRef.current, moldura = molduraRef.current;
+    if (!v || !v.videoWidth || !moldura) return null;
+    const r = moldura.getBoundingClientRect();
+    /* A captura é da aba inteira: a razão entre o vídeo capturado e a largura da
+       janela dá a escala, inclusive quando a tela é retina. */
+    const escala = v.videoWidth / window.innerWidth;
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(r.width * escala));
+    c.height = Math.max(1, Math.round(r.height * escala));
+    c.getContext("2d").drawImage(v,
+      Math.round(r.left * escala), Math.round(r.top * escala),
+      c.width, c.height, 0, 0, c.width, c.height);
+    return c;
+  };
+
+  /* Manda o player para um tempo e espera ele DE FATO chegar lá tocando: pedir
+     o quadro antes disso pega o anterior, ou o símbolo de carregando. */
+  const irEEsperar = (t) => new Promise((ok) => {
+    const p = playerRef.current;
+    if (!p) { ok(0); return; }
+    p.seekTo(Math.max(0, t), true);
+    p.playVideo();
+    const limite = Date.now() + 6000;
+    const olhar = () => {
+      let agora = 0, estado = -1;
+      try { agora = p.getCurrentTime() || 0; estado = p.getPlayerState(); } catch (e) {}
+      if ((estado === 1 && agora >= Math.max(0, t) - 0.35) || Date.now() > limite) {
+        /* Um respiro depois de começar a tocar: o quadro na tela ainda é o
+           anterior por alguns milissegundos, e o aviso de carregando some. */
+        setTimeout(() => ok(agora), 420);
+        return;
+      }
+      setTimeout(olhar, 120);
+    };
+    olhar();
+  });
+
+  const gerarPelaTela = async () => {
+    setCapErro(""); setCapSugestoes([]);
+    const p = playerRef.current;
+    if (!p || !p.getDuration) { setCapErro("o player ainda está carregando"); return; }
+    let fluxo;
+    try {
+      fluxo = await navigator.mediaDevices.getDisplayMedia({
+        /* A própria aba: é o que torna a conta do recorte exata. */
+        preferCurrentTab: true,
+        video: { width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } },
+        audio: false,
+      });
+    } catch (e) {
+      setCapErro("captura cancelada"); return;
+    }
+    const trilha = fluxo.getVideoTracks()[0];
+    const ajustes = (trilha && trilha.getSettings && trilha.getSettings()) || {};
+    if (ajustes.displaySurface && ajustes.displaySurface !== "browser") {
+      fluxo.getTracks().forEach(t => t.stop());
+      setCapErro("escolha a opção \"Guia do Chrome\" (esta aba) — com a tela inteira o recorte sai torto");
+      return;
+    }
+    fluxoRef.current = fluxo;
+    const v = capVideoRef.current;
+    v.srcObject = fluxo;
+    try { await v.play(); } catch (e) {}
+    trilha.addEventListener("ended", pararCaptura);
+
+    setCapturando(true);
+    const dur = p.getDuration() || 0;
+    setCapDur(dur);
+    /* Espera o layout grande valer e o player engatar antes do primeiro quadro:
+       nos primeiros segundos o YouTube ainda mostra o nome do vídeo por cima. */
+    await new Promise(r => setTimeout(r, 400));
+    p.mute(); p.playVideo();
+    await new Promise(r => setTimeout(r, 1500));
+
+    const quantas = 8;
+    const lista = [];
+    for (let i = 0; i < quantas; i++) {
+      const alvo = dur * (i + 0.5) / quantas;
+      setCapPasso("capturando " + (i + 1) + " de " + quantas + "…");
+      const real = await irEEsperar(alvo);
+      const c = pegarQuadro();
+      if (c) lista.push({ t: real || alvo, img: c.toDataURL("image/jpeg", 0.7) });
+      setCapSugestoes([...lista]);
+    }
+    setCapPasso("");
+    /* Deixa o meio do vídeo escolhido, como a prévia costuma ficar. */
+    await irParaNaTela(dur / 2);
+  };
+
+  /* Um tempo qualquer: vai, espera, captura e guarda o quadro em tamanho cheio
+     — é ele que vira a capa se o botão for clicado. */
+  const irParaNaTela = async (t) => {
+    setCapSeg(t);
+    if (!fluxoRef.current) return;
+    const real = await irEEsperar(t);
+    const c = pegarQuadro();
+    if (!c) return;
+    ultimaTelaRef.current = c;
+    setCapTam(c.width + "x" + c.height);
+    setCapSeg(real || t);
+    const tela = telaCapRef.current;
+    if (tela) {
+      tela.width = c.width; tela.height = c.height;
+      tela.getContext("2d").drawImage(c, 0, 0);
+    }
+  };
+
+  const usarQuadroDaTela = () => {
+    const c = ultimaTelaRef.current;
+    if (!c) return;
+    setSalvandoQuadro(true);
+    c.toBlob((blob) => {
+      if (!blob) { setSalvandoQuadro(false); return; }
+      const arq = new File([blob], "quadro-" + ytId + "-" + Math.round(capSeg) + "s.jpg", { type: "image/jpeg" });
+      uploadThumb(arq).finally(() => { setSalvandoQuadro(false); });
+    }, "image/jpeg", 0.92);
+  };
 
   const abrirArquivo = (file) => {
     if (!file) return;
@@ -2821,10 +3016,24 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
           {/* Moment picker — watch the video and pick a frame */}
           {framePicker && ytId && (
             <div style={{marginTop:12,padding:12,border:"1px solid var(--line-strong)",borderRadius:10,background:"rgba(255,255,255,0.02)"}}>
-              <div style={{position:"relative",width:"100%",aspectRatio:"16/9",borderRadius:8,overflow:"hidden",marginBottom:10,background:"#000"}}>
-                <iframe src={`https://www.youtube.com/embed/${ytId}`} allow="encrypted-media; fullscreen" allowFullScreen
-                  title="Assistir para escolher a thumb" style={{position:"absolute",inset:0,width:"100%",height:"100%",border:"none"}}/>
+              {/* O player e montado pela API do YouTube, e nao por um iframe solto:
+                  para capturar um segundo qualquer e preciso poder manda-lo ate
+                  la. Durante a captura ele cresce para a tela inteira — o quadro
+                  capturado vale o tamanho que o player tem na tela. */}
+              {capturando && <div style={{position:"fixed",inset:0,background:"#05050a",zIndex:2990}}/>}
+              <div ref={molduraRef}
+                style={capturando
+                  ? {position:"fixed",zIndex:3000,left:"50%",top:14,transform:"translateX(-50%)",
+                     width:"min(96vw, calc((100vh - 250px) * 16 / 9))",aspectRatio:"16/9",
+                     background:"#000",borderRadius:8,overflow:"hidden"}
+                  : {position:"relative",width:"100%",aspectRatio:"16/9",borderRadius:8,overflow:"hidden",marginBottom:10,background:"#000"}}>
+                <div id={"cap-player-" + ytId} style={{position:"absolute",inset:0,width:"100%",height:"100%"}}/>
+                {/* Escudo, so durante a captura: com o ponteiro parando aqui, o
+                    YouTube nao acende o nome do video nem os controles por cima
+                    do quadro que esta sendo fotografado. */}
+                {capturando && <div style={{position:"absolute",inset:0}}/>}
               </div>
+              <video ref={capVideoRef} muted playsInline style={{display:"none"}}/>
               <div style={{fontSize:11,color:"var(--ink-dim)",marginBottom:8,fontFamily:"var(--font-mono)",letterSpacing:"0.06em"}}>
                 Escolha um momento do vídeo:
               </div>
@@ -2841,6 +3050,67 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
                   );
                 })}
               </div>
+              {/* Capturar do proprio player. */}
+              <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid var(--line)"}}>
+                <button type="button" onClick={gerarPelaTela} disabled={!prontoParaCapturar} data-cursor="hover"
+                  style={{display:"inline-flex",alignItems:"center",gap:8,padding:"9px 14px",borderRadius:8,
+                    fontSize:12,fontWeight:600,cursor:prontoParaCapturar?"pointer":"wait",
+                    border:"1px solid var(--hl-bg)",color:"var(--hl-ink)",background:"var(--hl-bg)"}}>
+                  <Icon name="play" size={12}/> {prontoParaCapturar ? "Gerar 8 capas do player" : "Carregando o player…"}
+                </button>
+                <div style={{fontSize:10,color:"var(--ink-mute)",marginTop:8,lineHeight:1.5}}>
+                  O player abre em tela cheia, o vídeo roda e o navegador fotografa cada momento —
+                  por isso ele pede permissão de captura. Escolha <b>esta aba</b> na janela que aparecer.
+                </div>
+                {capErro && <div style={{fontSize:11,color:"var(--ink-mute)",marginTop:8}}>{capErro}</div>}
+              </div>
+
+              {/* Painel da captura: vive junto do player em tela cheia. */}
+              {capturando && (
+                <div style={{position:"fixed",left:0,right:0,bottom:0,zIndex:3001,
+                  padding:"10px 16px 14px",background:"rgba(8,9,13,0.97)",borderTop:"1px solid var(--line-strong)"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(8, 1fr)",gap:6,marginBottom:10}}>
+                    {Array.from({length:8},(_,i)=>{
+                      const s2 = capSugestoes[i];
+                      if (!s2) return <div key={i} style={{aspectRatio:"16/9",borderRadius:6,background:"rgba(255,255,255,0.05)"}}/>;
+                      const perto = Math.abs(s2.t - capSeg) < 0.6;
+                      return (
+                        <button key={i} type="button" onClick={()=>irParaNaTela(s2.t)} data-cursor="hover"
+                          style={{padding:0,border:perto?"2px solid var(--accent)":"1px solid var(--line-strong)",
+                            borderRadius:6,overflow:"hidden",cursor:"pointer",background:"#000"}}>
+                          <div style={{width:"100%",aspectRatio:"16/9",backgroundImage:"url("+s2.img+")",backgroundSize:"cover",backgroundPosition:"center"}}/>
+                          <div style={{fontSize:9,padding:"3px 0",textAlign:"center",color:perto?"var(--accent)":"var(--ink-mute)",fontFamily:"var(--font-mono)"}}>{relogio(s2.t)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+                    <canvas ref={telaCapRef} style={{width:120,height:"auto",borderRadius:6,background:"#000",display:"block",flexShrink:0}}/>
+                    <div style={{flex:1,minWidth:200,display:"flex",flexDirection:"column",gap:6}}>
+                      <input type="range" min={0} max={Math.max(0.1, capDur)} step={0.1} value={capSeg}
+                        onChange={(e)=>setCapSeg(+e.target.value)}
+                        onPointerUp={(e)=>irParaNaTela(+e.currentTarget.value)}
+                        onKeyUp={(e)=>irParaNaTela(+e.currentTarget.value)}
+                        style={{width:"100%",accentColor:"var(--accent)"}}/>
+                      <div style={{display:"flex",justifyContent:"space-between",fontFamily:"var(--font-mono)",fontSize:11,color:"var(--ink-dim)"}}>
+                        <span>{capPasso || relogio(capSeg)}</span>
+                        <span style={{color:"var(--ink-mute)"}}>de {relogio(capDur)}{capTam ? " · " + capTam : ""}</span>
+                      </div>
+                    </div>
+                    <button type="button" onClick={usarQuadroDaTela} disabled={salvandoQuadro || !capTam} data-cursor="hover"
+                      style={{display:"inline-flex",alignItems:"center",gap:8,padding:"9px 16px",borderRadius:8,
+                        fontSize:12,fontWeight:600,cursor:"pointer",
+                        border:"1px solid var(--hl-bg)",color:"var(--hl-ink)",background:"var(--hl-bg)"}}>
+                      {salvandoQuadro ? "Enviando…" : "Usar este quadro"}
+                    </button>
+                    <button type="button" onClick={pararCaptura} data-cursor="hover"
+                      style={{padding:"9px 14px",borderRadius:8,fontSize:12,cursor:"pointer",
+                        border:"1px solid var(--line-strong)",color:"var(--ink-dim)",background:"transparent"}}>
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              )}
               {/* Do arquivo do vídeo: o caminho que não depende do YouTube, e o
                   único que entrega a capa na resolução do original. */}
               <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid var(--line)"}}>
