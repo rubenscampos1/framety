@@ -2468,6 +2468,14 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
   React.useEffect(() => { if (descRef.current) descRef.current.innerHTML = initialData?.description || ""; }, []);
 
   const [framePicker, setFramePicker] = React.useState(false);
+  /* Tira de quadros: a fita que o YouTube usa no arrastar da linha do tempo.
+     São dezenas de quadros ao longo do vídeo, um a cada poucos segundos — é o
+     que permite escolher um momento qualquer, e não só as quatro capas. */
+  const [tira, setTira] = React.useState(null);
+  const [tiraErro, setTiraErro] = React.useState("");
+  const [quadro, setQuadro] = React.useState(0);
+  const [salvandoQuadro, setSalvandoQuadro] = React.useState(false);
+  const telaRef = React.useRef(null);
   const ytId = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)?.[1];
   // YouTube frame options (moments of the video). hqdefault = início (alta res);
   // 1/2/3.jpg = ¼ / meio / ¾ do vídeo. maxresdefault 404s em vídeos não-HD.
@@ -2480,6 +2488,57 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
   // Default when nothing chosen: a frame from the MIDDLE of the video.
   const autoThumb = ytFrames ? ytFrames.meio : null;
   const previewThumb = thumbUrl || autoThumb;
+
+  /* A tira só é buscada quando o seletor abre: é uma leitura da página do
+     vídeo, e não faz sentido pagar por ela em todo formulário aberto. */
+  React.useEffect(() => {
+    if (!framePicker || !ytId) return;
+    let vivo = true;
+    setTira(null); setTiraErro("");
+    window.API.tiraDoYoutube(ytId)
+      .then(t => { if (!vivo) return; setTira(t); setQuadro(Math.floor(t.quadros / 2)); })
+      .catch(e => { if (vivo) setTiraErro((e && e.error) || "este vídeo não tem tira de quadros"); });
+    return () => { vivo = false; };
+  }, [framePicker, ytId]);
+
+  /* O quadro escolhido vai para um canvas: é dele que sai tanto a prévia quanto
+     o arquivo enviado. As folhas vêm pelo nosso servidor, e não direto do
+     YouTube, senão o canvas ficaria "sujo" e não deixaria exportar a imagem. */
+  React.useEffect(() => {
+    if (!tira || !telaRef.current) return;
+    const porFolha = tira.colunas * tira.linhas;
+    const folha = Math.floor(quadro / porFolha);
+    const dentro = quadro % porFolha;
+    const col = dentro % tira.colunas;
+    const lin = Math.floor(dentro / tira.colunas);
+    const img = new Image();
+    img.onload = () => {
+      const c = telaRef.current;
+      if (!c) return;
+      c.width = tira.largura; c.height = tira.altura;
+      c.getContext("2d").drawImage(img,
+        col * tira.largura, lin * tira.altura, tira.largura, tira.altura,
+        0, 0, tira.largura, tira.altura);
+    };
+    img.src = "/api/youtube/sb/" + ytId + "/" + folha;
+  }, [tira, quadro, ytId]);
+
+  const momento = (i) => {
+    const t = tira ? Math.round(i * tira.intervalo / 1000) : 0;
+    const m = Math.floor(t / 60), s = t % 60;
+    return m + ":" + String(s).padStart(2, "0");
+  };
+
+  const usarQuadro = () => {
+    const c = telaRef.current;
+    if (!c) return;
+    setSalvandoQuadro(true);
+    c.toBlob((blob) => {
+      if (!blob) { setSalvandoQuadro(false); return; }
+      const arquivo = new File([blob], "quadro-" + ytId + "-" + quadro + ".jpg", { type: "image/jpeg" });
+      uploadThumb(arquivo).finally(() => setSalvandoQuadro(false));
+    }, "image/jpeg", 0.92);
+  };
 
   const uploadThumb = async (file) => {
     setUploading(true);
@@ -2743,8 +2802,37 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
                   );
                 })}
               </div>
-              <div style={{fontSize:10,color:"var(--ink-mute)",marginTop:8,lineHeight:1.5}}>
-                Os frames ¼/meio/¾ vêm do YouTube em resolução menor. Para máxima qualidade, use "Carregar imagem" com um print do momento exato.
+              {/* Slider: o quadro exato, tirado da tira do YouTube. */}
+              {tira && (
+                <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid var(--line)"}}>
+                  <div style={{fontSize:11,color:"var(--ink-dim)",marginBottom:10,fontFamily:"var(--font-mono)",letterSpacing:"0.06em"}}>
+                    Ou escolha o quadro exato:
+                  </div>
+                  <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+                    <canvas ref={telaRef} style={{width:180,height:"auto",borderRadius:8,background:"#000",flexShrink:0,display:"block"}}/>
+                    <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
+                      <input type="range" min={0} max={Math.max(0, tira.quadros - 1)} value={quadro}
+                        onChange={(e)=>setQuadro(+e.target.value)} style={{width:"100%",accentColor:"var(--accent)"}}/>
+                      <div style={{display:"flex",justifyContent:"space-between",fontFamily:"var(--font-mono)",fontSize:11,color:"var(--ink-dim)"}}>
+                        <span>{momento(quadro)}</span>
+                        <span style={{color:"var(--ink-mute)"}}>de {momento(tira.quadros - 1)}</span>
+                      </div>
+                      <button type="button" onClick={usarQuadro} disabled={salvandoQuadro} data-cursor="hover"
+                        style={{alignSelf:"flex-start",display:"inline-flex",alignItems:"center",gap:8,padding:"8px 14px",
+                          borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",
+                          border:"1px solid var(--hl-bg)",color:"var(--hl-ink)",background:"var(--hl-bg)"}}>
+                        {salvandoQuadro ? "Enviando…" : "Usar este quadro"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {tiraErro && (
+                <div style={{fontSize:11,color:"var(--ink-mute)",marginTop:10}}>{tiraErro}</div>
+              )}
+              <div style={{fontSize:10,color:"var(--ink-mute)",marginTop:10,lineHeight:1.5}}>
+                O quadro exato sai da tira de rolagem do YouTube, a {tira ? tira.largura + "x" + tira.altura : "320x180"} —
+                menos do que as capas ¼/meio/¾ (480x360). Para máxima qualidade, use "Carregar imagem" com um print do momento.
               </div>
             </div>
           )}

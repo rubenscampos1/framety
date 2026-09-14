@@ -5,6 +5,21 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Slider para escolher o quadro exato da capa**, no seletor de momento do
+  formulário de vídeo. Além das quatro capas (início/¼/meio/¾), dá para varrer o
+  vídeo inteiro: o quadro aparece na prévia e "Usar este quadro" envia aquela
+  imagem como thumbnail.
+  - Os quadros saem da tira que o YouTube usa no arrastar da linha do tempo —
+    um a cada dois segundos, a 320x180. É menos do que as capas (480x360), e é
+    o preço de escolher o momento; para máxima qualidade continua valendo
+    "Carregar imagem" com um print.
+  - Duas rotas novas no servidor porque o navegador não alcança nenhuma das
+    pontas: a receita da tira está na página do vídeo (outro domínio) e as
+    folhas vêm sem CORS, o que impediria recortar o quadro no canvas. A receita
+    fica em cache por dez minutos — mexer no slider pede várias folhas seguidas.
+  - A imagem enviada é o recorte de verdade, guardado como qualquer outra capa:
+    nada depende de endereço assinado do YouTube, que expira.
+
 - **"Vídeos em destaque:" desceu mais 80px**, quase encostando na primeira
   fileira do corredor. Quem desce o título é o palco subindo, e não mais espaço
   em cima: aumentar o respiro empurraria título e palco juntos, e a distância

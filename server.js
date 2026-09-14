@@ -783,6 +783,108 @@ async function duracaoDoYoutube(url) {
   }
 }
 
+/* ── Tira de quadros do YouTube ───────────────────────────────────────────────
+   O YouTube publica quatro capas por vídeo e mais nada. Para escolher um
+   momento qualquer existe outra coisa: a tira que aparece quando se arrasta o
+   cursor pela linha do tempo do player. São folhas JPEG com dezenas de quadros
+   em grade, um a cada poucos segundos.
+
+   O navegador não alcança nenhuma das duas pontas sozinho: a receita da tira
+   está na página do vídeo (outro domínio) e as folhas vêm sem cabeçalho de
+   CORS, o que impede recortar um quadro no canvas. Passando por aqui elas
+   viram nossas, e o recorte funciona.
+
+   A receita fica guardada por dez minutos: quem mexe no slider pede várias
+   folhas seguidas, e seria uma leitura da página do YouTube para cada uma. */
+const tirasEmCache = new Map();
+
+async function receitaDaTira(id) {
+  const guardado = tirasEmCache.get(id);
+  if (guardado && Date.now() - guardado.quando < 10 * 60 * 1000) return guardado.receita;
+
+  const parar = AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined;
+  const r = await fetch('https://www.youtube.com/watch?v=' + id, {
+    signal: parar,
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
+  });
+  if (!r.ok) return null;
+  const html = await r.text();
+
+  const marca = '"playerStoryboardSpecRenderer":{"spec":"';
+  const i = html.indexOf(marca);
+  if (i < 0) return null;                       // vídeo curto demais, ao vivo ou privado
+  const fim = html.indexOf('"', i + marca.length);
+  /* O trecho é um texto JSON: o próprio JSON.parse desfaz os escapes (e o & vem
+     escapado), sem precisar sair trocando caractere na mão. */
+  let spec;
+  try { spec = JSON.parse('"' + html.slice(i + marca.length, fim) + '"'); }
+  catch (e) { return null; }
+
+  const partes = spec.split('|');
+  const base = partes[0];
+  const niveis = partes.slice(1).map((p, n) => {
+    const c = p.split('#');
+    return { nivel: n, largura: +c[0], altura: +c[1], quadros: +c[2],
+             colunas: +c[3], linhas: +c[4], intervalo: +c[5], nome: c[6], sigh: c[7] };
+  });
+  /* O nível 0 é uma folha única de miniaturas minúsculas, sem intervalo; dos
+     outros, o último é o de melhor resolução. */
+  const nivel = niveis.filter(n => n.intervalo > 0 && n.largura > 0).pop();
+  if (!nivel) return null;
+
+  const mDur = '"lengthSeconds":"';
+  const iDur = html.indexOf(mDur);
+  const seg = iDur < 0 ? 0 : (parseInt(html.slice(iDur + mDur.length), 10) || 0);
+  const receita = Object.assign({}, nivel, { base, duracao: seg });
+  tirasEmCache.set(id, { quando: Date.now(), receita });
+  return receita;
+}
+
+const ID_YT_OK = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{11}$/.test(v);
+
+/* A geometria da tira, para o console montar o slider. */
+app.get('/api/youtube/storyboard/:id', requireAuth, async (req, res) => {
+  if (!ID_YT_OK(req.params.id)) return res.status(400).json({ error: 'id inválido' });
+  try {
+    const t = await receitaDaTira(req.params.id);
+    if (!t) return res.status(404).json({ error: 'este vídeo não tem tira de quadros' });
+    res.json({
+      quadros: t.quadros, colunas: t.colunas, linhas: t.linhas,
+      largura: t.largura, altura: t.altura,
+      intervalo: t.intervalo, duracao: t.duracao,
+      folhas: Math.ceil(t.quadros / (t.colunas * t.linhas)),
+    });
+  } catch (e) {
+    res.status(502).json({ error: 'não consegui ler a tira deste vídeo' });
+  }
+});
+
+/* Uma folha da tira. Sem exigir sessão porque quem pede é uma tag <img>, que
+   não manda cabeçalho de autenticação — e o que sai daqui é miniatura pública
+   de vídeo público. O endereço é montado aqui a partir do id e do número da
+   folha, então isto não vira um proxy para qualquer endereço. */
+app.get('/api/youtube/sb/:id/:folha', async (req, res) => {
+  const folha = parseInt(req.params.folha, 10);
+  if (!ID_YT_OK(req.params.id) || !(folha >= 0 && folha < 200)) return res.status(400).end();
+  try {
+    const t = await receitaDaTira(req.params.id);
+    if (!t) return res.status(404).end();
+    if (folha >= Math.ceil(t.quadros / (t.colunas * t.linhas))) return res.status(404).end();
+    const url = t.base
+      .split('$L').join(String(t.nivel))
+      .split('$N').join(t.nome.split('$M').join(String(folha)))
+      + '&sigh=' + t.sigh;
+    const img = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!img.ok) return res.status(502).end();
+    const bytes = Buffer.from(await img.arrayBuffer());
+    res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'private, max-age=600');
+    res.send(bytes);
+  } catch (e) {
+    res.status(502).end();
+  }
+});
+
 /* Preenche o catálogo. Sem 'todos', só quem está sem duração. */
 app.post('/api/videos/duracoes', requireAuth, async (req, res) => {
   const todos = !!(req.body && req.body.todos);

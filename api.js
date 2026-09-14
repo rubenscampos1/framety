@@ -105,6 +105,9 @@
     // Lista de formatos de vídeo imersivo
     salvarFormatosImersivos: (formatos) => req("POST", "/api/formatos-imersivos", { formatos }),
 
+    // Geometria da tira de quadros do YouTube (para o slider de thumbnail)
+    tiraDoYoutube: (id) => req("GET", "/api/youtube/storyboard/" + id),
+
     // Tutorial — public read, admin write
     getTutorial:   ()      => req('GET',    '/api/tutorial'),
     saveTutorial:  (data)  => req('POST',   '/api/tutorial',       data),
