@@ -5,6 +5,19 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Padrão, formato e formato do imersivo saíram da coluna e viraram dropdowns
+  no topo**, ao lado da contagem de vídeos, no modo de apresentação. Na coluna
+  eram três listas compridas que a empurravam para além da altura da tela — e
+  o que interessa ali é a categoria.
+  - Continua valendo **um recorte de cada vez**: escolher padrão desfaz o
+    formato, como sempre foi. Cada dropdown tem "Todos" para voltar ao acervo.
+  - Quem está zerado segue na lista, apagado: esconder o que ainda não foi
+    classificado esconderia a própria existência do recorte.
+  - **Corrigido de passagem: o recorte por formato do imersivo não mostrava
+    nada.** A montagem das faixas tratava padrão e formato, mas não ele — a
+    seleção caía no filtro por categoria, nenhuma batia, e a tela ficava vazia.
+    Entrou nos dois pontos onde os outros dois já estavam.
+
 - **O menu do console deixou de ser cortado embaixo.** A lista cresceu com as
   abas novas (Novidades, Marca & prévia, Minigame) e passou da altura da tela;
   sem tratar o transbordo, o fim dela — Segurança, Modo apresentação e Sair —

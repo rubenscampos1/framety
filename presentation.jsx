@@ -21,6 +21,15 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
 
   const cats = window.FRAMETY_DATA.categories;
   const publicados = window.FRAMETY_DATA.videos.filter(v => v.status !== "draft");
+  const [menuAberto, setMenuAberto] = React.useState(null);
+  /* Clicar fora fecha — o menu é solto na página, não um modal. */
+  React.useEffect(() => {
+    if (!menuAberto) return;
+    const fechar = () => setMenuAberto(null);
+    document.addEventListener("click", fechar);
+    return () => document.removeEventListener("click", fechar);
+  }, [menuAberto]);
+
   const conta = (campo, valor) => publicados.filter(v => (v[campo] || "") === valor).length;
   let videos = publicados;
   if (sel.tipo === "cat")     videos = videos.filter(v => v.category === sel.valor);
@@ -107,40 +116,6 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
               </button>
             ))}
           </div>
-          {/* As duas listas abaixo escolhem no mesmo nível das categorias: uma
-              seleção de cada vez. A lista fechada fica sempre à vista (esconder o
-              que ainda não foi classificado escondia a própria existência do
-              recorte); quem está zerado fica apagado e leva ao aviso de vazio. */}
-          <div className="pres-side-group">
-            <div className="pres-side-label">— Formato do imersivo</div>
-            {(window.FRAMETY_DATA.formatosImersivos || []).map(o => (
-              <button key={o} className={"pres-side-item compact " + (sel.tipo==="formatoImersivo"&&sel.valor===o?"active":"") + (conta("formatoImersivo", o) ? "" : " vazio")} onClick={()=>setSel({tipo:"formatoImersivo",valor:o})} data-cursor="hover">
-                <span>{o}</span>
-                <span className="num">{conta("formatoImersivo", o)}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="pres-side-group">
-            <div className="pres-side-label">— Padrão do empreendimento</div>
-            {["Altíssimo","Alto","Médio","Baixo","Popular"].map(o => (
-              <button key={o} className={"pres-side-item compact " + (sel.tipo==="padrao"&&sel.valor===o?"active":"") + (conta("padrao", o) ? "" : " vazio")} onClick={()=>setSel({tipo:"padrao",valor:o})} data-cursor="hover">
-                <span>{o}</span>
-                <span className="num">{conta("padrao", o)}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="pres-side-group">
-            <div className="pres-side-label">— Formato</div>
-            {["Condomínio vertical","Condomínio horizontal","Business"].map(o => (
-              <button key={o} className={"pres-side-item compact " + (sel.tipo==="formato"&&sel.valor===o?"active":"") + (conta("formato", o) ? "" : " vazio")} onClick={()=>setSel({tipo:"formato",valor:o})} data-cursor="hover">
-                <span>{o}</span>
-                <span className="num">{conta("formato", o)}</span>
-              </button>
-            ))}
-          </div>
-
           <div className="pres-side-group">
             <div className="pres-side-label">— Ordenar</div>
             <button className={"pres-side-item compact " + (sort==="recent"?"active":"")} onClick={()=>setSort("recent")} data-cursor="hover">
@@ -200,10 +175,50 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
               </SpotlightCard>
             )}
 
+            {/* Os recortes que não são categoria moram aqui em cima, ao lado da
+                contagem — na coluna eles viravam três listas compridas, e o que
+                interessa ali é a categoria. Um recorte de cada vez: escolher
+                padrão desfaz o formato, como sempre foi. */}
+            <div className="pres-recortes">
+              <span className="pres-recortes-conta">
+                {videos.length} {videos.length === 1 ? "vídeo" : "vídeos"}
+              </span>
+              {[
+                { chave: "formatoImersivo", rotulo: "Formato do imersivo", opcoes: window.FRAMETY_DATA.formatosImersivos || [] },
+                { chave: "padrao",          rotulo: "Padrão",              opcoes: ["Altíssimo","Alto","Médio","Baixo","Popular"] },
+                { chave: "formato",         rotulo: "Formato",             opcoes: ["Condomínio vertical","Condomínio horizontal","Business"] },
+              ].filter(m => m.opcoes.length).map(m => (
+                <div className="pres-drop" key={m.chave} onClick={e => e.stopPropagation()}>
+                  <button
+                    className={"pres-drop-btn" + (sel.tipo === m.chave ? " ativo" : "")}
+                    onClick={() => setMenuAberto(a => a === m.chave ? null : m.chave)}
+                    data-cursor="hover">
+                    <span>{sel.tipo === m.chave ? sel.valor : m.rotulo}</span>
+                    <Icon name="chevron-down" size={11} />
+                  </button>
+                  {menuAberto === m.chave && (
+                    <div className="pres-drop-menu">
+                      <button className={sel.tipo !== m.chave ? "ativo" : ""}
+                        onClick={() => { setSel({ tipo: "todos", valor: null }); setMenuAberto(null); }}>
+                        <span>Todos</span>
+                      </button>
+                      {m.opcoes.map(o => (
+                        <button key={o} className={(sel.tipo === m.chave && sel.valor === o ? "ativo" : "") + (conta(m.chave, o) ? "" : " vazio")}
+                          onClick={() => { setSel({ tipo: m.chave, valor: o }); setMenuAberto(null); }}>
+                          <span>{o}</span>
+                          <span className="num">{conta(m.chave, o)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
             {/* Em "todos os vídeos" o acervo continua vindo separado por categoria.
                 Escolhido um padrão ou um formato, o recorte é ELE — uma faixa só,
                 com o nome do recorte no título e vídeos de qualquer categoria. */}
-            {(sel.tipo === "padrao" || sel.tipo === "formato"
+            {(sel.tipo === "padrao" || sel.tipo === "formato" || sel.tipo === "formatoImersivo"
               ? [{ id: sel.valor, name: sel.valor, itens: videos }]
               : cats
                   .filter(c => sel.tipo === "todos" || c.id === sel.valor)
@@ -263,7 +278,7 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
 
           {videos.length === 0 && (
             <div style={{padding:80,textAlign:"center",color:"rgba(255,255,255,0.8)",fontFamily:"var(--font-mono)",fontSize:12,letterSpacing:"0.15em"}}>
-              {sel.tipo === "padrao" || sel.tipo === "formato"
+              {sel.tipo === "padrao" || sel.tipo === "formato" || sel.tipo === "formatoImersivo"
                 ? "Nenhum vídeo com essa classificação ainda."
                 : "Nenhum vídeo encontrado."}
             </div>
