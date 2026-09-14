@@ -5,6 +5,20 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Cabeçalho da categoria mais baixo: 285px viraram 184.** Ele comia mais
+  espaço que uma fileira inteira de cards antes de o primeiro vídeo aparecer.
+  - O que mais pesava não era o título, era a **coluna de informações à direita**
+    (contagem, data e botão de compartilhar, empilhados): 71px de altura contra
+    36 do título, e era ela quem definia a altura do cabeçalho. Em linha, cabe
+    na altura do próprio título.
+  - Título de 56px para 40px no máximo — 56 era tamanho de capa, e aqui ele só
+    diz em que categoria se está.
+  - Folgas apertadas em toda a pilha: topo da página, botão voltar, cabeçalho e
+    controles. A descrição some quando a categoria não tem uma, em vez de deixar
+    um parágrafo vazio empurrando os vídeos para baixo.
+  - **Uma margem estava declarada duas vezes no mesmo bloco**, e a segunda
+    vencia: baixar a primeira não surtia efeito nenhum. Só medindo para notar.
+
 - **Barra de rolagem branca e visível.** Ela existia, mas o polegar estava em
   branco a 8% de opacidade — sobre um fundo quase preto, o mesmo que invisível:
   não dava para saber onde se está na página.

@@ -331,7 +331,9 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
         <div className="cat-page-head">
           <div>
             <h1 className="cat-page-title">{cat?.name||"Categoria"}<span style={{color:"var(--accent)"}}>.</span></h1>
-            <p style={{color:"var(--ink-dim)",maxWidth:600,marginTop:8,fontSize:14,lineHeight:1.6}}>{cat?.desc}</p>
+            {/* Some quando não há descrição: sem isto sobra um parágrafo vazio
+                empurrando os vídeos para baixo à toa. */}
+            {cat?.desc && <p style={{color:"var(--ink-dim)",maxWidth:600,marginTop:6,fontSize:13,lineHeight:1.5}}>{cat.desc}</p>}
           </div>
           <div className="cat-page-meta">
             <div className="row">

@@ -1534,7 +1534,7 @@ body.in-cat-page {
   background: transparent;
 }
 body.in-cat-page .cat-page {
-  padding-top: 32px;
+  padding-top: 18px;
 }
 body.in-cat-page.cat-peek .cat-page {
   padding-top: 116px;
@@ -1544,19 +1544,22 @@ body.in-cat-page.cat-peek .cat-page {
   grid-template-columns: 1fr auto;
   gap: 24px;
   align-items: end;
-  padding-bottom: 20px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 24px;
+  margin-bottom: 14px;
 }
+/* Título menor: 56px era tamanho de capa, e aqui ele só diz em que categoria
+   se está — quem tem de ocupar a tela são os vídeos. */
 .cat-page-title {
-  font-size: clamp(28px, 3.5vw, 56px);
+  font-size: clamp(24px, 2.6vw, 40px);
   font-weight: 600;
   letter-spacing: -0.04em;
-  line-height: 0.9;
+  line-height: 0.95;
 }
 .cat-page-back {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 8px 14px;
+  margin-bottom: 8px;
+  padding: 5px 12px;
   border-radius: 999px;
   border: 1px solid transparent;
   transition: border-color 0.2s, color 0.2s, background 0.2s;
@@ -1565,11 +1568,11 @@ body.in-cat-page.cat-peek .cat-page {
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--ink-dim);
-  margin-bottom: 24px;
 }
 .cat-page-back:hover { color: var(--accent); background: rgba(var(--accent-rgb),0.06); border-color: rgba(var(--accent-rgb),0.25); }
 .cat-page-meta {
-  display: flex; flex-direction: column; gap: 12px; align-items: flex-end;
+  display: flex; flex-direction: row; gap: 14px; align-items: center;
+  flex-wrap: wrap; justify-content: flex-end;
 }
 .cat-page-meta .row { display: flex; gap: 18px; align-items: center; }
 .cat-page-meta .pill {
@@ -1623,7 +1626,7 @@ body.in-cat-page.cat-peek .cat-page {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 36px;
+  margin-bottom: 18px;
   flex-wrap: wrap;
 }
 .cat-client-filters {
