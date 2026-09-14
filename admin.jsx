@@ -2483,6 +2483,9 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
   const [arqSeg, setArqSeg] = React.useState(0);
   const [arqTam, setArqTam] = React.useState("");
   const [arqErro, setArqErro] = React.useState("");
+  const [sugestoes, setSugestoes] = React.useState([]);
+  const [gerando, setGerando] = React.useState(false);
+  const gerandoRef = React.useRef(false);
   const ytId = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)?.[1];
   // YouTube frame options (moments of the video). hqdefault = início (alta res);
   // 1/2/3.jpg = ¼ / meio / ¾ do vídeo. maxresdefault 404s em vídeos não-HD.
@@ -2505,10 +2508,49 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
     v.load();
   };
 
+  /* Oito momentos espalhados pelo vídeo, para escolher no olho antes de afinar
+     no slider. Do YouTube isto seria impossível: ele publica quatro quadros por
+     vídeo e nada além disso (1.jpg, 2.jpg, 3.jpg e a capa) — hq4 em diante é
+     404. Aqui saem do próprio arquivo, e são oito de verdade.
+
+     Um de cada vez, esperando o 'seeked': mandar o vídeo para outro tempo antes
+     de ele chegar no anterior devolve o quadro errado. */
+  const gerarSugestoes = async () => {
+    const v = videoRef.current;
+    if (!v || !isFinite(v.duration) || !v.videoWidth) return;
+    setGerando(true); gerandoRef.current = true;
+    const quantas = 8;
+    const larg = 320;
+    const alt = Math.max(1, Math.round(larg * v.videoHeight / v.videoWidth));
+    const fora = document.createElement("canvas");
+    fora.width = larg; fora.height = alt;
+    const ctx = fora.getContext("2d");
+    const lista = [];
+    try {
+      for (let i = 0; i < quantas; i++) {
+        const t = Math.min(v.duration * (i + 0.5) / quantas, Math.max(0, v.duration - 0.05));
+        await new Promise((ok) => {
+          let saiu = false;
+          const feito = () => { if (saiu) return; saiu = true; v.removeEventListener("seeked", feito); ok(); };
+          v.addEventListener("seeked", feito);
+          setTimeout(feito, 4000);          // arquivo travado não trava a tela
+          v.currentTime = t;
+        });
+        ctx.drawImage(v, 0, 0, larg, alt);
+        lista.push({ t, img: fora.toDataURL("image/jpeg", 0.7) });
+      }
+    } catch (e) { /* o que deu tempo de sair já serve */ }
+    gerandoRef.current = false;
+    setGerando(false);
+    setSugestoes(lista);
+    irPara(v.duration / 2);
+  };
+
   /* O desenho acontece no 'seeked': pedir o quadro antes de o vídeo chegar no
      tempo pedido copia o quadro anterior. */
   const desenharDoArquivo = () => {
     const v = videoRef.current, c = telaArqRef.current;
+    if (gerandoRef.current) return;      // varredura das sugestões: não é a escolha
     if (!v || !c || !v.videoWidth) return;
     c.width = v.videoWidth; c.height = v.videoHeight;
     c.getContext("2d").drawImage(v, 0, 0, v.videoWidth, v.videoHeight);
@@ -2810,7 +2852,8 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
                     const v = e.currentTarget;
                     if (!v.videoWidth) { setArqErro("o navegador não consegue abrir este arquivo — exporte em MP4 (H.264)"); return; }
                     setArqDur(v.duration || 0);
-                    irPara((v.duration || 0) / 2);
+                    setSugestoes([]);
+                    gerarSugestoes();
                   }}
                   onSeeked={desenharDoArquivo}
                   onError={()=>setArqErro("o navegador não consegue abrir este arquivo — exporte em MP4 (H.264)")}/>
@@ -2822,6 +2865,24 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
                       onChange={(e)=>{ const f=e.target.files[0]; if(f) abrirArquivo(f); }}/>
                   </label>
                 ) : (
+                  <div>
+                  {/* Oito sugestões, do próprio arquivo. */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(8, 1fr)",gap:6,marginBottom:12}}>
+                    {gerando && sugestoes.length === 0 && Array.from({length:8},(_,i)=>(
+                      <div key={i} style={{aspectRatio:"16/9",borderRadius:6,background:"rgba(255,255,255,0.04)"}}/>
+                    ))}
+                    {sugestoes.map((s2) => {
+                      const perto = Math.abs(s2.t - arqSeg) < 0.25;
+                      return (
+                        <button key={s2.t} type="button" onClick={()=>irPara(s2.t)} data-cursor="hover"
+                          style={{padding:0,border:perto?"2px solid var(--accent)":"1px solid var(--line-strong)",
+                            borderRadius:6,overflow:"hidden",cursor:"pointer",background:"#000"}}>
+                          <div style={{width:"100%",aspectRatio:"16/9",backgroundImage:"url("+s2.img+")",backgroundSize:"cover",backgroundPosition:"center"}}/>
+                          <div style={{fontSize:9,padding:"3px 0",textAlign:"center",color:perto?"var(--accent)":"var(--ink-mute)",fontFamily:"var(--font-mono)"}}>{relogio(s2.t)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
                   <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
                     <canvas ref={telaArqRef} style={{width:180,height:"auto",borderRadius:8,background:"#000",flexShrink:0,display:"block"}}/>
                     <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:8}}>
@@ -2842,13 +2903,14 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
                       </div>
                     </div>
                   </div>
+                  </div>
                 )}
                 {arqErro && <div style={{fontSize:11,color:"var(--ink-mute)",marginTop:8}}>{arqErro}</div>}
               </div>
 
               <div style={{fontSize:10,color:"var(--ink-mute)",marginTop:10,lineHeight:1.5}}>
-                As quatro capas acima vêm do YouTube a 480x360 — são as únicas que ele publica.
-                Pelo arquivo do vídeo dá para pegar qualquer segundo, na resolução do original.
+                As quatro capas acima são as únicas que o YouTube publica (480x360) — não existe uma quinta.
+                Pelo arquivo do vídeo saem oito sugestões e qualquer segundo, na resolução do original.
               </div>
             </div>
           )}

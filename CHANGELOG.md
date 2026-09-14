@@ -5,6 +5,10 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Oito sugestões de capa** quando o arquivo do vídeo é aberto, espalhadas
+  pela duração inteira: clicar numa leva o slider até ali, e daí dá para afinar
+  no segundo. Do YouTube isso não existe — ele publica **quatro** quadros por
+  vídeo e nada além (`1.jpg`, `2.jpg`, `3.jpg` e a capa; `hq4` em diante é 404).
 - **Slider para escolher o segundo exato da capa, a partir do arquivo do
   vídeo.** No seletor de momento, "Abrir arquivo do vídeo" carrega o arquivo no
   próprio navegador; o slider varre a duração inteira e "Usar este quadro" envia
@@ -18,6 +22,11 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
     dados do vídeo e sem tela de consentimento, só sem a fita), e o endpoint do
     player responde UNPLAYABLE para todos os clientes. Esse caminho foi
     removido em vez de ficar como uma opção que falha em produção.
+  - Uma sonda no próprio servidor publicado confirmou o caso encerrado: das
+    quatro fontes possíveis (página do vídeo, a mesma com `bpctr`, a versão
+    mobile e a página de incorporação), **nenhuma** traz a receita da fita
+    quando o pedido sai do Render — as quatro respondem 200 com a página
+    inteira. Da minha máquina, três das quatro trazem.
 
 - **"Vídeos em destaque:" desceu mais 80px**, quase encostando na primeira
   fileira do corredor. Quem desce o título é o palco subindo, e não mais espaço
