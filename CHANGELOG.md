@@ -19,12 +19,15 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
   - O editor da lista fica na aba Categorias, que é a mesma ideia — recorte do
     acervo definido no console.
 
-- **Zoom maior na imagem dos cards** do grid (115%). A thumb do YouTube traz
-  margem sobrando, e no imersivo a imagem útil é uma faixa no meio do quadro:
-  sem o zoom, o card virava uma tarja preta com um retângulo pequeno no centro.
+- **Cards maiores no grid: três colunas em vez de quatro**, com a margem entre
+  eles caindo de 14px para 8px. O card saiu de ~340px para 440px de largura.
+  - Antes disto eu tinha ampliado a IMAGEM em 115%, o que era o oposto do
+    pedido: agrandar a imagem come as bordas dela. Quem precisava crescer era o
+    quadro, e quem decide largura de card é a contagem de colunas. A imagem
+    voltou a caber inteira.
   - O tamanho do fundo é escrito no próprio elemento, e inline vence folha de
-    estilo — por isso ele passou a ler uma variável CSS, que é onde o
-    enquadramento se ajusta sem tocar no JSX.
+    estilo — por isso ele lê uma variável CSS, que é onde o enquadramento se
+    ajusta sem tocar no JSX.
 
 - **Duração real, lida do YouTube.** Ela era um campo digitado à mão, e por isso
   quase todo card mostrava o mesmo "03:00" de exemplo. Agora o servidor lê o

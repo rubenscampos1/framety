@@ -1686,16 +1686,18 @@ body.in-cat-page.cat-peek .cat-page {
 /* ── Video grid ─────────────────────────────────────── */
 :root { --stack-overlap: 38px; }
 
+/* Três colunas, não quatro: o pedido foi um quadro maior, e largura de card é
+   o que a contagem de colunas decide. A margem entre eles caiu junto — com
+   cards maiores, o respiro de 14px virava um vão. */
 .cat-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  column-gap: 14px;
-  row-gap: 14px;
+  grid-template-columns: repeat(3, 1fr);
+  column-gap: 8px;
+  row-gap: 8px;
   padding-bottom: 80px;
   margin-bottom: 0;
 }
-@media (max-width: 1200px) { .cat-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 800px)  { .cat-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 1100px) { .cat-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 500px)  { .cat-grid { grid-template-columns: 1fr; } }
 
 /* O card É a thumb: sem fundo, sem contorno fixo, sem barra embaixo. O
@@ -8829,11 +8831,11 @@ body.home-pronta .whisper.no-ar .whisper-w {
 }
 .cat-card:hover .cat-card-legenda { color: #fff; }
 
-/* Zoom da imagem dentro do card do grid. O tamanho do fundo é escrito no
-   próprio elemento (e inline vence CSS), então ele lê esta variável: mexer
-   aqui muda o enquadramento sem tocar no JSX.
-   115% porque a thumb do YouTube traz margem sobrando, e nos imersivos a
-   imagem útil é uma faixa no meio do quadro — sem o zoom, o card virava uma
-   tarja preta com um retângulo pequeno no centro. */
+/* A imagem do card ocupa o quadro sem ser ampliada: cover encaixa a thumb
+   inteira, cortando só o que passa da moldura. O 115% que houve aqui agrandava
+   a imagem e comia as bordas dela — quem precisava crescer era o quadro, e
+   quem cuida disso é a contagem de colunas do .cat-grid.
+   A variável fica, porque o tamanho do fundo é escrito no próprio elemento
+   (inline vence folha de estilo) e é por ela que se ajusta sem tocar no JSX. */
 .cat-grid .cat-card-thumb,
-.client-page-grid .cat-card-thumb { --zoom-thumb: 115%; }
+.client-page-grid .cat-card-thumb { --zoom-thumb: cover; }
