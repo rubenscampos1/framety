@@ -747,7 +747,10 @@ const RowAdmin = ({ v, i, onTogglePub, onToggleFeat, onRemove, onEdit, onDuplica
       <div className={`thumb ${cat?.bgClass||"bg-comm"}`}
         style={thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"cover",backgroundPosition:"center"} : {}}/>
       <div className="title">
-        {v.featured && <Icon name="star" size={11} stroke={2} style={{color:"var(--accent)",marginRight:6,verticalAlign:"-1px"}}/>}
+        {/* Fora do fluxo do texto: dentro dele a estrela empurrava o título
+            para a direita, e só nas linhas em destaque — a coluna inteira
+            parecia torta sem motivo. A calha está reservada em todas. */}
+        {v.featured && <span className="admin-row-star"><Icon name="star" size={11} stroke={2}/></span>}
         {v.title}
         <span className="meta">{v.client}{v.empreendimento ? ` · ${v.empreendimento}` : ""}{v.formato ? ` · ${v.formato}` : ""}{v.padrao ? ` · padrão ${v.padrao.toLowerCase()}` : ""} · {v.duration} · {v.year}</span>
       </div>
@@ -2681,9 +2684,9 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
                   title={ytId ? "Assistir e escolher um frame do vídeo" : "Cole um link do YouTube para habilitar"}
                   style={{display:"inline-flex",alignItems:"center",gap:8,padding:"9px 14px",borderRadius:8,
                     fontSize:12,fontWeight:600,cursor:ytId?"pointer":"not-allowed",
-                    border:ytId?"1px solid var(--accent)":"1px solid var(--line-strong)",
-                    color:ytId?"var(--accent)":"var(--ink-mute)",
-                    background:ytId?"rgba(255,45,45,0.10)":"transparent",
+                    border:ytId?"1px solid var(--hl-bg)":"1px solid var(--line-strong)",
+                    color:ytId?"var(--hl-ink)":"var(--ink-mute)",
+                    background:ytId?"var(--hl-bg)":"transparent",
                     opacity:ytId?1:0.5}}>
                   <Icon name="play" size={12}/>
                   {framePicker ? "Fechar" : "Escolher frame do vídeo"}

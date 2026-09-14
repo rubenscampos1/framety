@@ -5,6 +5,25 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Um highlight só para o site inteiro.** Cada lugar tinha o seu jeito de dizer
+  "este é o selecionado": uns com o azul cheio e texto branco, outros com um véu
+  de 10%, alguns ainda no vermelho do tema antigo. Agora todos leem de
+  `--hl-bg` / `--hl-ink` — branco translúcido com texto em azul escuro. Vale
+  para: menu e menu mobile do console, pílulas de filtro, abas, alternador de
+  lista/grade, botão "Escolher frame do vídeo", coluna e dropdowns do modo de
+  apresentação, filtros e dropdown de cliente das páginas de categoria.
+  - Contagens e legendas dentro do highlight ganharam tom próprio: no
+    cinza-claro de fora elas sumiriam sobre o branco.
+- **Corrigido: títulos desalinhados na lista de vídeos do console.** A estrela
+  de destaque ficava dentro do texto e empurrava o título uns 17px para a
+  direita — só nas linhas em destaque, o que fazia a coluna parecer torta sem
+  motivo. Agora ela mora numa calha reservada em todas as linhas.
+- **Corrigido: vídeo em destaque repetido no corredor da home.** O corredor
+  tinha um número fixo de cards por trilho e dava a volta na lista para
+  preenchê-lo; com poucos destaques, o mesmo vídeo passava duas ou três vezes.
+  Agora é um card por vídeo, com teto de 8 por trilho, e o intervalo entre eles
+  se divide pelos cards que existem de verdade.
+
 - **O item ativo do menu do console é um branco suave com texto em azul
   escuro.** Era um
   vermelho de 10% com o texto na cor de destaque — sobra do tema antigo. O azul

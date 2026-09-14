@@ -23,6 +23,21 @@
   --accent-glow-soft: rgba(var(--accent-rgb), 0.22);
   --accent-soft: rgba(var(--accent-rgb), 0.12);
   --accent-deep: #21608B;
+  /* Highlight: o jeito único de dizer "este é o selecionado" — pílulas de
+     filtro, abas, itens de menu, opções de dropdown. Cada lugar tinha o seu
+     tom (uns com o azul cheio e texto branco, outros com um véu de 10%, alguns
+     ainda no vermelho do tema antigo); agora todos leem daqui, e mudar o
+     highlight do site é mudar estas três linhas.
+
+     Branco translúcido, não chapado: sobre o fundo escuro ele assenta num
+     quase-branco em vez de virar um retângulo aceso. O texto vai no azul
+     escuro, que o console reescreve junto com a Cor de destaque. */
+  --hl-bg: rgba(255,255,255,0.9);
+  --hl-ink: var(--accent-deep);
+  /* Contagens e legendas DENTRO do highlight: no cinza-claro de fora elas
+     sumiriam sobre o branco. */
+  --hl-sub: rgba(0,0,0,0.45);
+  --hl-badge: rgba(0,0,0,0.08);
   --glass-bg: rgba(255, 255, 255, 0.04);
   --glass-bg-strong: rgba(255, 255, 255, 0.07);
   --glass-border: rgba(255, 255, 255, 0.10);
@@ -1589,7 +1604,7 @@ body.in-cat-page.cat-peek .cat-page {
   letter-spacing: 0.12em;
 }
 .cat-page-meta .pill.active {
-  background: var(--accent); border-color: var(--accent); color: #fff;
+  background: var(--hl-bg); border-color: var(--hl-bg); color: var(--hl-ink);
 }
 .cat-page-meta .row { color: var(--ink-dim); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; }
 
@@ -1661,8 +1676,8 @@ body.in-cat-page.cat-peek .cat-page {
   transition: border-color 0.25s ease, color 0.25s ease, background 0.25s ease;
 }
 .cat-cf-btn:hover { border-color: rgba(255,255,255,0.25); color: var(--ink); }
-.cat-cf-btn.active { border-color: var(--accent); background: var(--accent); color: #fff; }
-.cat-cf-btn.active .cat-cf-count { background: rgba(255,255,255,0.25); color: #fff; }
+.cat-cf-btn.active { border-color: var(--hl-bg); background: var(--hl-bg); color: var(--hl-ink); }
+.cat-cf-btn.active .cat-cf-count { background: var(--hl-badge); color: var(--hl-sub); }
 .cat-cf-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 18px; height: 18px; padding: 0 5px;
@@ -1688,7 +1703,7 @@ body.in-cat-page.cat-peek .cat-page {
   transition: background 0.2s ease, color 0.2s ease;
 }
 .cat-view-toggle button:hover { color: var(--ink); background: rgba(255,255,255,0.04); }
-.cat-view-toggle button.active { background: rgba(255,255,255,0.08); color: var(--ink); }
+.cat-view-toggle button.active { background: var(--hl-bg); color: var(--hl-ink); }
 .cat-view-toggle button + button { border-left: 1px solid var(--line-strong); }
 
 /* ── Video grid ─────────────────────────────────────── */
@@ -1876,7 +1891,7 @@ body.in-cat-page.cat-peek .cat-page {
   white-space: nowrap;
 }
 .cat-client-dropdown-btn:hover { border-color: rgba(255,255,255,0.25); color: var(--ink); }
-.cat-client-dropdown-btn.has-filter { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.cat-client-dropdown-btn.has-filter { border-color: var(--hl-bg); background: var(--hl-bg); color: var(--hl-ink); }
 .cat-client-dropdown-menu {
   position: absolute; top: calc(100% + 8px); left: 0;
   min-width: 220px;
@@ -1903,7 +1918,8 @@ body.in-cat-page.cat-peek .cat-page {
   transition: background 0.15s, color 0.15s;
 }
 .cat-client-dropdown-menu button:hover { background: rgba(255,255,255,0.05); color: var(--ink); }
-.cat-client-dropdown-menu button.active { color: var(--accent); background: var(--accent-soft); }
+.cat-client-dropdown-menu button.active { color: var(--hl-ink); background: var(--hl-bg); }
+.cat-client-dropdown-menu button.active .dd-count { background: var(--hl-badge); color: var(--hl-sub); }
 .cat-client-dropdown-menu .dd-count {
   margin-left: auto;
   font-family: var(--font-mono); font-size: 10px;
@@ -2170,7 +2186,7 @@ body.in-cat-page.cat-peek .cat-page {
 /* Branco translúcido, não chapado: sobre o fundo escuro do menu ele assenta
    num quase-branco em vez de virar um retângulo aceso. O texto continua no azul
    escuro, com contraste de sobra. */
-.admin-nav-item.active { background: rgba(255,255,255,0.9); color: var(--accent-deep); }
+.admin-nav-item.active { background: var(--hl-bg); color: var(--hl-ink); }
 .admin-nav-item .ico {
   width: 16px; height: 16px;
   display: flex; align-items: center; justify-content: center;
@@ -2282,7 +2298,19 @@ body.in-cat-page.cat-peek .cat-page {
   position: absolute; inset: 0;
   background: linear-gradient(135deg, transparent, rgba(0,0,0,0.4));
 }
-.admin-row .title { font-weight: 500; }
+/* A calha da estrela de destaque existe em toda linha, tenha ela estrela ou
+   não: é isso que mantém todos os títulos começando no mesmo lugar. */
+.admin-row .title { font-weight: 500; position: relative; padding-left: 17px; }
+/* A classe vai no span, e não na própria Icon: cada arquivo compilado pelo
+   Babel no navegador declara o seu `_excluded` no mesmo escopo global, o último
+   ganha, e com isso os props passados por espalhamento para a Icon podem se
+   perder pelo caminho. */
+.admin-row-star {
+  position: absolute;
+  left: 0; top: 4px;
+  line-height: 0;
+  color: var(--accent);
+}
 .admin-row .title .meta { display: block; font-size: 11px; color: var(--ink-dim); margin-top: 2px; font-family: var(--font-mono); letter-spacing: 0.1em; }
 .admin-row .cat-pill {
   font-family: var(--font-mono); font-size: 10px;
@@ -2976,9 +3004,9 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .admin-toolbar select option { background: #0b0b0f; }
 .admin-toolbar .filter-pill { display: inline-flex; align-items: center; gap: 6px; }
 .admin-toolbar .filter-pill.active {
-  background: rgba(var(--accent-rgb),0.12);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--hl-bg);
+  border-color: var(--hl-bg);
+  color: var(--hl-ink);
 }
 .admin-toolbar .view-toggle {
   margin-left: auto;
@@ -3001,9 +3029,8 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   transition: all 0.2s ease;
 }
 .admin-toolbar .view-toggle button.active {
-  background: var(--accent);
-  color: #fff;
-  box-shadow: 0 0 14px var(--accent-glow-soft);
+  background: var(--hl-bg);
+  color: var(--hl-ink);
 }
 
 /* Admin grid view */
@@ -3314,8 +3341,8 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 }
 .admin-tab-bar button:hover { color: var(--ink); }
 .admin-tab-bar button.active {
-  background: var(--accent);
-  color: #fff;
+  background: var(--hl-bg);
+  color: var(--hl-ink);
 }
 .reel-drop {
   border: 1.5px dashed var(--line-strong);
@@ -3608,9 +3635,9 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 }
 .pres-side-item.compact { grid-template-columns: 1fr; padding-left: 16px; }
 .pres-side-item:hover { background: rgba(255,255,255,0.06); color: #fff; border-left-color: rgba(255,255,255,0.18); }
-.pres-side-item.active { background: rgba(var(--accent-rgb),0.1); color: #fff; border-left-color: var(--accent); font-weight: 500; }
+.pres-side-item.active { background: var(--hl-bg); color: var(--hl-ink); border-left-color: var(--hl-ink); font-weight: 500; }
 .pres-side-item .num { font-family: var(--font-mono); font-size: 10px; color: rgba(255,255,255,0.5); letter-spacing: 0.08em; }
-.pres-side-item.active .num { color: rgba(var(--accent-rgb),0.65); }
+.pres-side-item.active .num { color: var(--hl-sub); }
 .pres-side-item .ico-thumb { width: 20px; height: 15px; border-radius: 4px; background-size: cover; opacity: 0.75; }
 .pres-side-item.active .ico-thumb { opacity: 1; }
 .pres-side-item .ico { display: flex; align-items: center; justify-content: center; opacity: 0.8; }
@@ -4230,7 +4257,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   transform: scaleY(0.4);
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
-.admin-nav-item.active::before { opacity: 1; transform: scaleY(1); background: var(--accent-deep); }
+.admin-nav-item.active::before { opacity: 1; transform: scaleY(1); background: var(--hl-ink); }
 
 /* ── Cat list item — left accent reveal on hover ─────────── */
 .cat-list-item { position: relative; }
@@ -4761,7 +4788,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
 }
 .admin-mobile-nav a span { margin-top: 2px; }
 .admin-mobile-nav a:hover { background: rgba(255,255,255,0.05); border-color: var(--line-strong); color: var(--ink); }
-.admin-mobile-nav a.active { background: rgba(var(--accent-rgb),0.1); border-color: rgba(var(--accent-rgb),0.4); color: var(--ink); }
+.admin-mobile-nav a.active { background: var(--hl-bg); border-color: var(--hl-bg); color: var(--hl-ink); }
 .admin-mobile-nav a.exit-mobile { color: var(--accent); border-color: rgba(var(--accent-rgb),0.2); }
 
 @media (max-width: 900px) {
@@ -5098,7 +5125,7 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   }
   .admin-mobile-nav a .icon,
   .admin-mobile-nav a svg { opacity: 0.85; }
-  .admin-mobile-nav a.active { box-shadow: 0 0 0 1px rgba(var(--accent-rgb),0.18) inset; }
+  .admin-mobile-nav a.active { box-shadow: none; }
 
   /* Admin topbar: title + actions polish */
   .admin-topbar {
@@ -8954,9 +8981,9 @@ body.home-pronta .whisper.no-ar .whisper-w {
 }
 .pres-drop-btn:hover { color: var(--ink); border-color: rgba(var(--accent-rgb), 0.45); }
 .pres-drop-btn.ativo {
-  color: var(--ink);
-  border-color: rgba(var(--accent-rgb), 0.7);
-  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--hl-ink);
+  border-color: var(--hl-bg);
+  background: var(--hl-bg);
 }
 .pres-drop-menu {
   position: absolute;
@@ -8983,7 +9010,8 @@ body.home-pronta .whisper.no-ar .whisper-w {
   transition: background 0.18s ease, color 0.18s ease;
 }
 .pres-drop-menu button:hover { background: rgba(255, 255, 255, 0.05); color: var(--ink); }
-.pres-drop-menu button.ativo { background: rgba(var(--accent-rgb), 0.14); color: var(--ink); }
+.pres-drop-menu button.ativo { background: var(--hl-bg); color: var(--hl-ink); }
+.pres-drop-menu button.ativo .num { color: var(--hl-sub); }
 /* Zerado continua na lista, apagado: esconder o que não foi classificado
    esconderia a própria existência do recorte. */
 .pres-drop-menu button.vazio { opacity: 0.45; }

@@ -793,7 +793,10 @@ const CORRIDOR_PATH = {
    é ~1,5x o anterior e sobra vão entre eles. Por isso o nascimento vem grande
    (birthHeight lá em cima), para os quatro caberem numa faixa de tamanhos mais
    curta e o corredor não virar quatro cards perdidos. */
-const CORRIDOR_CARDS = 4;    // cards por trilho ao mesmo tempo
+/* Teto de cards por trilho. Cada vídeo em destaque aparece UMA vez; este número
+   só existe para o dia em que houver destaques demais — vinte cards em 3D por
+   trilho não valem o que custam. */
+const CORRIDOR_MAX_CARDS = 8;
 const CORRIDOR_SPEED = 30;   // segundos para atravessar o corredor inteiro
 const CORRIDOR_AXIS = 54;    // altura do eixo de fuga, em % do palco
 /* Faixa sensível: só aqui dentro o ponteiro segura o corredor. O palco é alto
@@ -883,13 +886,13 @@ const FeaturedSection = ({ onOpenVideo }) => {
   if (!vids.length) return null;
 
   /* Os dois trilhos não repetem vídeo entre si: a lista é partida no meio, cada
-     metade corre de um lado. (Com um vídeo só não há o que dividir.) */
+     metade corre de um lado. Com um vídeo só existe um trilho — nos dois ele
+     apareceria duas vezes na tela. */
   const meio = Math.ceil(vids.length / 2);
   const trilhos = vids.length > 1
     ? [{ name: nameR, giro: giroR, dir: "r", list: vids.slice(0, meio) },
        { name: nameL, giro: giroL, dir: "l", list: vids.slice(meio) }]
-    : [{ name: nameR, giro: giroR, dir: "r", list: vids },
-       { name: nameL, giro: giroL, dir: "l", list: vids }];
+    : [{ name: nameR, giro: giroR, dir: "r", list: vids }];
 
   const hoveredVid = hovered ? vids.find(v => v.id === hovered.split("|")[0]) : null;
   const p = CORRIDOR_PATH;
@@ -923,9 +926,13 @@ const FeaturedSection = ({ onOpenVideo }) => {
           aria-hidden="true"
         >
           <div className="ish-world">
-            {trilhos.map(trilho =>
-              Array.from({ length: CORRIDOR_CARDS }, (_, i) => {
-                const v = trilho.list[i % trilho.list.length];
+            {trilhos.map(trilho => {
+              /* Um card por vídeo, sem repetição: antes o trilho tinha um número
+                 fixo de cards e dava a volta na lista para preenchê-lo, então
+                 com poucos destaques o mesmo vídeo passava duas, três vezes. */
+              const quantos = Math.min(CORRIDOR_MAX_CARDS, trilho.list.length);
+              return Array.from({ length: quantos }, (_, i) => {
+                const v = trilho.list[i];
                 const key = `${v.id}|${trilho.dir}|${i}`;
                 /* Aqui o card chega a ocupar meia tela, e a capa padrão do
                    YouTube (480px) aparecia lavada. */
@@ -938,7 +945,9 @@ const FeaturedSection = ({ onOpenVideo }) => {
                   animationIterationCount: "infinite",
                   // Atraso negativo joga cada card no meio do voo: o corredor
                   // já nasce cheio, sem a fila se formando na primeira volta.
-                  animationDelay: `${-(i * CORRIDOR_SPEED) / CORRIDOR_CARDS}s`,
+                  // O intervalo se divide pelos cards que existem de verdade,
+                  // senão eles se amontoariam num pedaço só do trajeto.
+                  animationDelay: `${-(i * CORRIDOR_SPEED) / quantos}s`,
                 };
                 return (
                   <div
@@ -1018,8 +1027,8 @@ const FeaturedSection = ({ onOpenVideo }) => {
                   </div>
                   </div>
                 );
-              })
-            )}
+              });
+            })}
           </div>
         </div>
 
