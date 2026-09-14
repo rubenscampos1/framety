@@ -5,6 +5,26 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Grid de vídeos: o card virou a thumb.** Fora a barra preta de baixo, fora o
+  contorno azul fixo; ficou o retângulo 16:9 da imagem, com o título dentro dela
+  e o brilho de destaque só ao passar o mouse — o mesmo do resto do site.
+  - **O contorno azul vinha escrito no elemento**, não na folha de estilo: é o
+    SpotlightCard que aplica fundo e borda inline, e inline vence CSS. Por isso
+    ele é desligado ali onde o card é montado, e não em `styles.css`. Era também
+    o motivo de a regra de hover que pintava a borda nunca ter efeito.
+  - **A grade deixou de empilhar os cards.** A sobreposição de 38px existia para
+    esconder a barra de texto do card debaixo; sem a barra, ela cortaria a
+    imagem. Agora é um grid com espaço entre as linhas.
+  - O título desceu para dentro da imagem, sobre o degradê que já escurecia o pé
+    dela. Sem isso o grid vira um mosaico de fotos sem nome.
+  - A página de cliente usa o mesmo card e recebeu o mesmo tratamento; deixá-la
+    de fora daria uma barra de texto solta no ar.
+
+- **Fora a barra de filtro por empreendimento** nas categorias. Ela criava um
+  botão por empreendimento: com quase cem vídeos cadastrados virou uma parede de
+  botões, e o nome do empreendimento já é o título do vídeo. Saiu o estado, o
+  parâmetro na URL e o filtro.
+
 - **Importador da planilha de portfólio** (`importar-planilha.js`). Lê a
   planilha PORTFÓLIO FRAMETY e cadastra os vídeos pela API do site.
   - **A categoria é o nome da tabela do Google Sheets**, e esse nome é metadado:

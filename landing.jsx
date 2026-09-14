@@ -605,11 +605,13 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
               const isPrev = previewId === v.id;
               const cat = (window.FRAMETY_DATA.categories || []).find(c => c.id === v.category);
               return (
+                /* Desliga o fundo e o contorno que o SpotlightCard escreve no
+                   elemento — o mesmo que é feito no grid de categoria. */
                 <SpotlightCard key={v.id} color="red" className="cat-card"
                   onClick={() => onOpenVideo?.(v.id)}
                   onMouseEnter={() => handleEnter(v)}
                   onMouseLeave={handleLeave}
-                  style={{ '--radius': 12 }}>
+                  style={{ '--radius': 12, '--backdrop': 'transparent', '--backup-border': 'transparent' }}>
 
                   <div className={`cat-card-thumb${thumb || isPrev ? "" : ` ${cat?.bgClass || "bg-comm"}`}`}
                     style={!isPrev && thumb ? { backgroundImage: `url(${thumb})`, backgroundSize: "cover", backgroundPosition: "center" } : {}}>
@@ -624,6 +626,7 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
                     <div className="cat-card-overlay" />
                     <div className="cat-card-duration">{v.duration}</div>
                     <div className="cat-card-play"><Icon name="play" size={20} /></div>
+                    <div className="cat-card-legenda">{v.title}</div>
                   </div>
                   {(v.aiGenerated || v.has360) && (
                     <div className="badge-stack">
@@ -631,20 +634,6 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
                       {v.has360 && <Badge360 variant="pill" />}
                     </div>
                   )}
-                  <div className="cat-card-info">
-                    <div className="cat-card-meta-row">
-                      <span className="cat-card-year">{v.year}</span>
-                      <div className="cat-card-tags">
-                        {(v.tags || []).slice(0, 2).map(t => <span key={t}>{t}</span>)}
-                      </div>
-                    </div>
-                    <div className="cat-card-title">{v.title}</div>
-                    <div className="cat-card-client-row">
-                      {v.empreendimento
-                        ? <span style={{ color: "var(--ink-mute)", fontSize: 11 }}>{v.empreendimento}</span>
-                        : <span />}
-                    </div>
-                  </div>
                 </SpotlightCard>
               );
             })}

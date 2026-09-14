@@ -1690,38 +1690,42 @@ body.in-cat-page.cat-peek .cat-page {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   column-gap: 14px;
-  row-gap: 0;
-  padding-bottom: calc(80px + var(--stack-overlap));
+  row-gap: 14px;
+  padding-bottom: 80px;
   margin-bottom: 0;
 }
 @media (max-width: 1200px) { .cat-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 800px)  { .cat-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 500px)  { .cat-grid { grid-template-columns: 1fr; } }
 
+/* O card É a thumb: sem fundo, sem contorno fixo, sem barra embaixo. O
+   contorno azul que havia aqui vinha escrito no elemento pelo SpotlightCard e
+   era desligado no category.jsx; o que marca o card agora é o brilho no hover,
+   o mesmo do resto do site. */
 .cat-card {
   cursor: pointer;
   border-radius: 12px;
   overflow: visible;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--line);
+  background: transparent;
   position: relative;
   z-index: 1;
-  margin-bottom: calc(-1 * var(--stack-overlap));
   transition: transform 0.42s cubic-bezier(.2,.8,.2,1),
               box-shadow 0.42s cubic-bezier(.2,.8,.2,1),
-              z-index 0s, border-color 0.3s;
+              z-index 0s;
 }
 .cat-card:hover {
-  transform: translateY(calc(-1 * var(--stack-overlap) - 4px));
+  transform: translateY(-4px);
   z-index: 40;
-  border-color: rgba(255,255,255,0.14);
-  box-shadow: 0 24px 56px -10px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08);
+  box-shadow:
+    0 0 0 1px var(--accent-glow-soft),
+    0 18px 60px -12px var(--accent-glow),
+    0 0 80px -24px var(--accent-glow-soft);
 }
 .cat-card-thumb {
   position: relative;
-  aspect-ratio: 16/8;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
-  border-radius: 12px 12px 0 0;
+  border-radius: 12px;
 }
 .cat-card-overlay {
   position: absolute; inset: 0;
@@ -1732,7 +1736,7 @@ body.in-cat-page.cat-peek .cat-page {
 
 /* Duration pill — bottom-left */
 .cat-card-duration {
-  position: absolute; bottom: 10px; left: 12px;
+  position: absolute; bottom: 10px; right: 12px;
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.14em;
@@ -4186,9 +4190,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .feat-item:hover::after { opacity: 1; top: 15%; bottom: 15%; }
 
 /* ── Cat card — stronger accent glow ─────────────────────── */
-.cat-card:hover {
-  border-color: rgba(var(--accent-rgb),0.18);
-}
+/* (o contorno no hover virou brilho; ver .cat-card:hover mais acima) */
 
 /* ── Suggested video card — thumb zoom ───────────────────── */
 .modal-sug-thumb { overflow: hidden; }
@@ -8799,3 +8801,25 @@ body.home-pronta .whisper.no-ar .whisper-w {
    é justamente quando a seta aparecia atravessada no meio do jogo. */
 .play-tela.jogando,
 .play-tela.jogando * { cursor: none !important; }
+
+/* Título dentro da thumb, sobre o degradê que já escurecia o pé da imagem.
+   Fica de fora do caminho do ponteiro para não atrapalhar o clique no card. */
+.cat-card-legenda {
+  position: absolute;
+  left: 12px; right: 64px; bottom: 9px;
+  z-index: 2;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--ink);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  pointer-events: none;
+  transition: color 0.25s ease;
+}
+.cat-card:hover .cat-card-legenda { color: #fff; }

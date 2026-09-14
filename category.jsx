@@ -259,14 +259,13 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
     return { c: sp.get("c") || "all", e: sp.get("e") || "all" };
   };
   const [clientFilter, setClientFilter] = React.useState(() => readFiltersFromUrl().c);
-  const [empFilter,    setEmpFilter]    = React.useState(() => readFiltersFromUrl().e);
+
 
   // Sync filters when user navigates back/forward
   React.useEffect(() => {
     const onPop = () => {
-      const { c, e } = readFiltersFromUrl();
+      const { c } = readFiltersFromUrl();
       setClientFilter(c);
-      setEmpFilter(e);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -287,22 +286,22 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
   React.useEffect(() => {
     const sp = new URLSearchParams();
     if (clientFilter !== "all") sp.set("c", clientFilter);
-    if (empFilter    !== "all") sp.set("e", empFilter);
+
     const qs = sp.toString() ? "?" + sp.toString() : "";
     window.history.replaceState(null, "", `/framety/categoria/${catId}${qs}`);
-  }, [clientFilter, empFilter, catId]);
-
-  // Reset empreendimento filter when client changes
-  React.useEffect(() => { setEmpFilter("all"); }, [clientFilter]);
+  }, [clientFilter, catId]);
 
   const catClientNames = [...new Set(allVids.map(v => v.client))];
   const catClients     = catClientNames.map(n => clients.find(c => c.name === n) || { id: n, name: n });
 
   // Empreendimentos filtered by current client selection
   const vidsByClient  = clientFilter === "all" ? allVids : allVids.filter(v => v.client === clientFilter);
-  const empreendimentos = [...new Set(vidsByClient.map(v => v.empreendimento).filter(Boolean))];
 
-  const filtered = vidsByClient.filter(v => empFilter === "all" || v.empreendimento === empFilter);
+
+  /* Sem a barra de empreendimentos, o que chega aqui já é o resultado final.
+     Ela listava um botão por empreendimento; com quase cem vídeos cadastrados
+     virou uma parede de botões, e o nome do empreendimento já é o título. */
+  const filtered = vidsByClient;
 
   const handleCardEnter = (v) => {
     if (IS_TOUCH) return; // no hover-preview on touch — cards stay static ("cru")
@@ -387,17 +386,6 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
               )}
             </div>
 
-            {/* Empreendimento filter — pills (compact, secondary) */}
-            {empreendimentos.length > 0 && (
-              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                <span style={{fontFamily:"var(--font-mono)",fontSize:9,letterSpacing:"0.18em",color:"var(--ink-mute)",flexShrink:0}}>EMPREEND.</span>
-                <button className={`cat-cf-btn cat-cf-sm${empFilter==="all"?" active":""}`} onClick={() => setEmpFilter("all")}>Todos</button>
-                {empreendimentos.map(emp => (
-                  <button key={emp} className={`cat-cf-btn cat-cf-sm${empFilter===emp?" active":""}`}
-                    onClick={() => setEmpFilter(emp)}>{emp}</button>
-                ))}
-              </div>
-            )}
           </div>
 
           <div className="cat-view-toggle">
@@ -418,10 +406,15 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
               const ytId  = getYouTubeId(v.videoUrl);
               const isPreview = previewId === v.id;
               return (
+                /* O contorno azul e o fundo escuro do SpotlightCard vêm escritos
+                   no próprio elemento, e por isso vencem a folha de estilo: é
+                   aqui que eles precisam ser desligados. O que sobra é a thumb,
+                   e o brilho no hover fica por conta do box-shadow, que o
+                   componente não escreve. */
                 <SpotlightCard key={v.id} color="red" className="cat-card" onClick={() => onOpenVideo(v.id)}
                   onMouseEnter={() => handleCardEnter(v)}
                   onMouseLeave={handleCardLeave}
-                  style={{ '--radius': 12 }}>
+                  style={{ '--radius': 12, '--backdrop': 'transparent', '--backup-border': 'transparent' }}>
                   <div className={`cat-card-thumb${thumb || isPreview ? "" : ` ${cat?.bgClass||"bg-comm"}`}`}
                     style={!isPreview && thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"cover",backgroundPosition:"center"} : {}}>
 
@@ -439,6 +432,10 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
                     <div className="cat-card-duration">{v.duration}</div>
                     <div className="cat-card-play"><Icon name="play" size={20}/></div>
                     {v.status === "draft" && <div className="cat-card-draft-badge">Rascunho</div>}
+                    {/* O título desceu para dentro da imagem, sobre o degradê que
+                        já existia ali. Sem isto o grid vira um mosaico de fotos
+                        sem nome. */}
+                    <div className="cat-card-legenda">{v.title}</div>
                   </div>
                   {(v.aiGenerated || v.has360) && (
                     <div className="badge-stack">
@@ -446,21 +443,6 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
                       {v.has360 && typeof Badge360 !== 'undefined' && <Badge360 variant="pill" />}
                     </div>
                   )}
-                  <div className="cat-card-info">
-                    <div className="cat-card-meta-row">
-                      <span className="cat-card-year">{v.year}</span>
-                      <div className="cat-card-tags">
-                        {v.tags.slice(0,2).map(t => <span key={t}>{t}</span>)}
-                      </div>
-                    </div>
-                    <div className="cat-card-title">{v.title}</div>
-                    <div className="cat-card-client-row">
-                      {v.empreendimento
-                        ? <span style={{color:"var(--ink-mute)",fontSize:11}}>{v.empreendimento}</span>
-                        : <span/>}
-                      <div><ClientBadge name={v.client} size={26}/></div>
-                    </div>
-                  </div>
                 </SpotlightCard>
               );
             })}
