@@ -1028,10 +1028,12 @@ const FeaturedSection = ({ onOpenVideo }) => {
         {naFaixa && hoveredVid && (
           <div className="ish-caption">
             <span className="t">{hoveredVid.title}</span>
+            {/* Só a categoria embaixo do nome. O nome da categoria vem da
+                lista, e não do rótulo gravado no vídeo: renomear uma categoria
+                no console tem de valer aqui também. */}
             <span className="s">
-              {hoveredVid.client}
-              {hoveredVid.year ? ` · ${hoveredVid.year}` : ""}
-              {hoveredVid.duration ? ` · ${hoveredVid.duration}` : ""}
+              {(window.FRAMETY_DATA.categories.find(c => c.id === hoveredVid.category) || {}).name
+                || hoveredVid.catLabel || ""}
             </span>
           </div>
         )}

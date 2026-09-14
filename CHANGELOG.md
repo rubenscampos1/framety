@@ -5,6 +5,11 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **A legenda do corredor de destaques mostra só a categoria** embaixo do nome
+  do vídeo, no lugar de cliente, ano e duração. O nome vem da lista de
+  categorias, não do rótulo gravado no vídeo: renomear uma categoria no console
+  vale aqui também.
+
 - **Em 1920x1080 o site volta ao tamanho escrito.** O primeiro degrau da escada
   de ampliação abria em 1800px, então a resolução mais comum de monitor já
   pegava 15% de zoom: tudo um pouco grande demais, e 140px de altura útil a
