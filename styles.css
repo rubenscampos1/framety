@@ -8111,6 +8111,20 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) { outline: none; }
   color: var(--ink-dim);
 }
 
+/* O corredor tem um vão vazio no alto: o eixo de fuga fica a 54% do palco e os
+   cards nunca chegam à borda de cima. O título ficava encostado no topo da
+   seção com esse buraco embaixo dele; o espaço extra aqui é o que o centra no
+   vão, sem mexer em card nenhum — o palco continua onde estava. */
+/* Só no desktop, que é onde o corredor existe. No celular quem aparece é a
+   faixa horizontal, que não tem vão nenhum, e ali valem os espaçamentos de
+   sempre. */
+@media (min-width: 901px) {
+  .section.featured { padding-top: 110px; }
+  /* Os 64px que separavam o título do resto viravam folga dobrada: somados ao
+     vão do corredor davam 175px embaixo contra 110px em cima. */
+  .featured-head, .featured-head .section-head { margin-bottom: 0; }
+}
+
 /* No celular o corredor sai de cena: 18 cards em 3D não valem a bateria, e a
    faixa horizontal que já existia dá conta. */
 @media (max-width: 900px) {

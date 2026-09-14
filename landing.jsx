@@ -895,10 +895,10 @@ const FeaturedSection = ({ onOpenVideo }) => {
   const p = CORRIDOR_PATH;
 
   return (
-    <section className="section featured" id="trabalhos" data-screen-label="03 Projetos" style={{ paddingTop: 60, paddingBottom: 0 }}>
+    <section className="section featured" id="trabalhos" data-screen-label="03 Projetos" style={{ paddingBottom: 0 }}>
 
       {/* ── Section header ── */}
-      <div className="container" style={{ marginBottom: 36 }}>
+      <div className="container featured-head">
         <div className="section-head">
           <div>
             <div className="num">{content.eyebrow}</div>

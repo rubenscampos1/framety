@@ -5,6 +5,16 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Cadastrar cliente sem sair do formulário do vídeo.** O dropdown de cliente
+  ganhou "+ Novo cliente…": escolher a opção troca o menu por um campo de nome,
+  Enter cria e já deixa o cliente selecionado. A logo continua na aba Clientes,
+  que é onde se envia arquivo. Nome que já existe não vira cliente repetido —
+  seleciona o que há.
+- **"Vídeos em destaque:" centrado verticalmente no vão do corredor.** O eixo de
+  fuga fica a 54% do palco, então há sempre uma faixa vazia no alto: o título
+  ficava encostado no topo com 175px de folga embaixo contra 110px em cima.
+  Agora são 110 de cada lado em 1920x1080, sem mover card nenhum.
+
 - **A legenda do corredor de destaques mostra só a categoria** embaixo do nome
   do vídeo, no lugar de cliente, ano e duração. O nome vem da lista de
   categorias, não do rótulo gravado no vídeo: renomear uma categoria no console

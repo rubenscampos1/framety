@@ -399,7 +399,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
         </div>
 
         {tab === "overview" && <OverviewPanel vids={vids} cats={cats} clients={clients} setTab={setTab}/>}
-        {tab === "videos" && <VideosPanel vids={vids} setVids={setVids} cats={cats} clients={clients}/>}
+        {tab === "videos" && <VideosPanel vids={vids} setVids={setVids} cats={cats} clients={clients} setClients={setClients}/>}
         {tab === "clientes" && <ClientsPanel clients={clients} setClients={setClients} vids={vids} setVids={setVids}/>}
         {tab === "categorias" && <><CategoriesPanel cats={cats} setCats={setCats}/><FormatosImersivosPanel/></>}
         {tab === "reel" && <><ReelPanel reelName={reelName} onUpload={handleReelUpload} onRemove={removeReel}/><AccentPanel/><HomeCopyPanel/><InstaPanel/></>}
@@ -420,7 +420,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
       </button>
 
       {showAdd && (
-        <VideoFormModal cats={cats} clients={clients} onClose={()=>setShowAdd(false)}
+        <VideoFormModal cats={cats} clients={clients} onNovoCliente={(c)=>setClients(cs=>[...cs,c])} onClose={()=>setShowAdd(false)}
           onSave={async (nv) => {
             try {
               const result = await window.API.addVideo(nv);
@@ -490,7 +490,7 @@ const OverviewPanel = ({ vids, cats, clients, setTab }) => (
 );
 
 /* =========================== Videos =========================== */
-const VideosPanel = ({ vids, setVids, cats, clients }) => {
+const VideosPanel = ({ vids, setVids, cats, clients, setClients }) => {
   const [view, setView] = React.useState("list");
   const [search, setSearch] = React.useState("");
   const [fCat, setFCat] = React.useState("all");
@@ -706,7 +706,7 @@ const VideosPanel = ({ vids, setVids, cats, clients }) => {
 
       {editVid && (
         <VideoFormModal
-          cats={cats} clients={clients} initialData={editVid}
+          cats={cats} clients={clients} initialData={editVid} onNovoCliente={(c)=>setClients(cs=>[...cs,c])}
           onClose={() => setEditVid(null)}
           onSave={async (updated) => {
             try {
@@ -2408,13 +2408,41 @@ const VIDEO_FORMATOS = [
   { value: "Business",              label: "Business" },
 ];
 
-const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
+const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCliente }) => {
   const isEdit     = !!(initialData?.id);
   const iSrc       = initialData?.videoUrl ? (initialData.videoUrl.includes("vimeo") ? "vimeo" : "youtube") : "youtube";
   const [src,      setSrc]      = React.useState(iSrc);
   const [url,      setUrl]      = React.useState(initialData?.videoUrl || "");
   const [title,    setTitle]    = React.useState(initialData?.title || "");
   const [clientNm, setClientNm] = React.useState(initialData?.client || clients[0]?.name || "");
+  /* Cadastro de cliente sem sair do formulário: null é o estado normal (o
+     dropdown), string é o nome sendo digitado. Aqui entra só o nome — a logo
+     continua na aba Clientes, que é onde se envia arquivo. */
+  const [novoCliente, setNovoCliente] = React.useState(null);
+  const [criandoCliente, setCriandoCliente] = React.useState(false);
+  const criarCliente = async () => {
+    const nome = (novoCliente || "").trim();
+    if (!nome) return;
+    /* Nome que já existe não vira cliente repetido: só seleciona o que há. */
+    const jaTem = clients.find(c => c.name.toLowerCase() === nome.toLowerCase());
+    if (jaTem) { setClientNm(jaTem.name); setNovoCliente(null); return; }
+    const id = nome.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 16) || "c" + Date.now();
+    if (clients.some(c => c.id === id)) {
+      window.__adminToast?.("Já existe um cliente com este identificador. Tente um nome ligeiramente diferente.");
+      return;
+    }
+    setCriandoCliente(true);
+    try {
+      await window.API.addClient({ id, name: nome });
+      onNovoCliente?.({ id, name: nome });
+      setClientNm(nome);
+      setNovoCliente(null);
+    } catch (ex) {
+      window.__adminToast?.("Erro ao criar cliente: " + (ex?.error || ex));
+    } finally {
+      setCriandoCliente(false);
+    }
+  };
   const [year,     setYear]     = React.useState(initialData?.year || "2026");
   const [duration, setDuration] = React.useState(initialData?.duration || "");
   const [empreendimento, setEmpreendimento] = React.useState(initialData?.empreendimento || "");
@@ -2530,10 +2558,32 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave }) => {
           <div className="field"><label>Título</label><input value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="Título do projeto" style={F}/></div>
           <div className="field">
             <label>Cliente</label>
-            <select value={clientNm} onChange={(e)=>setClientNm(e.target.value)} style={F}>
-              {clients.map(c => <option key={c.id} value={c.name} style={{background:"#0b0b0f"}}>{c.name}</option>)}
-              <option value="—" style={{background:"#0b0b0f"}}>— sem cliente —</option>
-            </select>
+            {novoCliente === null ? (
+              <select value={clientNm} onChange={(e)=>{
+                  if (e.target.value === "__novo") { setNovoCliente(""); return; }
+                  setClientNm(e.target.value);
+                }} style={F}>
+                {clients.map(c => <option key={c.id} value={c.name} style={{background:"#0b0b0f"}}>{c.name}</option>)}
+                <option value="—" style={{background:"#0b0b0f"}}>— sem cliente —</option>
+                <option value="__novo" style={{background:"#0b0b0f"}}>+ Novo cliente…</option>
+              </select>
+            ) : (
+              <div style={{display:"flex",gap:8}}>
+                <input autoFocus value={novoCliente} placeholder="Nome do cliente"
+                  onChange={(e)=>setNovoCliente(e.target.value)}
+                  onKeyDown={(e)=>{
+                    if (e.key === "Enter")  { e.preventDefault(); criarCliente(); }
+                    if (e.key === "Escape") { e.preventDefault(); setNovoCliente(null); }
+                  }}
+                  style={{...F, flex:1, minWidth:0}}/>
+                <button type="button" className="btn btn-accent" style={{padding:"0 14px",fontSize:12,flexShrink:0}}
+                  onClick={criarCliente} disabled={criandoCliente} data-cursor="hover">
+                  {criandoCliente ? "…" : "Criar"}
+                </button>
+                <button type="button" className="btn btn-ghost" style={{padding:"0 12px",fontSize:12,flexShrink:0}}
+                  onClick={()=>setNovoCliente(null)} data-cursor="hover">Cancelar</button>
+              </div>
+            )}
           </div>
         </div>
 
