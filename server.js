@@ -735,6 +735,51 @@ app.put('/api/videos/reorder', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+/* ── Duração real, vinda do YouTube ──────────────────────────────────────────
+   A duração era um campo digitado à mão, e por isso quase todo vídeo mostrava
+   o mesmo "03:00" de exemplo. O número verdadeiro está na página do vídeo, em
+   lengthSeconds — não é preciso chave de API para lê-lo.
+
+   É buscado quando o vídeo é cadastrado ou editado sem duração, e há uma
+   varredura para preencher o catálogo inteiro de uma vez. O resultado fica
+   guardado no banco: a página não consulta o YouTube para desenhar um card. */
+async function duracaoDoYoutube(url) {
+  const m = String(url || '').match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  if (!m) return '';
+  try {
+    const parar = AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined;
+    const r = await fetch('https://www.youtube.com/watch?v=' + m[1], {
+      signal: parar,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
+    });
+    if (!r.ok) return '';
+    const html = await r.text();
+    const seg = +(html.match(/"lengthSeconds":"(\d+)"/) || [])[1];
+    if (!seg) return '';                       // ao vivo, privado ou removido
+    const h = Math.floor(seg / 3600), min = Math.floor((seg % 3600) / 60), s2 = seg % 60;
+    return (h ? h + ':' + String(min).padStart(2, '0') : String(min)) + ':' + String(s2).padStart(2, '0');
+  } catch (e) {
+    return '';                                  // sem rede, sem duração: fica como estava
+  }
+}
+
+/* Preenche o catálogo. Sem 'todos', só quem está sem duração. */
+app.post('/api/videos/duracoes', requireAuth, async (req, res) => {
+  const todos = !!(req.body && req.body.todos);
+  const alvo = db.videos.filter(v => {
+    if (!/(?:youtube\.com|youtu\.be)/.test(v.videoUrl || '')) return false;
+    return todos || !v.duration || /^0?0:00$/.test(v.duration);
+  });
+  let preenchidos = 0;
+  for (const v of alvo) {
+    const d = await duracaoDoYoutube(v.videoUrl);
+    if (d && d !== v.duration) { v.duration = d; v.updatedAt = new Date().toISOString(); preenchidos++; }
+    await new Promise(r => setTimeout(r, 120));   // sem martelar o YouTube
+  }
+  if (preenchidos) save();
+  res.json({ ok: true, olhados: alvo.length, preenchidos });
+});
+
 app.post('/api/videos', requireAuth, (req, res) => {
   if (!req.body || !req.body.title) return res.status(400).json({ error: 'Título obrigatório.' });
   const id = 'v' + crypto.randomBytes(4).toString('hex');
@@ -744,6 +789,15 @@ app.post('/api/videos', requireAuth, (req, res) => {
   db.videos.push({ ...body, id, sortOrder: maxOrder + 1, updatedAt: new Date().toISOString() });
   save();
   res.json({ id });
+  // Sem duração digitada, busca no YouTube depois de responder: quem cadastrou
+  // não espera a ida à rede, e o card já nasce com o número certo.
+  if (!body.duration) {
+    duracaoDoYoutube(body.videoUrl).then(d => {
+      if (!d) return;
+      const v = db.videos.find(x => x.id === id);
+      if (v && !v.duration) { v.duration = d; save(); }
+    });
+  }
 });
 
 app.put('/api/videos/:id', requireAuth, (req, res) => {
@@ -754,6 +808,13 @@ app.put('/api/videos/:id', requireAuth, (req, res) => {
   db.videos[idx] = { ...db.videos[idx], ...body, id: req.params.id, updatedAt: new Date().toISOString() };
   save();
   res.json({ ok: true });
+  if (!db.videos[idx].duration) {
+    duracaoDoYoutube(db.videos[idx].videoUrl).then(d => {
+      if (!d) return;
+      const v = db.videos.find(x => x.id === req.params.id);
+      if (v && !v.duration) { v.duration = d; save(); }
+    });
+  }
 });
 
 app.delete('/api/videos/:id', requireAuth, (req, res) => {

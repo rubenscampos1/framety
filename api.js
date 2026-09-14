@@ -99,6 +99,9 @@
     getInstagram:  ()     => req("GET",  "/api/instagram"),
     saveInstagram: (data) => req("POST", "/api/instagram", data),
 
+    // Duração real dos vídeos, buscada no YouTube
+    buscarDuracoes: (todos) => req("POST", "/api/videos/duracoes", { todos: !!todos }),
+
     // Tutorial — public read, admin write
     getTutorial:   ()      => req('GET',    '/api/tutorial'),
     saveTutorial:  (data)  => req('POST',   '/api/tutorial',       data),

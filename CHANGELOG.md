@@ -5,6 +5,28 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Duração real, lida do YouTube.** Ela era um campo digitado à mão, e por isso
+  quase todo card mostrava o mesmo "03:00" de exemplo. Agora o servidor lê o
+  `lengthSeconds` da página do vídeo — não precisa de chave de API — e guarda no
+  cadastro; a página nunca consulta o YouTube para desenhar um card.
+  - **Vídeo novo já nasce com ela**: ao cadastrar ou editar sem duração, o
+    servidor busca depois de responder, para quem cadastrou não esperar a rede.
+  - Para o que já existia, um botão **"Durações"** na aba Vídeos varre o
+    catálogo inteiro. Medido: 104 de 108 preenchidos.
+  - Os 4 que faltaram **não têm duração para ler**: dois vídeos removidos
+    (status ERROR) e dois que exigem login. Esses links também não tocam no site.
+
+- **Os 30 vídeos imersivos do site antigo (Wix)** entraram na categoria Imersivo
+  (`importar-imersivos.js`).
+  - Os dados vêm do **VideoObject** que a página publica sobre si — nome,
+    duração e embed — e não do texto visível. Eles aparecem de duas formas na
+    página, dentro de uma lista e soltos; a primeira versão da varredura exigia
+    o campo "position" e **perdia 17 dos 30**.
+  - Os 12 que o Wix não informava duração foram preenchidos pela busca
+    automática no YouTube, ao serem cadastrados. Nenhum ficou sem.
+  - O sufixo "injected", sujeira do editor do Wix, sai do nome. O marcador de
+    360° é ligado quando o próprio nome diz 360.
+
 - **O card não fica mais transparente ao passar o mouse.** Ao entrar o ponteiro,
   a thumb sai para o preview do YouTube ocupar o lugar — e nesse intervalo não
   havia nada por baixo: o card virava um buraco com o fundo da página passando

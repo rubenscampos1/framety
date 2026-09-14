@@ -92,6 +92,26 @@ const AdminLogin = ({ onClose, onSuccess }) => {
 /* =========================== Dashboard =========================== */
 const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) => {
   const [tab, setTab] = React.useState(initialTab);
+  const [buscandoDuracoes, setBuscandoDuracoes] = React.useState(false);
+
+  /* A duração era digitada à mão e quase todo vídeo mostrava o mesmo "03:00".
+     Isto lê o número real na página de cada vídeo no YouTube e guarda no
+     cadastro — vídeo novo já nasce com ele, isto aqui é para o que já existe. */
+  const buscarDuracoes = async () => {
+    setBuscandoDuracoes(true);
+    try {
+      const r = await window.API.buscarDuracoes(true);
+      window.__adminToast?.(`Durações: ${r.preenchidos} de ${r.olhados} vídeos atualizados.`, "success");
+      if (r.preenchidos) {
+        const d = await window.API.getData();
+        setVids(d.videos || []);
+      }
+    } catch (ex) {
+      window.__adminToast?.("Erro ao buscar durações: " + (ex?.error || ex));
+    } finally {
+      setBuscandoDuracoes(false);
+    }
+  };
   const [showAdd, setShowAdd] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
 
@@ -363,6 +383,13 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
             <button className="btn btn-ghost admin-pres-btn" style={{padding:"9px 16px",fontSize:13}} onClick={onOpenPresentation} data-cursor="hover">
               <Icon name="external" size={14}/> Apresentação
             </button>
+            {tab === "videos" && (
+              <button className="btn btn-ghost" style={{padding:"9px 16px",fontSize:13}}
+                onClick={buscarDuracoes} disabled={buscandoDuracoes} data-cursor="hover"
+                title="Lê a duração real de cada vídeo na página do YouTube e guarda no cadastro">
+                <Icon name="loader" size={14}/> {buscandoDuracoes ? "Buscando…" : "Durações"}
+              </button>
+            )}
             {(tab === "videos" || tab === "overview") && (
               <button className="btn btn-accent" style={{padding:"9px 18px",fontSize:13}} onClick={()=>setShowAdd(true)} data-cursor="hover">
                 <Icon name="plus" size={14}/> <span className="admin-add-label">Adicionar vídeo</span>
