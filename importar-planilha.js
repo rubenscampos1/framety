@@ -137,6 +137,35 @@ async function api(metodo, rota, corpo) {
   return dado;
 }
 
+/* Pergunta a senha no terminal, sem eco: ela não aparece na tela, não fica no
+   histórico do shell e não passa por argumento de linha de comando. */
+const TECLA_ENTER = [String.fromCharCode(13), String.fromCharCode(10)];
+const TECLA_CTRL_C = String.fromCharCode(3);
+const TECLA_APAGA = [String.fromCharCode(127), String.fromCharCode(8)];
+
+function perguntarSenha() {
+  return new Promise((ok) => {
+    if (!process.stdin.isTTY) return ok('');          // rodando sem terminal
+    process.stdout.write('  Senha do console: ');
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    let buf = '';
+    process.stdin.on('data', function escutar(ch) {
+      const c = ch.toString('utf8');
+      if (TECLA_ENTER.includes(c)) {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener('data', escutar);
+        process.stdout.write(String.fromCharCode(10));
+        return ok(buf);
+      }
+      if (c === TECLA_CTRL_C) { process.stdout.write(String.fromCharCode(10)); process.exit(1); }
+      if (TECLA_APAGA.includes(c)) { buf = buf.slice(0, -1); return; }
+      buf += c;
+    });
+  });
+}
+
 /* ── Execução ────────────────────────────────────────────────────────────── */
 (async () => {
   console.log(`\n  Site: ${SITE}`);
@@ -190,10 +219,11 @@ async function api(metodo, rota, corpo) {
     return;
   }
 
-  if (!SENHA) throw new Error("falta a senha: rode com FRAMETY_SENHA=suasenha");
+  const senha = SENHA || await perguntarSenha();
+  if (!senha) throw new Error("sem senha, não dá para gravar.");
   const login = await fetch(SITE + "/api/auth/login", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: SENHA }),
+    body: JSON.stringify({ password: senha }),
   });
   if (!login.ok) throw new Error("login recusado (HTTP " + login.status + ")");
   token = (await login.json()).token;
