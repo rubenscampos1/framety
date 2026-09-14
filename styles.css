@@ -3527,11 +3527,18 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 24px;
-  padding: 13px 32px;
+  padding: 13px 32px 12px;
+  row-gap: 12px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
-  background: rgba(7,7,10,0.96);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: transparent;
+}
+/* Segunda linha do cabeçalho, largura inteira: nome do recorte, contagem e os
+   menus. */
+.pres-top > .pres-recortes { grid-column: 1 / -1; margin-bottom: 0; }
+.pres-recortes-titulo {
+  font-family: var(--font-display);
+  font-size: 17px; font-weight: 600; letter-spacing: -0.025em; color: #fff;
+  margin-right: 2px;
 }
 .pres-top-left { display: flex; align-items: center; gap: 16px; }
 .pres-mode-tag {
@@ -3601,7 +3608,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .pres-side-item .ico { display: flex; align-items: center; justify-content: center; opacity: 0.8; }
 .pres-side-item.active .ico { opacity: 1; }
 
-.pres-main { overflow-y: auto; padding: 32px 40px 80px; }
+.pres-main { overflow-y: auto; padding: 18px 40px 80px; }
 
 .pres-hero {
   position: relative;
@@ -3665,11 +3672,11 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
 .pres-hero-meta .dot-sep { color: rgba(255,255,255,0.38); margin: 0 1px; }
 .pres-hero-cta { margin-top: 6px; }
 
-.pres-row { margin-bottom: 50px; }
+.pres-row { margin-bottom: 36px; }
 .pres-row-head {
   display: flex; align-items: center; gap: 12px;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .pres-row-head h2 {

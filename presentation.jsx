@@ -97,6 +97,50 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
          <div className="pres-top-right" style={{flex: 1, display: "flex", justifyContent: "flex-end"}}>
            {/* Botão de sair removido por solicitação do usuário */}
          </div>
+         {/* Cabeçalho do recorte: nome, contagem e os menus. Vive aqui em cima
+             para que a área rolável comece direto nos vídeos — o título da
+             faixa lá embaixo repetiria esta mesma informação. Um recorte de
+             cada vez: escolher padrão desfaz o formato, como sempre foi. */}
+         <div className="pres-recortes">
+           <span className="pres-recortes-titulo">
+             {sel.tipo === "todos" ? "Todos os vídeos"
+               : sel.tipo === "cat" ? ((cats.find(c => c.id === sel.valor) || {}).name || "Categoria")
+               : sel.valor}
+           </span>
+           <span className="pres-recortes-conta">
+             {videos.length} {videos.length === 1 ? "vídeo" : "vídeos"}
+           </span>
+           {[
+             { chave: "formatoImersivo", rotulo: "Formato do imersivo", opcoes: window.FRAMETY_DATA.formatosImersivos || [] },
+             { chave: "padrao",          rotulo: "Padrão",              opcoes: ["Altíssimo","Alto","Médio","Baixo","Popular"] },
+             { chave: "formato",         rotulo: "Formato",             opcoes: ["Condomínio vertical","Condomínio horizontal","Business"] },
+           ].filter(m => m.opcoes.length).map(m => (
+             <div className="pres-drop" key={m.chave} onClick={e => e.stopPropagation()}>
+               <button
+                 className={"pres-drop-btn" + (sel.tipo === m.chave ? " ativo" : "")}
+                 onClick={() => setMenuAberto(a => a === m.chave ? null : m.chave)}
+                 data-cursor="hover">
+                 <span>{sel.tipo === m.chave ? sel.valor : m.rotulo}</span>
+                 <Icon name="chevron-down" size={11} />
+               </button>
+               {menuAberto === m.chave && (
+                 <div className="pres-drop-menu">
+                   <button className={sel.tipo !== m.chave ? "ativo" : ""}
+                     onClick={() => { setSel({ tipo: "todos", valor: null }); setMenuAberto(null); }}>
+                     <span>Todos</span>
+                   </button>
+                   {m.opcoes.map(o => (
+                     <button key={o} className={(sel.tipo === m.chave && sel.valor === o ? "ativo" : "") + (conta(m.chave, o) ? "" : " vazio")}
+                       onClick={() => { setSel({ tipo: m.chave, valor: o }); setMenuAberto(null); }}>
+                       <span>{o}</span>
+                       <span className="num">{conta(m.chave, o)}</span>
+                     </button>
+                   ))}
+                 </div>
+               )}
+             </div>
+           ))}
+         </div>
        </header>
 
        <div className="pres-body">
@@ -175,46 +219,6 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
               </SpotlightCard>
             )}
 
-            {/* Os recortes que não são categoria moram aqui em cima, ao lado da
-                contagem — na coluna eles viravam três listas compridas, e o que
-                interessa ali é a categoria. Um recorte de cada vez: escolher
-                padrão desfaz o formato, como sempre foi. */}
-            <div className="pres-recortes">
-              <span className="pres-recortes-conta">
-                {videos.length} {videos.length === 1 ? "vídeo" : "vídeos"}
-              </span>
-              {[
-                { chave: "formatoImersivo", rotulo: "Formato do imersivo", opcoes: window.FRAMETY_DATA.formatosImersivos || [] },
-                { chave: "padrao",          rotulo: "Padrão",              opcoes: ["Altíssimo","Alto","Médio","Baixo","Popular"] },
-                { chave: "formato",         rotulo: "Formato",             opcoes: ["Condomínio vertical","Condomínio horizontal","Business"] },
-              ].filter(m => m.opcoes.length).map(m => (
-                <div className="pres-drop" key={m.chave} onClick={e => e.stopPropagation()}>
-                  <button
-                    className={"pres-drop-btn" + (sel.tipo === m.chave ? " ativo" : "")}
-                    onClick={() => setMenuAberto(a => a === m.chave ? null : m.chave)}
-                    data-cursor="hover">
-                    <span>{sel.tipo === m.chave ? sel.valor : m.rotulo}</span>
-                    <Icon name="chevron-down" size={11} />
-                  </button>
-                  {menuAberto === m.chave && (
-                    <div className="pres-drop-menu">
-                      <button className={sel.tipo !== m.chave ? "ativo" : ""}
-                        onClick={() => { setSel({ tipo: "todos", valor: null }); setMenuAberto(null); }}>
-                        <span>Todos</span>
-                      </button>
-                      {m.opcoes.map(o => (
-                        <button key={o} className={(sel.tipo === m.chave && sel.valor === o ? "ativo" : "") + (conta(m.chave, o) ? "" : " vazio")}
-                          onClick={() => { setSel({ tipo: m.chave, valor: o }); setMenuAberto(null); }}>
-                          <span>{o}</span>
-                          <span className="num">{conta(m.chave, o)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
             {/* Em "todos os vídeos" o acervo continua vindo separado por categoria.
                 Escolhido um padrão ou um formato, o recorte é ELE — uma faixa só,
                 com o nome do recorte no título e vídeos de qualquer categoria. */}
@@ -228,15 +232,15 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
               if (items.length === 0) return null;
               return (
                 <section key={faixa.id} className="pres-row">
+                  {sel.tipo === "todos" && (
                   <header className="pres-row-head">
                     <h2>{faixa.name}</h2>
                     <span className="pres-row-count">{items.length} {items.length === 1 ? "vídeo" : "vídeos"}</span>
-                    {sel.tipo === "todos" && (
-                      <button className="pres-row-more" onClick={() => setSel({ tipo: "cat", valor: faixa.id })} data-cursor="hover">
-                        Ver tudo <Icon name="arrow-right" size={12} />
-                      </button>
-                    )}
+                    <button className="pres-row-more" onClick={() => setSel({ tipo: "cat", valor: faixa.id })} data-cursor="hover">
+                      Ver tudo <Icon name="arrow-right" size={12} />
+                    </button>
                   </header>
+                  )}
                   <div className="pres-grid">
                     {items.map(v => {
                       const thumb = window.getThumbUrl ? window.getThumbUrl(v) : null;

@@ -5,6 +5,16 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Cabeçalho do modo de apresentação transparente**, como o resto do site: a
+  tarja preta saiu e o fundo animado passa por trás dele.
+- **As informações do recorte subiram para a barra de cima** — nome, contagem e
+  os três dropdowns numa linha só. A área rolável começa direto nos vídeos: com
+  o nome do recorte no topo, o título da faixa lá embaixo repetiria a mesma
+  informação e custava uma fileira inteira de cards.
+  - Em "todos os vídeos" os títulos das faixas continuam, porque ali eles
+    separam uma categoria da outra (e é onde mora o "Ver tudo").
+  - Sobrou espaço também no respiro do conteúdo e entre as faixas.
+
 - **Padrão, formato e formato do imersivo saíram da coluna e viraram dropdowns
   no topo**, ao lado da contagem de vídeos, no modo de apresentação. Na coluna
   eram três listas compridas que a empurravam para além da altura da tela — e
