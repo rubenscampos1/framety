@@ -98,12 +98,15 @@ img, video { max-width: 100%; display: block; }
 h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.025em; line-height: 1; }
 
 
+/* Etiquetas de seção ("— 03 / CATEGORIAS") em branco pleno. Elas são miúdas e
+   espaçadas: no cinza de apoio, que serve bem a parágrafo, ficavam quase
+   ilegíveis. Quem cria a hierarquia aqui é o tamanho, não o apagamento. */
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--ink-dim);
+  color: var(--ink);
 }
 
 /* ---------- Glass primitive ---------- */
@@ -560,7 +563,7 @@ h1,h2,h3,h4 { font-family: var(--font-display); font-weight: 600; letter-spacing
 }
 .section-head .num {
   font-family: var(--font-mono);
-  color: var(--ink-mute);
+  color: var(--ink);
   font-size: 11px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -3283,7 +3286,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   font-size: 11px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--ink-mute);
+  color: var(--ink);
   margin-bottom: 32px;
   display: flex;
   align-items: center;

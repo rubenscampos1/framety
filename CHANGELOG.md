@@ -5,6 +5,16 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Etiquetas de seção em branco pleno.** As linhas miúdas que abrem cada seção
+  ("— 03 / CATEGORIAS") estavam no cinza de apoio (`--ink-mute`, #5b5b66). Esse
+  tom serve a parágrafo; em letra de 11px, maiúscula e espaçada, ele deixava a
+  etiqueta quase ilegível. Agora são brancas e opacas — a hierarquia continua
+  vindo do tamanho, que é o que ela sempre foi ali.
+  - São sete, e estavam escritas em três lugares diferentes: as classes
+    `.eyebrow`, `.section-head .num` e `.process-section-label`, mais quatro
+    com a cor dentro do próprio elemento no JSX. Cor escrita no elemento vence
+    folha de estilo, então não bastava mexer no CSS.
+
 - **O baralho do processo parou de piscar.** O cartão subia, saía de debaixo do
   ponteiro, perdia o hover, caía, recebia de novo — e oscilava sozinho com o
   mouse parado no mesmo lugar.

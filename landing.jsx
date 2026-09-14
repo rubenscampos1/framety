@@ -715,7 +715,7 @@ const ClientsMarquee = ({ onOpenVideo }) => {
     <>
       <section className="section clients-section" id="clientes" data-screen-label="06 Clientes" style={{ padding: "100px 0 30px 0", background: "transparent" }}>
         <div className="container" style={{ marginBottom: 60 }}>
-          <div className="num" style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--ink-mute)", display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="num" style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--ink)", display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ width: 24, height: 1, background: "var(--accent)" }} />{content.eyebrow}
           </div>
         </div>
@@ -1072,7 +1072,7 @@ const AboutSection = () => {
   return (
     <section className="section about-section" id="sobre" data-screen-label="04 Sobre">
       <div className="container">
-        <div className="num" style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--ink-mute)", marginBottom: 24, display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="num" style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--ink)", marginBottom: 24, display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ width: 24, height: 1, background: "var(--accent)" }} />{content.eyebrow}
         </div>
         <h2 className="about-quote" dangerouslySetInnerHTML={{ __html: content.quoteHtml }} />
@@ -1216,7 +1216,7 @@ const ContactSection = ({ onSecretClick }) => {
   return (
     <section className="contact-section" id="contato" data-screen-label="05 Contato">
       <div className="container">
-        <div className="num" style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--ink-mute)", marginBottom: 40, display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="num" style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--ink)", marginBottom: 40, display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ width: 24, height: 1, background: "var(--accent)" }} />{content.eyebrow}
         </div>
         <div className="contact-grid">
@@ -1395,7 +1395,7 @@ const AISection = () => {
     <section className="section ai-section" id="ia" data-screen-label="07 IA" style={{ padding: '100px 0', background: 'transparent' }}>
       <div className="container">
         {/* Eyebrow */}
-        <div className="num" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--ink-mute)', marginBottom: 40, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="num" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--ink)', marginBottom: 40, display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ width: 24, height: 1, background: 'var(--accent)', display: 'inline-block' }} />
           {c.eyebrow}
         </div>
