@@ -783,6 +783,38 @@ async function duracaoDoYoutube(url) {
   }
 }
 
+/* Sonda temporária: descobre de QUAL fonte o servidor publicado consegue ler a
+   fita de quadros do YouTube. Daqui de casa todas funcionam; do Render, a
+   página do vídeo vem sem a receita. Sai assim que a resposta for conhecida. */
+app.get('/api/youtube/sonda/:id', async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^[A-Za-z0-9_-]{11}$/.test(id)) return res.status(400).json({ error: 'id inválido' });
+  const navegador = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  const celular = 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+  const fontes = [
+    { nome: 'watch',    url: 'https://www.youtube.com/watch?v=' + id, ua: navegador },
+    { nome: 'watch-en', url: 'https://www.youtube.com/watch?v=' + id + '&bpctr=9999999999&has_verified=1&hl=en&gl=US', ua: navegador },
+    { nome: 'mobile',   url: 'https://m.youtube.com/watch?v=' + id, ua: celular },
+    { nome: 'embed',    url: 'https://www.youtube.com/embed/' + id, ua: navegador },
+  ];
+  const saida = [];
+  for (const f of fontes) {
+    try {
+      const r = await fetch(f.url, {
+        signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined,
+        headers: { 'User-Agent': f.ua, 'Accept-Language': 'pt-BR,pt;q=0.9', 'Cookie': 'CONSENT=YES+cb' },
+      });
+      const t = await r.text();
+      saida.push({ fonte: f.nome, http: r.status, bytes: t.length,
+        receita: t.indexOf('playerStoryboardSpecRenderer') >= 0,
+        detalhes: t.indexOf('"videoDetails"') >= 0 });
+    } catch (e) {
+      saida.push({ fonte: f.nome, erro: String(e && e.message) });
+    }
+  }
+  res.json({ id, fontes: saida });
+});
+
 /* Preenche o catálogo. Sem 'todos', só quem está sem duração. */
 app.post('/api/videos/duracoes', requireAuth, async (req, res) => {
   const todos = !!(req.body && req.body.todos);
