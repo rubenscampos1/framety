@@ -2167,7 +2167,10 @@ body.in-cat-page.cat-peek .cat-page {
   transition: all 0.2s ease;
 }
 .admin-nav-item:hover { background: rgba(255,255,255,0.03); color: var(--ink); }
-.admin-nav-item.active { background: #fff; color: var(--accent-deep); }
+/* Branco translúcido, não chapado: sobre o fundo escuro do menu ele assenta
+   num quase-branco em vez de virar um retângulo aceso. O texto continua no azul
+   escuro, com contraste de sobra. */
+.admin-nav-item.active { background: rgba(255,255,255,0.9); color: var(--accent-deep); }
 .admin-nav-item .ico {
   width: 16px; height: 16px;
   display: flex; align-items: center; justify-content: center;

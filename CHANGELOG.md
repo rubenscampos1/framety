@@ -5,10 +5,13 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
-- **O item ativo do menu do console é branco com texto em azul escuro.** Era um
+- **O item ativo do menu do console é um branco suave com texto em azul
+  escuro.** Era um
   vermelho de 10% com o texto na cor de destaque — sobra do tema antigo. O azul
   sai de `--accent-deep`, que o próprio console reescreve junto com a Cor de
-  destaque: não é mais uma cor solta na folha de estilo.
+  destaque: não é mais uma cor solta na folha de estilo. O branco é translúcido
+  (90%) e não chapado — sobre o fundo escuro do menu ele assenta num
+  quase-branco, em vez de virar um retângulo aceso.
 
 - **Corrigido: a capa exibida voltou a ser o quadro escolhido no console.** Ao
   aumentar a resolução das capas eu troquei `1.jpg` por `hqdefault.jpg` — que
