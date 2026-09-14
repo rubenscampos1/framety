@@ -5,6 +5,25 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Importador da planilha de portfólio** (`importar-planilha.js`). Lê a
+  planilha PORTFÓLIO FRAMETY e cadastra os vídeos pela API do site.
+  - **A categoria é o nome da tabela do Google Sheets**, e esse nome é metadado:
+    não sai na exportação em CSV. Foi preciso abrir a planilha para lê-los. Os
+    dez nomes estão escritos no script, na ordem em que as tabelas aparecem em
+    cada bloco de colunas; se alguém acrescentar uma tabela, o script para e
+    avisa que a contagem não bate, em vez de cadastrar na categoria errada.
+  - A coluna chamada CATEGORIA na planilha (ALTO/MÉDIO PADRÃO, POPULAR) é o
+    **padrão do empreendimento** — campo do vídeo, visível só no modo de
+    apresentação. PORTFÓLIO (case de sucesso / comercial) vira etiqueta.
+  - **"Popular" entrou na lista de padrões** do console e do modo de
+    apresentação: é o termo que a planilha usa, e sem ele o vídeo importado
+    abriria como "não informado" e perderia o dado ao ser salvo.
+  - Seguro de repetir: vídeo cujo link do YouTube já esteja cadastrado é pulado.
+    Roda em ensaio por padrão; só grava com `--valendo`. A senha vem do
+    ambiente, nunca do arquivo.
+  - Ensaiado contra um banco descartável antes de encostar em produção: 96
+    vídeos nas dez categorias, com "Timelapse" criada do zero.
+
 - **Etiquetas de seção em branco pleno.** As linhas miúdas que abrem cada seção
   ("— 03 / CATEGORIAS") estavam no cinza de apoio (`--ink-mute`, #5b5b66). Esse
   tom serve a parágrafo; em letra de 11px, maiúscula e espaçada, ele deixava a

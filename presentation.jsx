@@ -112,7 +112,7 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
               recorte); quem está zerado fica apagado e leva ao aviso de vazio. */}
           <div className="pres-side-group">
             <div className="pres-side-label">— Padrão do empreendimento</div>
-            {["Altíssimo","Alto","Médio","Baixo"].map(o => (
+            {["Altíssimo","Alto","Médio","Baixo","Popular"].map(o => (
               <button key={o} className={"pres-side-item compact " + (sel.tipo==="padrao"&&sel.valor===o?"active":"") + (conta("padrao", o) ? "" : " vazio")} onClick={()=>setSel({tipo:"padrao",valor:o})} data-cursor="hover">
                 <span>{o}</span>
                 <span className="num">{conta("padrao", o)}</span>

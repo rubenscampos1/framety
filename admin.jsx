@@ -2308,8 +2308,12 @@ const SecurityPanel = () => {
 /* Classificação do empreendimento por trás do vídeo. Lista fechada de
    propósito: é o que entra no filtro e na ficha, e texto livre viraria
    "Alto"/"alto"/"ALTO" no mesmo relatório. "" = não informado. */
+/* "Popular" é o termo de mercado para o segmento econômico, e é o que vem
+   escrito na planilha de vídeos. Sem ele na lista, o vídeo importado abriria no
+   console como "não informado" e perderia o padrão ao ser salvo. */
 const VIDEO_PADROES = [
   { value: "",          label: "— não informado —" },
+  { value: "Popular",   label: "Popular" },
   { value: "Baixo",     label: "Baixo" },
   { value: "Médio",     label: "Médio" },
   { value: "Alto",      label: "Alto" },
