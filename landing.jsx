@@ -105,6 +105,10 @@ const WhisperText = ({ html, className = "", delay = 80, base = 0, duration = 0.
 
 const Nav = ({ current, onNav, onLogoClick, ripples }) => {
   const content = window.FRAMETY_CONTENT.nav;
+  /* Um endereço só para os dois botões: o do topo leva ao mesmo lugar que o
+     "Entre em contato" do quadro lá embaixo, e mudar um no console muda os
+     dois. */
+  const contatoHref = (window.FRAMETY_CONTENT.contact || {}).ctaHref || "";
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [catMode, setCatMode] = React.useState(false);
   const [peek, setPeek] = React.useState(false);
@@ -187,9 +191,19 @@ const Nav = ({ current, onNav, onLogoClick, ripples }) => {
           ))}
         </div>
         <Magnetic strength={0.2}>
-          <button className="btn btn-accent nav-cta" onClick={() => handleNav("contato")}>
-            {content.cta} <Icon name="arrow-up-right" size={14} />
-          </button>
+          {/* Mesmo destino do botão do quadro de contato, lá no pé da página —
+              o endereço é aquele, editável no console. Se ele estiver vazio ou
+              não for um link de verdade, o botão volta a rolar até a seção. */}
+          {LINK_SEGURO(contatoHref) ? (
+            <a className="btn btn-accent nav-cta" href={contatoHref}
+               target="_blank" rel="noopener noreferrer" data-cursor="hover">
+              {content.cta} <Icon name="arrow-up-right" size={14} />
+            </a>
+          ) : (
+            <button className="btn btn-accent nav-cta" onClick={() => handleNav("contato")}>
+              {content.cta} <Icon name="arrow-up-right" size={14} />
+            </button>
+          )}
         </Magnetic>
         <button
           className={`nav-hamburger${mobileOpen ? " open" : ""}`}
@@ -223,9 +237,16 @@ const Nav = ({ current, onNav, onLogoClick, ripples }) => {
               {l.label}
             </a>
           ))}
-          <button className="btn btn-accent mobile-menu-cta" onClick={() => handleNav("contato")}>
-            {content.cta} <Icon name="arrow-up-right" size={14} />
-          </button>
+          {LINK_SEGURO(contatoHref) ? (
+            <a className="btn btn-accent mobile-menu-cta" href={contatoHref}
+               target="_blank" rel="noopener noreferrer">
+              {content.cta} <Icon name="arrow-up-right" size={14} />
+            </a>
+          ) : (
+            <button className="btn btn-accent mobile-menu-cta" onClick={() => handleNav("contato")}>
+              {content.cta} <Icon name="arrow-up-right" size={14} />
+            </button>
+          )}
         </div>
       )}
     </>
@@ -906,7 +927,9 @@ const FeaturedSection = ({ onOpenVideo }) => {
               Array.from({ length: CORRIDOR_CARDS }, (_, i) => {
                 const v = trilho.list[i % trilho.list.length];
                 const key = `${v.id}|${trilho.dir}|${i}`;
-                const thumb = window.getThumbUrl ? window.getThumbUrl(v) : null;
+                /* Aqui o card chega a ocupar meia tela, e a capa padrão do
+                   YouTube (480px) aparecia lavada. */
+                const thumb = window.getThumbHD ? window.getThumbHD(v) : { src: null, reserva: "" };
                 const cat = window.FRAMETY_DATA.categories.find(c => c.id === v.category);
                 // As duas animações compartilham duração e atraso, então andam juntas.
                 const ritmo = {
@@ -980,8 +1003,10 @@ const FeaturedSection = ({ onOpenVideo }) => {
                       a animação de inclinação — e ao voltar ela recomeçava do
                       próprio início, o que fazia o card saltar sem motivo. */}
                   <div className="ish-face">
-                    {thumb
-                      ? <img src={thumb} alt="" loading="lazy" decoding="async" draggable={false} />
+                    {thumb.src
+                      ? <img src={thumb.src} data-reserva={thumb.reserva}
+                             onError={window.thumbReserva} onLoad={window.thumbReserva}
+                             alt="" loading="lazy" decoding="async" draggable={false} />
                       : (
                         /* Sem capa, o card mostra o gradiente da categoria com o
                            título por cima — em vez de um retângulo vazio. */

@@ -10,12 +10,55 @@ const getVimeoId = (url) => {
   const m = url.match(/vimeo\.com\/(\d+)/);
   return m ? m[1] : null;
 };
+/* A capa gravada no vídeo pode ser uma imagem do próprio YouTube — os cadastros
+   importados vieram assim, e vários apontam para 1.jpg / 3.jpg, que são os
+   quadrinhos de 120x90 da barra de progresso. Reconhecer o endereço permite
+   pedir o mesmo quadro no tamanho que se precisa, em vez de exibir a miniatura
+   da miniatura. */
+const idDaCapaYoutube = (url) => {
+  const s = String(url || "");
+  const i = s.indexOf("img.youtube.com/vi/");
+  if (i < 0) return null;
+  const id = s.slice(i + "img.youtube.com/vi/".length).split("/")[0];
+  return id.length === 11 ? id : null;
+};
 const getThumbUrl = (v, largura = 800) => {
+  const capaYt = idDaCapaYoutube(v.thumbUrl);
+  if (capaYt) return `https://img.youtube.com/vi/${capaYt}/hqdefault.jpg`;
   if (v.thumbUrl) return IMG_CDN(v.thumbUrl, largura);
   const ytId = getYouTubeId(v.videoUrl);
   // hqdefault always exists (maxresdefault 404s for non-HD videos → broken thumb).
   if (ytId) return `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
   return null;
+};
+
+/* A mesma capa, na maior resolução que existir. hqdefault tem 480x360 e
+   aparece lavada num card de meia tela; maxresdefault tem 1280x720, mas só
+   existe se o vídeo foi enviado em HD — daí vir com endereço reserva em vez de
+   um endereço só. Quem usa põe o reserva em data-reserva e o onError em
+   thumbReserva; sem isso um vídeo antigo ficaria com o quadro vazio. */
+const getThumbHD = (v, largura = 1600) => {
+  /* Capa do YouTube (inclusive a gravada no vídeo) vira maxresdefault; o resto
+     é arquivo nosso, e aí é o Cloudinary que entrega no tamanho pedido. */
+  const ytId = idDaCapaYoutube(v.thumbUrl) || (v.thumbUrl ? null : getYouTubeId(v.videoUrl));
+  if (!ytId && v.thumbUrl) return { src: IMG_CDN(v.thumbUrl, largura), reserva: "" };
+  if (ytId) return {
+    src: `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`,
+    reserva: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
+  };
+  return { src: null, reserva: "" };
+};
+const thumbReserva = (e) => {
+  const img = e.currentTarget;
+  const r = img.dataset.reserva;
+  if (!r) return;                       // já trocou uma vez: não entra em laço
+  /* Quando não existe maxresdefault, o YouTube responde 404 mas manda no corpo
+     uma imagem cinza de 120x90 — e o navegador chama isso de carregamento bem
+     sucedido. Esperar pelo onError deixava o card com a tal imagem cinza; por
+     isso a conferência é o tamanho do que chegou. */
+  if (e.type === "load" && img.naturalWidth > 120) return;
+  img.dataset.reserva = "";
+  img.src = r;
 };
 
 const ClientBadge = ({ name, size = 24 }) => {
@@ -848,4 +891,4 @@ const PlaylistPage = ({ catId }) => {
   );
 };
 
-Object.assign(window, { CategoryPage, VideoModal, ClientBadge, PlaylistPage, getYouTubeId, getVimeoId, getThumbUrl });
+Object.assign(window, { CategoryPage, VideoModal, ClientBadge, PlaylistPage, getYouTubeId, getVimeoId, getThumbUrl, getThumbHD, thumbReserva });

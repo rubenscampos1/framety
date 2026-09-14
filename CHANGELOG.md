@@ -5,6 +5,23 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **"Iniciar projeto", no topo, leva ao mesmo lugar que "Entre em contato"**, o
+  botão do quadro lá no pé da página. É o mesmo endereço, editável no console:
+  mudar um muda os dois. Se ele ficar vazio (ou deixar de ser um link de
+  verdade), o botão volta a rolar até a seção de contato.
+- **Capas do corredor de destaques em alta.** Os cadastros importados guardaram
+  como capa endereços tipo `img.youtube.com/vi/<id>/1.jpg` — os quadrinhos de
+  120x90 da barra de progresso do YouTube — e num card de meia tela isso vira
+  um borrão. Agora o site reconhece esses endereços e pede o mesmo quadro na
+  maior resolução que existir: 1280x720 quando o vídeo foi enviado em HD,
+  480x360 quando não.
+  - O reserva é necessário porque o YouTube responde 404 para a versão grande
+    de vídeos antigos — mandando no corpo uma imagem cinza de 120x90 que o
+    navegador aceita como carregada. Por isso a troca olha o tamanho do que
+    chegou, e não só o erro de carregamento.
+  - Os cards das categorias também deixaram de mostrar o quadrinho de 120x90,
+    de quebra: passaram a pedir 480x360.
+
 - **Cabeçalho do modo de apresentação transparente**, como o resto do site: a
   tarja preta saiu e o fundo animado passa por trás dele.
 - **As informações do recorte subiram para a barra de cima** — nome, contagem e
