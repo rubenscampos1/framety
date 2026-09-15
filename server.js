@@ -22,6 +22,7 @@ if (!fs.existsSync(UPLOADS)) fs.mkdirSync(UPLOADS, { recursive: true });
 const USE_PG = !!process.env.DATABASE_URL;
 // DB_FILE permite subir uma instância isolada (teste) sem tocar no banco real.
 const DB_FILE = process.env.DB_FILE || path.join(DIR, 'framety-db.json');
+const ROTAS = require('./rotas.js');
 
 const pool = USE_PG ? new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -462,9 +463,20 @@ app.use((req, res, next) => {
 });
 
 // ── SPA Routing (Friendly URLs) ───────────────────────────────────────────────
-const SPA_ROUTES = ['/', '/Framety', '/framety', '/framety/*', '/console', '/console/*', '/presentation', '/presentation/*', '/cadastroparceiro', '/tutorial', '/novidades', '/play', '/producoes', '/assistir', '/assistir/*', '/screendimension', '/screendimension/*', '/sb', '/sb/*', '/storyboards', '/storyboards/*'];
+// Rotas de sistema. Home, seções, categorias, vídeos e clientes são resolvidos
+// por rotas.js no fim da cadeia (ver "Endereços públicos"), junto dos links
+// antigos em /framety, que viram redirecionamento.
+const SPA_ROUTES = ['/', '/console', '/console/*', '/presentation', '/presentation/*', '/cadastroparceiro', '/tutorial', '/novidades', '/play', '/producoes', '/assistir', '/assistir/*', '/screendimension', '/screendimension/*', '/sb', '/sb/*', '/storyboards', '/storyboards/*'];
 
-app.get(SPA_ROUTES, (req, res) => {
+app.get(SPA_ROUTES, (req, res) => enviarSpa(req, res, null));
+
+function capaDoVideo(vid) {
+  if (vid.thumbUrl) return vid.thumbUrl;
+  const ytMatch = vid.videoUrl?.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  return ytMatch ? `https://img.youtube.com/vi/${ytMatch[1]}/maxresdefault.jpg` : '';
+}
+
+function enviarSpa(req, res, rotaResolvida) {
   const entryPath = path.join(DIR, 'Framety.html');
   if (!fs.existsSync(entryPath)) return res.status(404).send('Entry file not found');
 
@@ -476,41 +488,41 @@ app.get(SPA_ROUTES, (req, res) => {
   let image = marca.ogImagem || "/framety_social_preview.png";
 
   const p = req.path.toLowerCase();
+  const rota = rotaResolvida || ROTAS.resolver(p, db);
 
   // Prévia escolhida no console para esta página. Vence o padrão e perde para
-  // categoria/vídeo logo abaixo, que trazem a capa do próprio conteúdo.
-  const daPagina = (marca.paginas || {})[p === '/' ? '/framety' : p];
+  // categoria/vídeo logo abaixo, que trazem a capa do próprio conteúdo. Seções
+  // e clientes são pedaços da home, então usam a prévia dela ('/framety').
+  const chavePrevia = (rota && (rota.tipo === 'home' || rota.tipo === 'cliente')) ? '/framety' : p;
+  const daPagina = (marca.paginas || {})[chavePrevia];
   if (daPagina) {
     if (daPagina.titulo)    title = daPagina.titulo;
     if (daPagina.descricao) desc  = daPagina.descricao;
     if (daPagina.imagem)    image = daPagina.imagem;
   }
 
-  const catMatch = p.match(/\/framety\/categoria\/([^/]+)/);
-  if (catMatch) {
-    const catId = decodeURIComponent(catMatch[1]);
-    const cat = db.categories.find(c => c.id === catId);
-    if (cat) {
-      title = `${cat.name} | Framety`;
-      desc = `${cat.desc || ""} Produtora audiovisual especializada no mercado imobiliário.`.trim();
-      if (cat.coverUrl) image = cat.coverUrl;
+  if (rota && rota.tipo === 'categoria') {
+    const cat = rota.categoria;
+    title = `${cat.name} | Framety`;
+    desc = `${cat.desc || ""} Produtora audiovisual especializada no mercado imobiliário.`.trim();
+    if (cat.coverUrl) image = cat.coverUrl;
+    else {
+      // Link não roda sorteio: a prévia usa o vídeo escolhido ou o primeiro da categoria.
+      const doCat = db.videos.filter(v => v.category === cat.id && v.status !== 'draft');
+      const v = doCat.find(x => x.id === cat.coverVideoId) || doCat[0];
+      if (v) image = capaDoVideo(v) || image;
     }
   }
 
-  const vidMatch = p.match(/\/framety\/video\/([^/]+)/);
-  if (vidMatch) {
-    const vidId = decodeURIComponent(vidMatch[1]);
-    const vid = db.videos.find(v => v.id === vidId);
-    if (vid) {
-      title = `${vid.title} | Framety`;
-      desc = `${vid.description ? vid.description.replace(/<[^>]*>?/gm, '').substring(0, 160) : ""} Produtora audiovisual especializada no mercado imobiliário.`.trim();
-      if (vid.thumbUrl) {
-        image = vid.thumbUrl;
-      } else {
-        const ytMatch = vid.videoUrl?.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-        if (ytMatch) image = `https://img.youtube.com/vi/${ytMatch[1]}/maxresdefault.jpg`;
-      }
-    }
+  if (rota && rota.tipo === 'cliente') {
+    title = `${rota.cliente.name} | Framety`;
+  }
+
+  if (rota && rota.tipo === 'video') {
+    const vid = rota.video;
+    title = `${vid.title} | Framety`;
+    desc = `${vid.description ? vid.description.replace(/<[^>]*>?/gm, '').substring(0, 160) : ""} Produtora audiovisual especializada no mercado imobiliário.`.trim();
+    image = capaDoVideo(vid) || image;
   }
 
   if (p === '/screendimension' || p.startsWith('/screendimension/')) {
@@ -580,7 +592,32 @@ app.get(SPA_ROUTES, (req, res) => {
   }
 
   res.send(html);
-});
+}
+
+/* ── Endereços públicos: slugs ──────────────────────────────────────────────
+   Vídeo: único dentro da categoria (o endereço é /<categoria>/<vídeo>, e o
+   mesmo empreendimento costuma aparecer em Lançamento e em Obra). Cliente:
+   único no site. Quem troca de slug guarda o anterior em `slugsAntigos`, e o
+   resolver ainda o encontra — link já compartilhado não quebra. */
+function slugDoVideo(v, exceto) {
+  const usados = new Set(db.videos.filter(x => x !== exceto && x.category === v.category && x.slug).map(x => x.slug));
+  return ROTAS.slugUnico(ROTAS.slugify(v.title) || v.id, usados);
+}
+function slugDoCliente(c, exceto) {
+  const usados = new Set(db.clients.filter(x => x !== exceto && x.slug).map(x => x.slug));
+  return ROTAS.slugUnico(ROTAS.slugify(c.name) || ROTAS.slugify(c.id) || 'cliente', usados);
+}
+const comAntigo = (lista, antigo, atual) =>
+  [...new Set([...(lista || []), antigo])].filter(a => a && a !== atual);
+
+// Categoria vive na raiz do site: não pode ter o nome de uma rota nem de um link curto.
+function problemaNoIdDaCategoria(id, ignorar) {
+  if (!id) return 'Informe um nome para a categoria.';
+  if (ROTAS.RESERVADOS.has(id) || RESERVED_SLUGS.has(id)) return `"${id}" é um endereço reservado do site. Escolha outro nome.`;
+  if (db.categories.some(c => c.id === id && c.id !== ignorar)) return 'Já existe uma categoria com esse endereço.';
+  if ((db.linkRedirects || []).some(r => r.slug === id)) return `Já existe um link curto em /${id}. Escolha outro nome.`;
+  return '';
+}
 
 // Uploaded media: filenames are unique per upload (timestamp+hash) and never
 // change content, so they can be cached immutably for a year. This is the big
@@ -805,8 +842,11 @@ app.post('/api/videos', requireAuth, (req, res) => {
   const id = 'v' + crypto.randomBytes(4).toString('hex');
   const maxOrder = db.videos.reduce((m, v) => Math.max(m, v.sortOrder ?? 0), 0);
   const body = { ...req.body };
+  delete body.slug; delete body.slugsAntigos;
   if (typeof body.description === 'string') body.description = sanitizeHtml(body.description);
-  db.videos.push({ ...body, id, sortOrder: maxOrder + 1, updatedAt: new Date().toISOString() });
+  const novo = { ...body, id, sortOrder: maxOrder + 1, updatedAt: new Date().toISOString() };
+  novo.slug = slugDoVideo(novo, null);
+  db.videos.push(novo);
   save();
   res.json({ id });
   // Sem duração digitada, busca no YouTube depois de responder: quem cadastrou
@@ -824,8 +864,17 @@ app.put('/api/videos/:id', requireAuth, (req, res) => {
   const idx = db.videos.findIndex(v => v.id === req.params.id);
   if (idx < 0) return res.status(404).json({ error: 'Not found' });
   const body = { ...req.body };
+  // O console reenvia o vídeo inteiro, com o slug que tinha quando carregou:
+  // slug é decidido só aqui.
+  delete body.slug; delete body.slugsAntigos;
   if (typeof body.description === 'string') body.description = sanitizeHtml(body.description);
-  db.videos[idx] = { ...db.videos[idx], ...body, id: req.params.id, updatedAt: new Date().toISOString() };
+  const antes = db.videos[idx];
+  const depois = { ...antes, ...body, id: req.params.id, updatedAt: new Date().toISOString() };
+  if (!antes.slug || depois.title !== antes.title || depois.category !== antes.category) {
+    depois.slug = slugDoVideo(depois, antes);
+    if (antes.slug) depois.slugsAntigos = comAntigo(antes.slugsAntigos, `${antes.category}/${antes.slug}`, `${depois.category}/${depois.slug}`);
+  }
+  db.videos[idx] = depois;
   save();
   res.json({ ok: true });
   if (!db.videos[idx].duration) {
@@ -866,21 +915,35 @@ app.get('/api/categories', (req, res) => {
 });
 
 app.post('/api/categories', requireAuth, (req, res) => {
+  const id = ROTAS.slugify((req.body && (req.body.id || req.body.name)) || '');
+  const problema = problemaNoIdDaCategoria(id, null);
+  if (problema) return res.status(400).json({ error: problema });
   const maxOrder = db.categories.reduce((m, c) => Math.max(m, c.sortOrder ?? 0), 0);
-  db.categories.push({ ...req.body, sortOrder: maxOrder + 1 });
+  const body = { ...req.body };
+  delete body.idsAntigos;
+  db.categories.push({ ...body, id, sortOrder: maxOrder + 1 });
   save();
-  res.json({ id: req.body.id });
+  res.json({ id });
 });
 
 app.put('/api/categories/:id', requireAuth, (req, res) => {
   const idx = db.categories.findIndex(c => c.id === req.params.id);
   if (idx < 0) return res.status(404).json({ error: 'Not found' });
-  const newId = (typeof req.body.id === 'string' && req.body.id.trim()) ? req.body.id.trim() : req.params.id;
+  const body = { ...req.body };
+  delete body.idsAntigos;
+  const newId = (typeof body.id === 'string' && body.id.trim()) ? ROTAS.slugify(body.id) : req.params.id;
   if (newId !== req.params.id) {
-    if (db.categories.find(c => c.id === newId)) return res.status(409).json({ error: 'Slug já em uso.' });
+    const problema = problemaNoIdDaCategoria(newId, req.params.id);
+    if (problema) return res.status(409).json({ error: problema });
     db.videos.forEach(v => { if (v.category === req.params.id) v.category = newId; });
+    // /<id antigo> e /<id antigo>/<vídeo> seguem levando à categoria renomeada.
+    body.idsAntigos = comAntigo(db.categories[idx].idsAntigos, req.params.id, newId);
   }
-  db.categories[idx] = { ...db.categories[idx], ...req.body, id: newId };
+  // Capa trocada por thumb de vídeo ou por "aleatória": a imagem enviada sai do
+  // armazenamento. Só com limpeza explícita — um console com dados velhos que
+  // reenvie outra URL não pode apagar a capa que está no ar.
+  if (db.categories[idx].coverUrl && body.coverUrl === '') unlinkUpload(db.categories[idx].coverUrl);
+  db.categories[idx] = { ...db.categories[idx], ...body, id: newId };
   save();
   res.json({ ok: true, newId });
 });
@@ -900,7 +963,10 @@ app.get('/api/clients', (req, res) => {
 
 app.post('/api/clients', requireAuth, (req, res) => {
   const maxOrder = db.clients.reduce((m, c) => Math.max(m, c.sortOrder ?? 0), 0);
-  db.clients.push({ ...req.body, sortOrder: maxOrder + 1 });
+  const novo = { ...req.body, sortOrder: maxOrder + 1 };
+  delete novo.slugsAntigos;
+  novo.slug = slugDoCliente(novo, null);
+  db.clients.push(novo);
   save();
   res.json({ id: req.body.id });
 });
@@ -908,7 +974,15 @@ app.post('/api/clients', requireAuth, (req, res) => {
 app.put('/api/clients/:id', requireAuth, (req, res) => {
   const idx = db.clients.findIndex(c => c.id === req.params.id);
   if (idx < 0) return res.status(404).json({ error: 'Not found' });
-  db.clients[idx] = { ...db.clients[idx], ...req.body, id: req.params.id };
+  const body = { ...req.body };
+  delete body.slug; delete body.slugsAntigos;
+  const antes = db.clients[idx];
+  const depois = { ...antes, ...body, id: req.params.id };
+  if (!antes.slug || depois.name !== antes.name) {
+    depois.slug = slugDoCliente(depois, antes);
+    if (antes.slug) depois.slugsAntigos = comAntigo(antes.slugsAntigos, antes.slug, depois.slug);
+  }
+  db.clients[idx] = depois;
   save();
   res.json({ ok: true });
 });
@@ -989,6 +1063,7 @@ app.post('/api/upload/cover/:catId', requireAuth, upload.single('file'), storeUp
   unlinkUpload(cat.coverUrl);
   const url = req.uploadedUrl;
   cat.coverUrl = url;
+  cat.coverVideoId = '';   // imagem enviada vence a thumb escolhida
   save();
   res.json({ url });
 });
@@ -1841,7 +1916,8 @@ app.post('/api/redirects', requireAuth, (req, res) => {
   const slug = (rawSlug || '').trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
   let target = (rawTarget || '').trim();
   if (!slug) return res.status(400).json({ error: 'Informe um nome para o link.' });
-  if (RESERVED_SLUGS.has(slug)) return res.status(400).json({ error: 'Esse nome é reservado pelo site. Escolha outro.' });
+  if (RESERVED_SLUGS.has(slug) || ROTAS.RESERVADOS.has(slug)) return res.status(400).json({ error: 'Esse nome é reservado pelo site. Escolha outro.' });
+  if (ROTAS.resolver('/' + slug, db)) return res.status(400).json({ error: `/${slug} já é uma página do site (categoria ou seção). Escolha outro nome.` });
   if (!target) return res.status(400).json({ error: 'Informe a URL de destino.' });
   if (!/^https?:\/\//i.test(target)) target = 'https://' + target;
   if (db.linkRedirects.some(r => r.slug === slug)) return res.status(409).json({ error: 'Já existe um link com esse nome.' });
@@ -1864,6 +1940,24 @@ app.delete('/api/redirects/:slug', requireAuth, (req, res) => {
   db.linkRedirects = db.linkRedirects.filter(r => r.slug !== req.params.slug);
   save();
   res.json({ ok: true });
+});
+
+// ── Endereços públicos (home, seções, categorias, vídeos, clientes) ──────────
+// Depois de arquivos e API, antes dos links curtos: uma página do site sempre
+// vence um link curto de mesmo nome. Endereço antigo, com acento ou maiúscula
+// leva 301 para a forma canônica.
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const rota = ROTAS.resolver(req.path, db);
+  if (!rota) return next();
+  let atual = req.path;
+  try { atual = decodeURIComponent(req.path); } catch (_) {}
+  atual = atual.replace(/\/+$/, '') || '/';
+  if (atual !== rota.canonico) {
+    const i = req.originalUrl.indexOf('?');
+    return res.redirect(301, encodeURI(rota.canonico) + (i >= 0 ? req.originalUrl.slice(i) : ''));
+  }
+  enviarSpa(req, res, rota);
 });
 
 // Short-link redirects (bit.ly-style) — last resort fallback: only fires for
@@ -1940,6 +2034,12 @@ setInterval(() => {
   if (db.settings.tutorial_title == null) db.settings.tutorial_title = SEED.settings.tutorial_title;
   if (db.settings.tutorial_subtitle == null) db.settings.tutorial_subtitle = SEED.settings.tutorial_subtitle;
   if (db.settings.tutorial_text == null) db.settings.tutorial_text = SEED.settings.tutorial_text;
+
+  // Endereços amigáveis (rotas.js): quem ainda não tem slug ganha um. Em ordem
+  // de exibição, para o primeiro de dois títulos iguais ficar com o nome limpo.
+  const _porOrdem = (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+  [...db.videos].sort(_porOrdem).forEach(v => { if (!v.slug) { v.slug = slugDoVideo(v, v); _migrated = true; } });
+  [...db.clients].sort(_porOrdem).forEach(c => { if (!c.slug) { c.slug = slugDoCliente(c, c); _migrated = true; } });
 
   const _now = new Date().toISOString();
   let _backfilled = _migrated;

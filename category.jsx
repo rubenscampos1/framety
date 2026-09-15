@@ -358,11 +358,16 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
 
   // Sync filters to URL params
   React.useEffect(() => {
+    // Só enquanto o endereço é o da categoria: com um vídeo aberto por cima, a
+    // URL é a dele e não pode ser apagada.
+    const R = window.FRAMETY_ROTAS;
+    const atual = R.resolver(window.location.pathname, window.FRAMETY_DATA);
+    if (!atual || atual.tipo !== "categoria") return;
     const sp = new URLSearchParams();
     if (clientFilter !== "all") sp.set("c", clientFilter);
 
     const qs = sp.toString() ? "?" + sp.toString() : "";
-    window.history.replaceState(null, "", `/framety/categoria/${catId}${qs}`);
+    window.history.replaceState(window.history.state, "", `${R.urlCategoria(catId)}${qs}`);
   }, [clientFilter, catId]);
 
   const formatosImersivos = window.FRAMETY_DATA.formatosImersivos || [];
@@ -690,7 +695,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
           <div style={{display:"flex",gap:12,alignItems:"center"}}>
             <button className="modal-share-btn" onClick={(e) => {
               e.stopPropagation();
-              const url = `${window.location.origin}/framety/video/${v.id}`;
+              const url = `${window.location.origin}${window.FRAMETY_ROTAS.urlVideo(v)}`;
               navigator.clipboard.writeText(url);
               const btn = e.currentTarget;
               const original = btn.innerHTML;
@@ -765,7 +770,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
           <div className="modal-cta-bar">
             <Magnetic>
               <button className="btn btn-accent"
-                onClick={() => { onClose(); onContactNav && onContactNav(); }}>
+                onClick={() => { if (onContactNav) onContactNav(); else onClose(); }}>
                 {window.FRAMETY_CONTENT.video.ctaButton} <Icon name="arrow-up-right" size={14}/>
               </button>
             </Magnetic>
@@ -875,7 +880,7 @@ const PlaylistPage = ({ catId }) => {
         <img src="/vector_framety.svg?v=1" alt="Framety" style={{height:26}}/>
         <div className="playlist-cat">{cat.name}<span style={{color:"var(--accent)"}}>.</span></div>
         <div className="playlist-count">{vids.length} vídeo{vids.length===1?"":"s"}</div>
-        <a className="playlist-cta" href="/framety" data-cursor="hover"><Icon name="grid" size={13}/> Conhecer outros vídeos</a>
+        <a className="playlist-cta" href="/categorias" data-cursor="hover"><Icon name="grid" size={13}/> Conhecer outros vídeos</a>
       </div>
 
       <div className="playlist-body">

@@ -401,7 +401,7 @@ const AdminDashboard = ({ initialTab = "videos", onExit, onOpenPresentation }) =
         {tab === "overview" && <OverviewPanel vids={vids} cats={cats} clients={clients} setTab={setTab}/>}
         {tab === "videos" && <VideosPanel vids={vids} setVids={setVids} cats={cats} clients={clients} setClients={setClients}/>}
         {tab === "clientes" && <ClientsPanel clients={clients} setClients={setClients} vids={vids} setVids={setVids}/>}
-        {tab === "categorias" && <><CategoriesPanel cats={cats} setCats={setCats}/><FormatosImersivosPanel/></>}
+        {tab === "categorias" && <><CategoriesPanel cats={cats} setCats={setCats} vids={vids}/><FormatosImersivosPanel/></>}
         {tab === "reel" && <><ReelPanel reelName={reelName} onUpload={handleReelUpload} onRemove={removeReel}/><AccentPanel/><HomeCopyPanel/><InstaPanel/></>}
         {tab === "ia" && <AIPanel/>}
         {tab === "seguranca" && <SecurityPanel/>}
@@ -847,7 +847,7 @@ const ClientsPanel = ({ clients, setClients, vids, setVids }) => {
           }
         }
       } else {
-        const id = editing.name.toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,16) || "c"+Date.now();
+        const id = window.FRAMETY_ROTAS.slugify(editing.name).slice(0,16) || "c"+Date.now();
         // Duplicate id guard
         if (clients.some(c => c.id === id)) {
           window.__adminToast?.("Já existe um cliente com este identificador. Tente um nome ligeiramente diferente.");
@@ -992,9 +992,9 @@ const FormatosImersivosPanel = () => {
   );
 };
 
-const CategoriesPanel = ({ cats, setCats }) => {
+const CategoriesPanel = ({ cats, setCats, vids = [] }) => {
   const [dragId,         setDragId]         = React.useState(null);
-  const [bgPickerFor,    setBgPickerFor]    = React.useState(null);
+  const [capaPara,       setCapaPara]       = React.useState(null); // catId com o seletor de capa aberto
   const [newCatName,     setNewCatName]     = React.useState('');
   const [showNewCatForm, setShowNewCatForm] = React.useState(false);
   const [nameDraft,      setNameDraft]      = React.useState({}); // catId → string while typing
@@ -1101,8 +1101,14 @@ const CategoriesPanel = ({ cats, setCats }) => {
           >
             <span className="grip" data-cursor="hover"><Icon name="grip" size={14}/></span>
             <div className="cat-edit-thumb-wrap" style={{position:"relative"}}>
-              <div className={`cat-edit-thumb ${c.bgClass}`} onClick={()=>setBgPickerFor(bgPickerFor===c.id?null:c.id)} data-cursor="hover">
-                {c.coverUrl && <img src={c.coverUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} alt=""/>}
+              <div className={`cat-edit-thumb ${c.bgClass}`} onClick={()=>setCapaPara(c.id)} data-cursor="hover" title="Escolher a capa">
+                {(() => {
+                  const escolhido = !c.coverUrl && c.coverVideoId && vids.find(v => v.id === c.coverVideoId && v.category === c.id);
+                  const src = c.coverUrl || (escolhido ? getThumbUrl(escolhido, 240) : null);
+                  return src
+                    ? <img src={src} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} alt=""/>
+                    : <span className="cat-edit-thumb-tag">aleatória</span>;
+                })()}
               </div>
               <label style={{position:"absolute",bottom:-8,right:-8,width:22,height:22,borderRadius:"50%",background:"var(--accent)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",zIndex:10,boxShadow:"0 0 8px var(--accent-glow)"}}>
                 <Icon name="upload" size={10} style={{color:"#fff"}}/>
@@ -1112,21 +1118,11 @@ const CategoriesPanel = ({ cats, setCats }) => {
                     if (!f) return;
                     try {
                       const result = await window.API.uploadCover(c.id, f);
-                      update(c.id, { coverUrl: result.url });
+                      update(c.id, { coverUrl: result.url, coverVideoId: "" });
                     } catch (ex) { window.__adminToast?.("Erro ao enviar capa: " + (ex?.error || ex)); }
                   }}
                 />
               </label>
-              {bgPickerFor === c.id && (
-                <div className="bg-picker" style={{top:50,left:0}}>
-                  {window.FRAMETY_DATA.bgChoices.map(bg => (
-                    <div key={bg}
-                      className={`bg-picker-swatch ${bg} ${c.bgClass===bg?"active":""}`}
-                      onClick={()=>{ update(c.id, { bgClass: bg }); setBgPickerFor(null); }}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
             <div className="cat-edit-fields">
               <input className="cat-edit-input"
@@ -1143,7 +1139,7 @@ const CategoriesPanel = ({ cats, setCats }) => {
                 data-cursor="text"
               />
               <div className="cat-edit-slug-row">
-                <span className="cat-edit-slug-prefix">/categoria/</span>
+                <span className="cat-edit-slug-prefix">/</span>
                 <span className="cat-edit-slug-value">
                   {toSlug(nameDraft[c.id] ?? c.name)}
                 </span>
@@ -1157,6 +1153,69 @@ const CategoriesPanel = ({ cats, setCats }) => {
           </SpotlightCard>
         ))}
       </div>
+
+      {/* Capa da categoria. Sem escolha, o site sorteia a thumb de um dos vídeos
+          a cada visita; escolher um vídeo fixa a thumb dele; imagem enviada vence
+          as duas. O fundo em degradê só aparece quando a categoria não tem vídeo. */}
+      {capaPara && (() => {
+        const c = cats.find(x => x.id === capaPara);
+        if (!c) return null;
+        const vidsCat = vids.filter(v => v.category === c.id && v.status !== "draft");
+        const modo = c.coverUrl ? "envio"
+          : (c.coverVideoId && vidsCat.some(v => v.id === c.coverVideoId)) ? "video" : "aleatoria";
+        return (
+          <div className="admin-modal-back" onClick={() => setCapaPara(null)}>
+            <div className="admin-modal glass-strong glass cat-capa-modal" onClick={e => e.stopPropagation()}>
+              <h3>Capa de {c.name}</h3>
+              <p className="sub">Sem escolha, cada visita mostra a thumb de um vídeo sorteado da categoria. Clique numa thumb para fixá-la, ou envie uma imagem própria.</p>
+              <div className="cat-capa-grid">
+                <button type="button" className={"cat-capa-opcao cat-capa-texto" + (modo === "aleatoria" ? " ativa" : "")}
+                  onClick={() => update(c.id, { coverUrl: "", coverVideoId: "" })} data-cursor="hover">
+                  <span>Aleatória</span>
+                </button>
+                <label className={"cat-capa-opcao cat-capa-texto" + (modo === "envio" ? " ativa" : "")} data-cursor="hover"
+                  style={c.coverUrl ? { backgroundImage: `url(${c.coverUrl})` } : {}}>
+                  <span><Icon name="upload" size={12}/> {c.coverUrl ? "Imagem enviada · trocar" : "Enviar imagem"}</span>
+                  <input type="file" accept="image/gif,image/webp,image/png,image/jpeg" style={{display:"none"}}
+                    onChange={async (e) => {
+                      const f = e.target.files[0];
+                      if (!f) return;
+                      try {
+                        const result = await window.API.uploadCover(c.id, f);
+                        update(c.id, { coverUrl: result.url, coverVideoId: "" });
+                      } catch (ex) { window.__adminToast?.("Erro ao enviar capa: " + (ex?.error || ex)); }
+                    }}
+                  />
+                </label>
+                {vidsCat.map(v => {
+                  const thumb = getThumbUrl(v, 320);
+                  return (
+                    <button type="button" key={v.id} title={v.title} data-cursor="hover"
+                      className={"cat-capa-opcao" + (modo === "video" && c.coverVideoId === v.id ? " ativa" : "")}
+                      style={thumb ? { backgroundImage: `url(${thumb})` } : {}}
+                      onClick={() => update(c.id, { coverUrl: "", coverVideoId: v.id })}>
+                      <span className="cat-capa-legenda">{v.title}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {vidsCat.length === 0 && <p className="sub" style={{marginTop:14,marginBottom:0}}>Esta categoria ainda não tem vídeos publicados.</p>}
+              <div className="cat-capa-fundo">
+                <span>Fundo quando não há vídeos</span>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {window.FRAMETY_DATA.bgChoices.map(bg => (
+                    <div key={bg} className={`bg-picker-swatch ${bg} ${c.bgClass===bg?"active":""}`}
+                      onClick={() => update(c.id, { bgClass: bg })} data-cursor="hover"/>
+                  ))}
+                </div>
+              </div>
+              <div className="admin-modal-actions">
+                <button type="button" className="btn btn-accent" onClick={() => setCapaPara(null)}>Pronto</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showNewCatForm && (
         <div className="admin-modal-back" onClick={() => { setShowNewCatForm(false); setNewCatName(''); }}>
@@ -1603,7 +1662,7 @@ const HomeCopyPanel = () => {
         <button className="btn btn-accent" onClick={save} disabled={saving || !dirty} data-cursor="hover">
           {saving ? "Publicando…" : dirty ? "Publicar textos" : "Tudo publicado"} <Icon name="arrow-right" size={14}/>
         </button>
-        <a href="/framety" target="_blank" className="btn btn-ghost" data-cursor="hover"><Icon name="external" size={14}/> Ver a home</a>
+        <a href="/" target="_blank" className="btn btn-ghost" data-cursor="hover"><Icon name="external" size={14}/> Ver a home</a>
         <button className="btn btn-ghost" onClick={restore} data-cursor="hover">Restaurar padrão</button>
         {saved && <span style={{fontFamily:"var(--font-mono)",fontSize:11,color:"#22e07c"}}>✓ publicado</span>}
         {err && <span style={{fontFamily:"var(--font-mono)",fontSize:11,color:"var(--accent)"}}>{err}</span>}
@@ -2429,7 +2488,7 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
     /* Nome que já existe não vira cliente repetido: só seleciona o que há. */
     const jaTem = clients.find(c => c.name.toLowerCase() === nome.toLowerCase());
     if (jaTem) { setClientNm(jaTem.name); setNovoCliente(null); return; }
-    const id = nome.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 16) || "c" + Date.now();
+    const id = window.FRAMETY_ROTAS.slugify(nome).slice(0, 16) || "c" + Date.now();
     if (clients.some(c => c.id === id)) {
       window.__adminToast?.("Já existe um cliente com este identificador. Tente um nome ligeiramente diferente.");
       return;
@@ -4049,7 +4108,7 @@ const ProducoesShareApp = () => {
             {err && <span style={{color:'var(--accent)',fontSize:11,fontFamily:'var(--font-mono)',letterSpacing:'0.1em',marginTop:4}}>{err}</span>}
           </div>
           <button type="submit" className="btn btn-accent" data-cursor="hover">Acessar <Icon name="arrow-right" size={14}/></button>
-          <div className="admin-login-foot"><span><span className="blink"/>SOMENTE LEITURA</span><a href="/framety" data-cursor="hover">← ir ao site</a></div>
+          <div className="admin-login-foot"><span><span className="blink"/>SOMENTE LEITURA</span><a href="/" data-cursor="hover">← ir ao site</a></div>
         </form>
         <style>{`@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }`}</style>
       </div>
@@ -4068,7 +4127,7 @@ const ProducoesShareApp = () => {
             <img src="/vector_framety.svg?v=1" alt="Framety" style={{ height: 30 }}/>
             <h2 style={{ margin: 0 }}>Produções <span className="count">SOMENTE LEITURA</span></h2>
           </div>
-          <a className="btn btn-ghost" href="/framety" style={{ padding: '9px 16px', fontSize: 13, textDecoration: 'none' }} data-cursor="hover">
+          <a className="btn btn-ghost" href="/" style={{ padding: '9px 16px', fontSize: 13, textDecoration: 'none' }} data-cursor="hover">
             <Icon name="video" size={14}/> Conhecer outros vídeos
           </a>
         </div>

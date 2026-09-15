@@ -13,7 +13,7 @@ const parseUrl = () => {
   const h = window.location.hash;
 
   // Partner registration
-  if (p.includes("/cadastroparceiro")) return { page: "partner", catId: null, tab: null };
+  if (p === "/cadastroparceiro" || p.startsWith("/cadastroparceiro/")) return { page: "partner", catId: null, tab: null };
 
   // Configurador de sala imersiva (ferramenta standalone, só por link)
   if (p === "/screendimension" || p.startsWith("/screendimension/")) return { page: "screendimension", catId: null, tab: null };
@@ -53,18 +53,10 @@ const parseUrl = () => {
   }
 
   // Presentation Mode
-  if (p.includes("/presentation") || h === "#presentation") return { page: "presentation", catId: null, tab: null };
-
-  // Category
-  const catMatch = p.match(/\/framety\/categoria\/([^/?]+)/i);
-  if (catMatch) return { page: "category", catId: decodeURIComponent(catMatch[1]), tab: null, videoId: null };
-
-  // Video (Standalone link)
-  const vidMatch = p.match(/\/framety\/video\/([^/?]+)/i);
-  if (vidMatch) return { page: "home", catId: null, tab: null, videoId: decodeURIComponent(vidMatch[1]) };
+  if (p === "/presentation" || p.startsWith("/presentation/") || h === "#presentation") return { page: "presentation", catId: null, tab: null };
 
   // Console / Admin
-  if (p.includes("/console")) {
+  if (p === "/console" || p.startsWith("/console/")) {
     const tabMatch = p.match(/\/console\/([^/?]+)/i);
     const tabSlug = tabMatch ? tabMatch[1] : "overview";
     
@@ -91,6 +83,19 @@ const parseUrl = () => {
     const hasToken = !!window.API?.getToken?.();
     return { page: hasToken ? "admin" : "admin-login", catId: null, tab: tab };
   }
+
+  // Home, seções, categoria, vídeo e cliente — o mapa está em rotas.js.
+  // `canonico` é o endereço certo: links antigos são reescritos para ele.
+  const rota = window.FRAMETY_ROTAS.resolver(window.location.pathname, window.FRAMETY_DATA, h);
+  if (rota && rota.tipo === "categoria") {
+    return { page: "category", catId: rota.categoria.id, tab: null, videoId: null, canonico: rota.canonico };
+  }
+  if (rota && rota.tipo === "video") {
+    // Aberto direto pelo link: a categoria do vídeo fica por trás do modal.
+    return { page: rota.categoria ? "category" : "home", catId: rota.categoria ? rota.categoria.id : null,
+             tab: null, videoId: rota.video.id, canonico: rota.canonico };
+  }
+  if (rota) return { page: "home", catId: null, tab: null, secao: rota.secao, canonico: rota.canonico };
 
   return { page: "home", catId: null, tab: null };
 };
@@ -335,6 +340,23 @@ const App = () => {
   const [adminTab, setAdminTab] = React.useState(init.tab || "overview");
   const [videoId, setVideoId] = React.useState(init.videoId || null);
   const [showSearch, setShowSearch] = React.useState(false);
+
+  // Link antigo (/framety#sobre, /framety/video/…) vira o endereço novo já na
+  // primeira renderização, antes de qualquer filho ler a URL.
+  React.useState(() => {
+    if (!init.canonico) return;
+    let atual = window.location.pathname;
+    try { atual = decodeURIComponent(atual); } catch (_) {}
+    if (atual !== init.canonico || window.location.hash) {
+      window.history.replaceState(window.history.state, "", init.canonico + window.location.search);
+    }
+  });
+
+  // O que está na tela agora, para quem roda fora do ciclo de renderização
+  // (popstate, scroll) decidir sem ler estado velho.
+  const pageRef = React.useRef(page);       pageRef.current = page;
+  const catIdRef = React.useRef(catId);     catIdRef.current = catId;
+  const videoIdRef = React.useRef(videoId); videoIdRef.current = videoId;
   const [dataVersion, setDataVersion] = React.useState(0);
 
   // Live updates: when content changes on the server (edited by anyone), re-fetch
@@ -362,7 +384,10 @@ const App = () => {
    }, [contentVisible]);
    const [logoRipples, setLogoRipples] = React.useState([]);
    const clickTimes = React.useRef([]);
-   const initialHashRef = React.useRef(window.location.hash.slice(1) || "");
+   // Seção pedida no link (/sobre). Até a página rolar até ela, o scroll não
+   // reescreve a URL — senão o topo da página apagaria o /sobre na chegada.
+   const initialSecaoRef = React.useRef(init.page === "home" ? init.secao || "" : "");
+   const urlTravadaRef = React.useRef(!!initialSecaoRef.current);
 
    React.useEffect(() => {
      const t1 = setTimeout(() => setFadeOut(true), 1600);
@@ -372,8 +397,8 @@ const App = () => {
        const bg = document.getElementById('wave-bg');
        if (bg) bg.style.opacity = "1";
      }, 1800);
-     const hash = initialHashRef.current;
-     const t4 = hash ? setTimeout(() => scrollToSection(hash), 2100) : null;
+     const secao = initialSecaoRef.current;
+     const t4 = secao ? setTimeout(() => { scrollToSection(secao); urlTravadaRef.current = false; }, 2100) : null;
      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); if (t4) clearTimeout(t4); };
    }, []);
 
@@ -403,12 +428,22 @@ const App = () => {
     }
 
     const onPop = () => {
-      const { page: p, catId: c, tab: t, videoId: v } = parseUrl();
+      const r = parseUrl();
+      // Vídeo aberto por cima de uma página: o histórico lembra qual era, e ela
+      // continua por trás em vez de trocar pela categoria do vídeo.
+      const atras = r.videoId && window.history.state && window.history.state.atras;
+      const p = atras ? atras.page : r.page;
+      const c = atras ? atras.catId : r.catId;
+      const mudouPagina = p !== pageRef.current || (p === "category" && c !== catIdRef.current);
       setPage(p);
       if (c) setCatId(c);
-      if (t) setAdminTab(t);
-      setVideoId(v || null);
-      window.scrollTo(0, 0);
+      if (r.tab) setAdminTab(r.tab);
+      setVideoId(r.videoId || null);
+      // Fechar um vídeo ou um cliente não pode jogar a home para o topo.
+      if (mudouPagina) {
+        window.scrollTo(0, 0);
+        if (p === "home" && r.secao) rolarParaSecaoDepois(r.secao, 80);
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => {
@@ -489,21 +524,29 @@ const App = () => {
     window.scrollTo(0, 0);
   };
 
+  const ROTAS = window.FRAMETY_ROTAS;
+
   // Section navigation
   const navTo = (id) => {
     window.dispatchEvent(new Event("framety-nav"));
     if (page !== "home") {
-      window.history.pushState(null, "", "/framety#" + id);
+      window.history.pushState(null, "", ROTAS.urlSecao(id));
       setPage("home");
-      setTimeout(() => scrollToSection(id), 50);
+      rolarParaSecaoDepois(id, 50);
       return;
     }
-    window.history.replaceState(null, "", id === "home" ? "/framety" : "/framety#" + id);
+    window.history.replaceState(null, "", ROTAS.urlSecao(id));
     scrollToSection(id);
   };
   const scrollToSection = (id) => {
     const el = document.getElementById(id);
     if (el) window.scrollTo({ top: el.offsetTop - 40, behavior: "smooth" });
+  };
+  // Chegando de outra página: a home monta no topo e o scroll reescreveria a
+  // URL para "/" antes de a rolagem até a seção começar. Trava até lá.
+  const rolarParaSecaoDepois = (id, ms) => {
+    urlTravadaRef.current = true;
+    setTimeout(() => { scrollToSection(id); urlTravadaRef.current = false; }, ms);
   };
 
   // Triple-click on logo → admin login
@@ -521,21 +564,32 @@ const App = () => {
   };
 
   const openCategory = (id) => {
-    window.history.pushState(null, "", `/framety/categoria/${id}`);
+    window.history.pushState(null, "", ROTAS.urlCategoria(id));
     setCatId(id);
     setPage("category");
     window.scrollTo(0, 0);
   };
 
   const backFromCategory = () => {
-    window.history.pushState(null, "", "/framety#categorias");
+    window.history.pushState(null, "", ROTAS.urlSecao("categorias"));
     setPage("home");
-    setTimeout(() => scrollToSection("categorias"), 50);
+    rolarParaSecaoDepois("categorias", 50);
   };
 
-  const openVideo = (id) => {
-    const currentPath = window.location.pathname + window.location.hash;
-    window.history.replaceState({ prev: currentPath }, "", currentPath);
+  /* Vídeo aberto tem endereço próprio: /<categoria>/<vídeo>. Abrir empilha uma
+     entrada no histórico (o "voltar" do navegador fecha o modal); trocar de
+     vídeo pelas sugestões substitui a entrada, para o voltar não percorrer
+     cada vídeo visto. No console e na apresentação o endereço não muda. */
+  const openVideo = (id, { trocar = false } = {}) => {
+    const v = (window.FRAMETY_DATA.videos || []).find(x => x.id === id);
+    const naVitrine = pageRef.current === "home" || pageRef.current === "category";
+    if (v && naVitrine) {
+      const url = ROTAS.urlVideo(v);
+      const st = window.history.state || {};
+      const atras = st.atras || { page: pageRef.current, catId: catIdRef.current };
+      if (trocar || videoIdRef.current) window.history.replaceState({ ...st, atras }, "", url);
+      else window.history.pushState({ videoAberto: true, atras }, "", url);
+    }
     setVideoId(id);
   };
 
@@ -543,7 +597,9 @@ const App = () => {
   // When already on home: patched pushState fires popstate → ClientsMarquee opens overlay.
   // When on another page: navigate home first; ClientsMarquee restores overlay from URL on mount.
   const openClient = (clientId) => {
-    const url = `/framety/cliente/${clientId}`;
+    const c = (window.FRAMETY_DATA.clients || []).find(x => x.id === clientId);
+    if (!c) return;
+    const url = ROTAS.urlCliente(c);
     if (page === "home") {
       window.history.pushState({ clientId }, "", url);
       setTimeout(() => scrollToSection("clientes"), 80);
@@ -554,10 +610,30 @@ const App = () => {
     }
   };
   const closeVideo = React.useCallback(() => {
+    // Aberto por clique aqui: voltar no histórico fecha (via popstate) e deixa
+    // a URL de antes, com a seção ou o filtro que tinha.
+    const st = window.history.state;
+    if (st && st.videoAberto) { window.history.back(); return; }
+    // Aberto direto pelo link: não há "antes" para voltar; a URL vira a da página de trás.
+    const r = window.FRAMETY_ROTAS.resolver(window.location.pathname, window.FRAMETY_DATA);
+    if (r && r.tipo === "video") {
+      const url = pageRef.current === "category" ? window.FRAMETY_ROTAS.urlCategoria(catIdRef.current) : "/";
+      window.history.replaceState(null, "", url);
+    }
     setVideoId(null);
   }, []);
+
+  // "Entre em contato" de dentro do vídeo: a entrada do vídeo no histórico
+  // vira a do contato, e o voltar leva para onde a pessoa estava antes.
+  const contatoDoVideo = () => {
+    setVideoId(null);
+    if (pageRef.current !== "home") { navTo("contato"); return; }
+    window.history.replaceState(null, "", ROTAS.urlSecao("contato"));
+    scrollToSection("contato");
+  };
+
   const exitAdmin = () => {
-    window.history.pushState(null, "", "/framety");
+    window.history.pushState(null, "", "/");
     setPage("home");
     window.scrollTo(0, 0);
   };
@@ -566,20 +642,30 @@ const App = () => {
   const [active, setActive] = React.useState("home");
   React.useEffect(() => {
     if (page !== "home") return;
-    const onScroll = () => {
-      /* Quem acende é a seção mais abaixo que já passou pela linha de leitura.
-         Antes o laço confiava na ordem do array e bastava reordenar a página
-         para o menu mentir: com Projetos acima de Categorias, estar em
-         Categorias acendia Projetos. Agora a decisão é pela posição real. */
-      const ids = ["home","trabalhos","categorias","sobre","contato"];
-      let cur = "home", maisAbaixo = -1;
-      const y = window.scrollY + 200;
+    /* Quem acende é a seção mais abaixo que já passou pela linha de leitura.
+       Antes o laço confiava na ordem do array e bastava reordenar a página
+       para o menu mentir: com Projetos acima de Categorias, estar em
+       Categorias acendia Projetos. Agora a decisão é pela posição real. */
+    const maisAbaixo = (ids, y) => {
+      let cur = "home", topo = -1;
       for (const id of ids) {
         const el = document.getElementById(id);
-        if (el && el.offsetTop <= y && el.offsetTop >= maisAbaixo) { maisAbaixo = el.offsetTop; cur = id; }
+        if (el && el.offsetTop <= y && el.offsetTop >= topo) { topo = el.offsetTop; cur = id; }
       }
-      setActive(cur);
-      window.history.replaceState(null, "", cur === "home" ? "/framety" : "/framety#" + cur);
+      return cur;
+    };
+    const idsMenu = ((window.FRAMETY_CONTENT.nav || {}).links || []).map(l => l.id);
+    const idsSecoes = Object.keys(window.FRAMETY_ROTAS.SECOES);
+    const onScroll = () => {
+      const y = window.scrollY + 200;
+      // O menu só acende o que ele lista; a URL acompanha todas as seções.
+      setActive(maisAbaixo(idsMenu, y));
+      if (urlTravadaRef.current || videoIdRef.current) return;
+      // Com um cliente aberto a URL é a dele — o scroll não mexe.
+      const atual = window.FRAMETY_ROTAS.resolver(window.location.pathname, window.FRAMETY_DATA);
+      if (!atual || atual.tipo !== "home") return;
+      const url = window.FRAMETY_ROTAS.urlSecao(maisAbaixo(idsSecoes, y));
+      if (window.location.pathname !== url) window.history.replaceState(null, "", url);
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -626,7 +712,7 @@ const App = () => {
 
       {page === "novidades" && (
         <window.NovidadesPage onVoltar={() => {
-          window.history.pushState(null, "", "/framety");
+          window.history.pushState(null, "", "/");
           setPage("home");
           window.scrollTo(0, 0);
         }} />
@@ -634,7 +720,7 @@ const App = () => {
 
       {page === "play" && (
         <window.MiniGame onSair={() => {
-          window.history.pushState(null, "", "/framety");
+          window.history.pushState(null, "", "/");
           setPage("home");
           window.scrollTo(0, 0);
         }} />
@@ -648,7 +734,7 @@ const App = () => {
       )}
 
       {page === "admin-login" && (
-        <AdminLogin onClose={() => { window.history.pushState(null,"","/framety"); setPage("home"); }} 
+        <AdminLogin onClose={() => { window.history.pushState(null,"","/"); setPage("home"); }}
           onSuccess={() => { window.history.pushState(null,"","/console/visao-geral"); setAdminTab("overview"); setPage("admin"); }} />
       )}
       
@@ -686,9 +772,9 @@ const App = () => {
         }} onOpenVideo={openVideo}/>
       )}
 
-      {videoId && <VideoModal videoId={videoId} onClose={closeVideo}
-        onOpenVideo={(id) => { closeVideo(); setTimeout(() => openVideo(id), 50); }}
-        onContactNav={() => { navTo("contato"); }}
+      {videoId && <VideoModal key={videoId} videoId={videoId} onClose={closeVideo}
+        onOpenVideo={(id) => openVideo(id, { trocar: true })}
+        onContactNav={contatoDoVideo}
       />}
 
       {showSearch && (

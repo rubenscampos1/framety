@@ -426,10 +426,106 @@ const Hero = ({ onNav }) => {
    fraca em repouso; no hover a frente desce alguns pixels — como quem abre a
    pasta — e a capa acende. Um clique entra na categoria (o padrão anterior, de
    expandir no hover e só entrar no segundo clique, saiu junto com os chips). */
+const videosDaCategoria = (catId) =>
+  (window.FRAMETY_DATA.videos || []).filter(v => v.category === catId && v.status !== "draft");
+
+/* Capa da pasta, nesta ordem: imagem enviada no console → thumb do vídeo
+   escolhido no console → thumb de um vídeo sorteado. O sorteio fica guardado
+   por categoria enquanto a página está aberta, para a capa não trocar a cada
+   atualização ao vivo dos dados. */
+const capaDaCategoria = (c) => {
+  if (c.coverUrl) return IMG_CDN(c.coverUrl, 600);
+  const vids = videosDaCategoria(c.id).filter(v => getThumbUrl(v));
+  const escolhido = c.coverVideoId && vids.find(v => v.id === c.coverVideoId);
+  if (escolhido) return getThumbUrl(escolhido, 600);
+  if (!vids.length) return null;
+  const sorteio = window.__capasSorteadas || (window.__capasSorteadas = {});
+  let v = vids.find(x => x.id === sorteio[c.id]);
+  if (!v) { v = vids[Math.floor(Math.random() * vids.length)]; sorteio[c.id] = v.id; }
+  return getThumbUrl(v, 600);
+};
+
+/* Preview da pasta: com o cursor parado sobre ela, toca um trecho de cada vídeo
+   da categoria, um depois do outro, mudo. Um player só — trocar de vídeo é
+   loadVideoById, sem remontar o iframe — e ele só aparece depois que o vídeo
+   começa de fato, para não mostrar a tela preta do carregamento. */
+const PREVIEW_ESPERA_MS = 700;   // quanto o cursor precisa ficar parado para começar
+const PREVIEW_TRECHO_S  = 6;     // quanto cada vídeo aparece
+const PREVIEW_INICIO_S  = 10;    // pula a abertura com logos
+
+const FolderPreview = ({ ids }) => {
+  const alvoRef = React.useRef(null);
+  const playerRef = React.useRef(null);
+  const [tocando, setTocando] = React.useState(false);
+
+  React.useEffect(() => {
+    let morto = false, idx = 0, agendado = -1, erros = 0, timer = null;
+    const proximo = () => {
+      clearTimeout(timer);
+      idx = (idx + 1) % ids.length;
+      try { playerRef.current.loadVideoById({ videoId: ids[idx], startSeconds: PREVIEW_INICIO_S }); } catch (_) {}
+    };
+    const montar = () => {
+      if (morto || !window.YT || !window.YT.Player || !alvoRef.current) return;
+      playerRef.current = new window.YT.Player(alvoRef.current, {
+        videoId: ids[0], width: "100%", height: "100%",
+        playerVars: { autoplay: 1, mute: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1,
+                      iv_load_policy: 3, disablekb: 1, start: PREVIEW_INICIO_S },
+        events: {
+          onReady: (e) => { e.target.mute(); e.target.playVideo(); },
+          onStateChange: (e) => {
+            if (morto) return;
+            if (e.data === 1) {                       // tocando
+              erros = 0;
+              setTocando(true);
+              // Voltar do buffer também dispara "tocando": agenda uma vez por vídeo.
+              if (ids.length > 1 && agendado !== idx) { agendado = idx; timer = setTimeout(proximo, PREVIEW_TRECHO_S * 1000); }
+            }
+            if (e.data === 0) proximo();              // vídeo mais curto que o trecho
+          },
+          // Vídeo removido ou sem incorporação: pula, sem girar em falso se todos falharem.
+          onError: () => { if (!morto && ++erros < ids.length) proximo(); },
+        },
+      });
+    };
+    if (window.YT && window.YT.Player) montar();
+    else {
+      if (!document.getElementById("yt-iframe-api")) {
+        const s = document.createElement("script");
+        s.id = "yt-iframe-api";
+        s.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(s);
+      }
+      const antes = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => { if (antes) antes(); montar(); };
+    }
+    return () => {
+      morto = true;
+      clearTimeout(timer);
+      try { playerRef.current && playerRef.current.destroy(); } catch (_) {}
+    };
+  }, []);
+
+  return (
+    <div className={"folder-preview" + (tocando ? " is-on" : "")} aria-hidden="true">
+      <div ref={alvoRef} />
+    </div>
+  );
+};
+
 const CategoriesSection = ({ onOpenCategory }) => {
   const content = window.FRAMETY_CONTENT.categories;
   const cats = window.FRAMETY_DATA.categories;   // read live so real-time edits reflect
   const [visible, setVisible] = React.useState(20);
+  const [previewCat, setPreviewCat] = React.useState(null);
+  const previewTimer = React.useRef(null);
+  React.useEffect(() => () => clearTimeout(previewTimer.current), []);
+  const entraNaPasta = (c) => {
+    if (IS_TOUCH) return;
+    clearTimeout(previewTimer.current);
+    previewTimer.current = setTimeout(() => setPreviewCat(c.id), PREVIEW_ESPERA_MS);
+  };
+  const saiDaPasta = () => { clearTimeout(previewTimer.current); setPreviewCat(null); };
   const [copied, setCopied] = React.useState(false);
   const copyTimer = React.useRef(null);
   React.useEffect(() => () => clearTimeout(copyTimer.current), []);
@@ -506,6 +602,8 @@ const CategoriesSection = ({ onOpenCategory }) => {
               key={c.id}
               className={"folder-card" + (c.count === 0 ? " folder-empty" : "")}
               onClick={() => onOpenCategory(c.id)}
+              onMouseEnter={() => entraNaPasta(c)}
+              onMouseLeave={saiDaPasta}
               onKeyDown={(e) => {
                 if (e.target !== e.currentTarget) return;   // veio do botão de compartilhar
                 if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenCategory(c.id); }
@@ -525,9 +623,16 @@ const CategoriesSection = ({ onOpenCategory }) => {
                 <Icon name="share" size={13}/>
               </button>
               <div className="folder-cover-wrap">
-                {c.coverUrl
-                  ? <img className="folder-cover" src={IMG_CDN(c.coverUrl, 600)} alt="" loading="lazy" />
-                  : <div className={`folder-cover is-gradient ${c.bgClass || "bg-comm"}`} />}
+                {(() => {
+                  const capa = capaDaCategoria(c);
+                  return capa
+                    ? <img className="folder-cover" src={capa} alt="" loading="lazy" />
+                    : <div className={`folder-cover is-gradient ${c.bgClass || "bg-comm"}`} />;
+                })()}
+                {previewCat === c.id && (() => {
+                  const ids = videosDaCategoria(c.id).map(v => getYouTubeId(v.videoUrl)).filter(Boolean);
+                  return ids.length ? <FolderPreview ids={ids} /> : null;
+                })()}
               </div>
               <div className="folder-face">
                 {/* A aba fica DENTRO do painel: como a altura do painel agora sai do
@@ -669,47 +774,45 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
   );
 };
 
+/* Velocidade da faixa de clientes, em pixels por segundo. A duração da animação
+   sai da largura real da fita, então cliente novo deixa a volta mais longa e
+   não a faixa mais rápida. */
+const MQ_PX_POR_SEGUNDO = 40;
+
 const ClientsMarquee = ({ onOpenVideo }) => {
   const clients = window.FRAMETY_DATA.clients || [];
   const content = window.FRAMETY_CONTENT.clients;
   const [clientPage, setClientPage] = React.useState(null);
   const savedScrollRef = React.useRef(0);
+  const trackRef = React.useRef(null);
+  const R = window.FRAMETY_ROTAS;
 
   const active = clients;
-  if (active.length === 0) return null;
 
   const openClientPage = (c) => {
     savedScrollRef.current = window.scrollY; // capture before any render/URL change
-    window.history.pushState({ clientId: c.id }, '', `/framety/cliente/${c.id}`);
+    window.history.pushState({ clientId: c.id }, '', R.urlCliente(c));
     setClientPage(c);
   };
   const closeClient = () => {
-    if (window.location.pathname.toLowerCase().includes('/cliente/')) {
-      window.history.replaceState(null, '', '/framety');
+    const r = R.resolver(window.location.pathname, window.FRAMETY_DATA);
+    if (r && r.tipo === 'cliente') {
+      window.history.replaceState(null, '', R.urlSecao('clientes'));
     }
     setClientPage(null);
   };
 
   React.useEffect(() => {
     const onPop = () => {
-      const p = window.location.pathname.toLowerCase();
-      const m = p.match(/\/framety\/cliente\/([^/?]+)/i);
-      if (!m) { setClientPage(null); }
-      else {
-        const cId = decodeURIComponent(m[1]);
-        const found = clients.find(c => c.id === cId);
-        if (found) { setClientPage(found); }
-      }
+      const r = R.resolver(window.location.pathname, window.FRAMETY_DATA);
+      // Vídeo aberto a partir da página do cliente: ela fica por trás.
+      if (r && r.tipo === 'video') return;
+      setClientPage(r && r.tipo === 'cliente' ? r.cliente : null);
     };
     const onNav = () => { setClientPage(null); };
     // Restore client overlay if page loaded directly on a client URL
-    const initPath = window.location.pathname.toLowerCase();
-    const initMatch = initPath.match(/\/framety\/cliente\/([^/?]+)/i);
-    if (initMatch) {
-      const cId = decodeURIComponent(initMatch[1]);
-      const found = clients.find(c => c.id === cId);
-      if (found) { setClientPage(found); }
-    }
+    const inicial = R.resolver(window.location.pathname, window.FRAMETY_DATA);
+    if (inicial && inicial.tipo === 'cliente') setClientPage(inicial.cliente);
     window.addEventListener("popstate", onPop);
     window.addEventListener("framety-nav", onNav);
     return () => {
@@ -718,7 +821,32 @@ const ClientsMarquee = ({ onOpenVideo }) => {
     };
   }, []);
 
-  const mqReps = Math.max(8, Math.ceil(40 / active.length));
+  // A fita tem a lista repetida um número par de vezes e anda metade da própria
+  // largura por volta; a duração é essa metade dividida pela velocidade. Refaz
+  // quando a largura muda (logos carregando, tela girando).
+  React.useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    let ultima = 0;
+    const ajusta = () => {
+      const volta = el.scrollWidth / 2;
+      if (!volta) return;
+      const dur = volta / MQ_PX_POR_SEGUNDO;
+      if (ultima && Math.abs(dur - ultima) / dur < 0.01) return;
+      ultima = dur;
+      el.style.animationDuration = dur.toFixed(2) + "s";
+    };
+    ajusta();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(ajusta);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [active.length]);
+
+  if (active.length === 0) return null;
+
+  // Metade da fita com pelo menos 30 logos, para cobrir telas largas sem vão.
+  const mqReps = 2 * Math.max(1, Math.ceil(30 / active.length));
   const mqTrack = Array.from({ length: mqReps }, () => active).flat();
 
   return (
@@ -731,7 +859,7 @@ const ClientsMarquee = ({ onOpenVideo }) => {
         </div>
         <div className="mq-stage">
           <div className="mq-row">
-            <div className="mq-track" style={{ animationDuration: "45s" }}>
+            <div className="mq-track" ref={trackRef}>
               {mqTrack.map((c, i) => (
                 <div key={c.id + "-" + i} className="mq-item" onClick={() => openClientPage(c)} title={c.name}>
                   {c.logoUrl
@@ -1326,7 +1454,7 @@ const IABadge = ({ variant = 'pill' }) => {
     e.stopPropagation();
     const el = document.getElementById('ia');
     if (el) { window.scrollTo({ top: el.offsetTop - 40, behavior: 'smooth' }); }
-    else { window.location.href = '/framety#ia'; }
+    else { window.location.href = '/ia'; }
   };
   if (variant === 'decor') {
     return (
@@ -1337,7 +1465,7 @@ const IABadge = ({ variant = 'pill' }) => {
     );
   }
   return (
-    <a className={'ia-pill' + (variant === 'header' ? ' ia-pill--header' : '')} href="/framety#ia" onClick={goToAI}>
+    <a className={'ia-pill' + (variant === 'header' ? ' ia-pill--header' : '')} href="/ia" onClick={goToAI}>
       <div className="ia-pill-icon">
         <span className="ia-main">IA</span>
         <span className="ia-sub">GEN</span>
