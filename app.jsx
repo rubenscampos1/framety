@@ -91,8 +91,10 @@ const parseUrl = () => {
     return { page: "category", catId: rota.categoria.id, tab: null, videoId: null, canonico: rota.canonico };
   }
   if (rota && rota.tipo === "video") {
-    // Aberto direto pelo link: a categoria do vídeo fica por trás do modal.
-    return { page: rota.categoria ? "category" : "home", catId: rota.categoria ? rota.categoria.id : null,
+    // Aberto direto pelo link: a categoria do vídeo fica por trás do modal
+    // (ou a home, se a categoria estiver oculta).
+    const atras = rota.categoria && !rota.categoria.hidden ? rota.categoria : null;
+    return { page: atras ? "category" : "home", catId: atras ? atras.id : null,
              tab: null, videoId: rota.video.id, canonico: rota.canonico };
   }
   if (rota) return { page: "home", catId: null, tab: null, secao: rota.secao, canonico: rota.canonico };
@@ -133,8 +135,9 @@ const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, admi
   const matchedSbs = (!storyboardsOnly || !q) ? [] : sbs.filter((s) => matchSb(s, q)).slice(0, 9);
 
   const matchedCats = storyboardsOnly || !q ? [] : data.categories.filter(c =>
-    c.name.toLowerCase().includes(q) || c.desc?.toLowerCase().includes(q)
+    !c.hidden && (c.name.toLowerCase().includes(q) || c.desc?.toLowerCase().includes(q))
   );
+  const catOculta = (id) => (data.categories.find(c => c.id === id) || {}).hidden;
   const matchedClients = storyboardsOnly || !q ? [] : (data.clients || []).filter(c =>
     c.name.toLowerCase().includes(q)
   );
@@ -251,7 +254,11 @@ const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, admi
                     const vid = data.videos.find(v => v.empreendimento === emp);
                     return (
                       <button key={emp} className="gsearch-item"
-                        onClick={() => { if (vid) onOpenCategory(vid.category); onClose(); }}>
+                        onClick={() => {
+                          // Categoria oculta não abre: vai direto ao vídeo do empreendimento.
+                          if (vid) { if (catOculta(vid.category)) onOpenVideo(vid.id); else onOpenCategory(vid.category); }
+                          onClose();
+                        }}>
                         <span className="gsearch-item-icon"><Icon name="arrow-up-right" size={12}/></span>
                         <span className="gsearch-item-title">{emp}</span>
                         {vid && <span className="gsearch-item-sub">{vid.client}</span>}

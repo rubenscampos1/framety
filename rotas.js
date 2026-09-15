@@ -61,9 +61,12 @@
 
   const decodifica = (s) => { try { return decodeURIComponent(s); } catch (_) { return s; } };
 
-  const achaCategoria = (cats, bruto, limpo) =>
-    cats.find((c) => c.id === bruto || c.id === limpo) ||
-    cats.find((c) => (c.idsAntigos || []).some((a) => a === bruto || a === limpo));
+  // Categoria oculta no console não tem página; os vídeos dela seguem com endereço.
+  const achaCategoria = (cats, bruto, limpo, incluiOcultas) => {
+    const lista = incluiOcultas ? cats : cats.filter((c) => !c.hidden);
+    return lista.find((c) => c.id === bruto || c.id === limpo) ||
+      lista.find((c) => (c.idsAntigos || []).some((a) => a === bruto || a === limpo));
+  };
 
   const achaCliente = (clis, bruto, limpo) =>
     clis.find((c) => c.slug === limpo) ||
@@ -135,7 +138,7 @@
 
     if (brutos.length === 1) return categoria(brutos[0], limpos[0]);
     if (brutos.length === 2) {
-      const cat = achaCategoria(cats, brutos[0], limpos[0]);
+      const cat = achaCategoria(cats, brutos[0], limpos[0], true);
       const v = achaVideo(vids, cat, limpos[0], brutos[1], limpos[1]);
       return v ? video(v) : null;
     }

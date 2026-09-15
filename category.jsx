@@ -836,7 +836,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
 /* ─────────────────────────── Category Playlist (public, watch-only) ─────────── */
 const PlaylistPage = ({ catId }) => {
   const data = window.FRAMETY_DATA || { categories: [], videos: [], clients: [] };
-  const cat  = data.categories.find(c => c.id === catId);
+  const cat  = data.categories.find(c => c.id === catId && !c.hidden);
   const vids = data.videos.filter(v => v.category === catId && v.status !== "draft");
   const [activeId, setActiveId] = React.useState(vids[0]?.id || null);
   const active = vids.find(v => v.id === activeId) || vids[0];

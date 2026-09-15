@@ -1917,7 +1917,7 @@ app.post('/api/redirects', requireAuth, (req, res) => {
   let target = (rawTarget || '').trim();
   if (!slug) return res.status(400).json({ error: 'Informe um nome para o link.' });
   if (RESERVED_SLUGS.has(slug) || ROTAS.RESERVADOS.has(slug)) return res.status(400).json({ error: 'Esse nome é reservado pelo site. Escolha outro.' });
-  if (ROTAS.resolver('/' + slug, db)) return res.status(400).json({ error: `/${slug} já é uma página do site (categoria ou seção). Escolha outro nome.` });
+  if (db.categories.some(c => c.id === slug) || ROTAS.resolver('/' + slug, db)) return res.status(400).json({ error: `/${slug} já é uma página do site (categoria ou seção). Escolha outro nome.` });
   if (!target) return res.status(400).json({ error: 'Informe a URL de destino.' });
   if (!/^https?:\/\//i.test(target)) target = 'https://' + target;
   if (db.linkRedirects.some(r => r.slug === slug)) return res.status(409).json({ error: 'Já existe um link com esse nome.' });

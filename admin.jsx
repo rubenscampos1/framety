@@ -1092,7 +1092,7 @@ const CategoriesPanel = ({ cats, setCats, vids = [] }) => {
             key={c.id}
             color="red"
             overlay={false}
-            className={"cat-edit-row" + (dragId===c.id ? " dragging" : "")}
+            className={"cat-edit-row" + (dragId===c.id ? " dragging" : "") + (c.hidden ? " cat-oculta" : "")}
             style={{ '--radius': 10, '--size': 110 }}
             draggable
             onDragStart={()=>onDragStart(c.id)}
@@ -1146,8 +1146,16 @@ const CategoriesPanel = ({ cats, setCats, vids = [] }) => {
               </div>
             </div>
             <span className="cat-pill">{c.count} VÍDEOS</span>
-            <span className="status live"><span className="dot"/> publicada</span>
+            <span className={"status " + (c.hidden ? "off" : "live")}><span className="dot"/> {c.hidden ? "oculta" : "publicada"}</span>
             <div className="actions">
+              {/* Oculta: some da grade de categorias, da busca e perde a página no
+                  site. Os vídeos dela continuam publicados e com link próprio. */}
+              <button type="button" role="switch" aria-checked={!c.hidden}
+                className={"cat-switch" + (c.hidden ? "" : " on")}
+                title={c.hidden ? "Oculta no site — clique para mostrar" : "Visível no site — clique para ocultar"}
+                onClick={() => update(c.id, { hidden: !c.hidden })} data-cursor="hover">
+                <span className="knob"/>
+              </button>
               <button className="del" data-cursor="hover" title="Excluir" onClick={()=>remove(c.id)}><Icon name="trash" size={14}/></button>
             </div>
           </SpotlightCard>

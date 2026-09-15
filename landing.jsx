@@ -515,7 +515,8 @@ const FolderPreview = ({ ids }) => {
 
 const CategoriesSection = ({ onOpenCategory }) => {
   const content = window.FRAMETY_CONTENT.categories;
-  const cats = window.FRAMETY_DATA.categories;   // read live so real-time edits reflect
+  // read live so real-time edits reflect; ocultas no console ficam fora da grade
+  const cats = window.FRAMETY_DATA.categories.filter(c => !c.hidden);
   const [visible, setVisible] = React.useState(20);
   const [previewCat, setPreviewCat] = React.useState(null);
   const previewTimer = React.useRef(null);
