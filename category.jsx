@@ -567,7 +567,7 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
                    aqui que eles precisam ser desligados. O que sobra é a thumb,
                    e o brilho no hover fica por conta do box-shadow, que o
                    componente não escreve. */
-                <SpotlightCard key={v.id} color="red" className="cat-card" onClick={() => onOpenVideo(v.id)}
+                <SpotlightCard key={v.id} color="red" className={"cat-card" + (ehVertical(v) ? " v916" : "")} onClick={() => onOpenVideo(v.id)}
                   onMouseEnter={() => handleCardEnter(v)}
                   onMouseLeave={handleCardLeave}
                   style={{ '--radius': 12, '--backdrop': 'transparent', '--backup-border': 'transparent' }}>

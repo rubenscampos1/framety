@@ -734,7 +734,7 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
               return (
                 /* Desliga o fundo e o contorno que o SpotlightCard escreve no
                    elemento — o mesmo que é feito no grid de categoria. */
-                <SpotlightCard key={v.id} color="red" className="cat-card"
+                <SpotlightCard key={v.id} color="red" className={"cat-card" + (window.ehVertical?.(v) ? " v916" : "")}
                   onClick={() => onOpenVideo?.(v.id)}
                   onMouseEnter={() => handleEnter(v)}
                   onMouseLeave={handleLeave}

@@ -9121,12 +9121,15 @@ body.home-pronta .whisper.no-ar .whisper-w {
 /* Grade da categoria e do cliente. O card em pé não ocupa a coluna inteira:
    com a largura toda ele ficaria quase o dobro da altura de um card deitado e
    dominaria a grade. Fica estreito e centrado na própria coluna. */
-.cat-card-thumb.v916 {
+/* Quem estreita é o CARD inteiro: estreitar só a imagem deixava a moldura do
+   card (borda, brilho no hover, cantos) em 16:9 em volta dela — a tal máscara
+   no formato antigo. A imagem volta a ocupar o card todo. */
+.cat-card.v916 { width: 46%; margin-left: auto; margin-right: auto; }
+.cat-card.v916 .cat-card-thumb, .cat-card-thumb.v916 {
   aspect-ratio: 9 / 16 !important;
-  width: 46% !important;
-  margin: 0 auto;
+  width: 100% !important;
 }
-@media (max-width: 500px) { .cat-card-thumb.v916 { width: 58% !important; } }
+@media (max-width: 500px) { .cat-card.v916 { width: 58%; } }
 .cat-grid { align-items: start; }
 /* Prévia que acompanha o cursor na visão em lista */
 .cat-list-preview.v916 { width: 200px !important; aspect-ratio: 9 / 16 !important; }
