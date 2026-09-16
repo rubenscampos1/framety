@@ -9183,3 +9183,20 @@ body.home-pronta .whisper.no-ar .whisper-w {
 .admin-row .thumb.v916 { width: 23px; height: 40px !important; }
 .admin-grid-thumb.v916 { aspect-ratio: 9 / 16 !important; }
 .cat-capa-opcao.v916 { aspect-ratio: 9 / 16 !important; }
+
+/* ── Capa do YouTube em 4:3 (com tarja) ───────────────────────────────────────
+   As capas de quadro (hq1..hq3, hqdefault, sddefault) vêm 480x360 com tarja
+   preta em cima e embaixo; o quadro 16:9 ocupa os 75% do meio. Numa caixa 16:9
+   o recorte já comia a tarja, mas na pasta da categoria (mais alta que larga) e
+   nos cards 16:10 ela aparecia. Aqui a imagem entra 4/3 mais alta e sobe um
+   sexto: sobra exatamente o quadro, preenchendo a área toda. */
+.yt43 {
+  background-size: auto 133.34% !important;
+  background-position: center !important;
+}
+img.yt43 {
+  height: 133.34% !important;
+  top: -16.67% !important;
+  bottom: auto !important;
+  object-fit: cover;
+}

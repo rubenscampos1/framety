@@ -744,7 +744,7 @@ const RowAdmin = ({ v, i, onTogglePub, onToggleFeat, onRemove, onEdit, onDuplica
     >
       <span className="grip" data-cursor="hover"><Icon name="grip" size={14}/></span>
       <span className="num">— {String(i+1).padStart(3,"0")}</span>
-      <div className={`thumb${window.ehVertical?.(v) ? " v916" : ""} ${cat?.bgClass||"bg-comm"}`}
+      <div className={`thumb${window.ehVertical?.(v) ? " v916" : ""}${window.classeTarja?.(thumb) || ""} ${cat?.bgClass||"bg-comm"}`}
         style={thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"cover",backgroundPosition:"center"} : {}}/>
       <div className="title">
         {/* Fora do fluxo do texto: dentro dele a estrela empurrava o título
@@ -778,7 +778,7 @@ const GridCardAdmin = ({ v, cats, onTogglePub, onToggleFeat, onRemove, onEdit, o
   const thumb = window.getThumbUrl ? window.getThumbUrl(v) : null;
   return (
     <SpotlightCard color="red" className="admin-grid-card" data-cursor="hover" style={{ '--radius': 14, '--size': 140 }}>
-      <div className={`admin-grid-thumb${window.ehVertical?.(v) ? " v916" : ""} ${cat?.bgClass||"bg-comm"}`}
+      <div className={`admin-grid-thumb${window.ehVertical?.(v) ? " v916" : ""}${window.classeTarja?.(thumb) || ""} ${cat?.bgClass||"bg-comm"}`}
         style={thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"cover",backgroundPosition:"center"} : {}}>
         <span className={"admin-grid-status " + v.status} onClick={()=>onTogglePub(v.id)}>
           <span className="dot"/>{v.status === "live" ? "público" : "privado"}
@@ -1199,7 +1199,7 @@ const CategoriesPanel = ({ cats, setCats, vids = [] }) => {
                   const thumb = getThumbUrl(v, 320);
                   return (
                     <button type="button" key={v.id} title={v.title} data-cursor="hover"
-                      className={"cat-capa-opcao" + (window.ehVertical?.(v) ? " v916" : "") + (modo === "video" && c.coverVideoId === v.id ? " ativa" : "")}
+                      className={"cat-capa-opcao" + (window.ehVertical?.(v) ? " v916" : "") + (window.classeTarja?.(thumb) || "") + (modo === "video" && c.coverVideoId === v.id ? " ativa" : "")}
                       style={thumb ? { backgroundImage: `url(${thumb})` } : {}}
                       onClick={() => update(c.id, { coverUrl: "", coverVideoId: v.id })}>
                       <span className="cat-capa-legenda">{v.title}</span>

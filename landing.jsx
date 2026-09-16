@@ -627,7 +627,7 @@ const CategoriesSection = ({ onOpenCategory }) => {
                 {(() => {
                   const capa = capaDaCategoria(c);
                   return capa
-                    ? <img className="folder-cover" src={capa} alt="" loading="lazy" />
+                    ? <img className={"folder-cover" + (window.classeTarja?.(capa) || "")} src={capa} alt="" loading="lazy" />
                     : <div className={`folder-cover is-gradient ${c.bgClass || "bg-comm"}`} />;
                 })()}
                 {previewCat === c.id && (() => {
@@ -740,7 +740,7 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
                   onMouseLeave={handleLeave}
                   style={{ '--radius': 12, '--backdrop': 'transparent', '--backup-border': 'transparent' }}>
 
-                  <div className={`cat-card-thumb${window.ehVertical?.(v) ? " v916" : ""}${thumb || isPrev ? "" : ` ${cat?.bgClass || "bg-comm"}`}`}
+                  <div className={`cat-card-thumb${window.ehVertical?.(v) ? " v916" : ""}${window.classeTarja?.(thumb) || ""}${thumb || isPrev ? "" : ` ${cat?.bgClass || "bg-comm"}`}`}
                     style={!isPrev && thumb ? { backgroundImage: `url(${thumb})`, backgroundSize: "var(--zoom-thumb, cover)", backgroundPosition: "center" } : {}}>
 
                     {isPrev && ytId && (
@@ -1146,6 +1146,9 @@ const FeaturedSection = ({ onOpenVideo }) => {
                       próprio início, o que fazia o card saltar sem motivo. */}
                   <div className="ish-face">
                     {thumb.src
+                      /* Sem .yt43 aqui: o card do corredor é 16:9, onde o
+                         recorte normal já corta a tarja, e esta imagem não é
+                         posicionada — a regra não teria como subi-la. */
                       ? <img src={thumb.src} data-reserva={thumb.reserva}
                              onError={window.thumbReserva} onLoad={window.thumbReserva}
                              alt="" loading="lazy" decoding="async" draggable={false} />
@@ -1200,7 +1203,7 @@ const FeaturedSection = ({ onOpenVideo }) => {
             <div key={v.id} className="feat-gal-mobile-item" onClick={() => onOpenVideo(v.id)}>
               <div className="feat-gal-card" style={window.ehVertical?.(v) ? { width: 135, height: 240 } : { width: 240, height: 135 }}>
                 {thumb
-                  ? <img src={thumb} alt={v.title} className="feat-gal-thumb" loading="lazy" decoding="async" />
+                  ? <img src={thumb} alt={v.title} className={"feat-gal-thumb" + (window.classeTarja?.(thumb) || "")} loading="lazy" decoding="async" />
                   : <div className={`feat-gal-thumb feat-gal-thumb--ph ${cat?.bgClass || 'bg-comm'}`} />
                 }
                 <div className="feat-gal-overlay" />

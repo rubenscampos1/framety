@@ -263,7 +263,7 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
                           data-cursor="hover"
                           style={{ '--radius': 14 }}
                         >
-                          <div className={`pres-card-thumb${window.ehVertical?.(v) ? " v916" : ""} ${cat.bgClass}`}
+                          <div className={`pres-card-thumb${window.ehVertical?.(v) ? " v916" : ""}${window.classeTarja?.(thumb) || ""} ${cat.bgClass}`}
                             style={thumb ? { backgroundImage: `url(${thumb})`, backgroundSize: "cover", backgroundPosition: "center" } : {}}>
                             {!thumb && <div className="pres-placeholder small">[ THUMB ]</div>}
                             <span className="pres-card-duration">{v.duration}</span>

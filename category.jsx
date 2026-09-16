@@ -70,6 +70,17 @@ const ehShortYt = (v) => /\/shorts\//i.test(String((v && v.videoUrl) || ""));
 const temCapaEmPe = (v) => !!v && (v.capaEmPe === true || (v.capaEmPe == null && ehShortYt(v)));
 const capaEmPe = (id, quadro) => enderecoYt(id, (quadro ? "oar" + quadro : "oardefault") + ".jpg");
 
+/* As capas de quadro do YouTube (hq1, hq2, hq3, hqdefault, sddefault) vêm em
+   4:3, com tarja preta em cima e embaixo — o quadro 16:9 ocupa os 75% do meio.
+   Numa caixa 16:9 o recorte já come a tarja, mas em caixa mais estreita (a
+   pasta da categoria, o card do modo de apresentação) ela aparece. Quem
+   responde isto ganha a classe .yt43, que mostra só o quadro (ver styles.css).
+   Não vale para as versões mq, maxres e oar, que já vêm sem tarja, nem para
+   imagem enviada no console. */
+const temTarjaYt = (url) =>
+  /img\.youtube\.com\/vi\/[^/]+\/(?:hq|sd)(?:default|[123])\.jpg/i.test(String(url || ""));
+const classeTarja = (url) => (temTarjaYt(url) ? " yt43" : "");
+
 const getThumbUrl = (v, largura = 800) => {
   const capa = capaYoutube(v.thumbUrl);
   if (capa && temCapaEmPe(v)) return capaEmPe(capa.id, capa.quadro);
@@ -573,7 +584,7 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
                   onMouseEnter={() => handleCardEnter(v)}
                   onMouseLeave={handleCardLeave}
                   style={{ '--radius': 12, '--backdrop': 'transparent', '--backup-border': 'transparent' }}>
-                  <div className={`cat-card-thumb${ehVertical(v) ? " v916" : ""}${thumb || isPreview ? "" : ` ${cat?.bgClass||"bg-comm"}`}`}
+                  <div className={`cat-card-thumb${ehVertical(v) ? " v916" : ""}${classeTarja(thumb)}${thumb || isPreview ? "" : ` ${cat?.bgClass||"bg-comm"}`}`}
                     style={!isPreview && thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"var(--zoom-thumb, cover)",backgroundPosition:"center"} : {}}>
 
                     {/* YouTube preview iframe on hover */}
@@ -624,7 +635,7 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
                 </div>
                 <div className="meta-tags">{v.tags.map(t => <span key={t}>{t}</span>)}</div>
                 <div className="arrow"><Icon name="arrow-up-right" size={14}/></div>
-                <div className={`cat-list-preview${ehVertical(v) ? " v916" : ""} ${cat?.bgClass||"bg-comm"}`}
+                <div className={`cat-list-preview${ehVertical(v) ? " v916" : ""}${classeTarja(window.getThumbUrl?.(v))} ${cat?.bgClass||"bg-comm"}`}
                   style={window.getThumbUrl?.(v) ? { backgroundImage: `url(${window.getThumbUrl(v)})`, backgroundSize: "cover", backgroundPosition: "center" } : {}}>
                   {!window.getThumbUrl?.(v) && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-mono)",fontSize:10,letterSpacing:"0.2em",color:"rgba(255,255,255,0.4)"}}>[ PREVIEW ]</div>}
                 </div>
@@ -782,7 +793,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
           {!playing && (
             <>
               {thumb
-                ? <div style={{position:"absolute",inset:0,backgroundImage:`url(${thumb})`,backgroundSize:"cover",backgroundPosition:"center"}}/>
+                ? <div className={classeTarja(thumb).trim()} style={{position:"absolute",inset:0,backgroundImage:`url(${thumb})`,backgroundSize:"cover",backgroundPosition:"center"}}/>
                 : <div className={`modal-player-bg ${cat?.bgClass||"bg-comm"}`}/>}
               <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.28)"}}/>
               <button className="modal-bigplay"
@@ -844,7 +855,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
                       return (
                         <button key={s.id} className="modal-sug-card"
                           onClick={() => onOpenVideo && onOpenVideo(s.id)}>
-                          <div className={"modal-sug-thumb" + (ehVertical(s) ? " v916" : "")} style={sThumb ? {backgroundImage:`url(${sThumb})`} : {}}>
+                          <div className={"modal-sug-thumb" + (ehVertical(s) ? " v916" : "") + classeTarja(sThumb)} style={sThumb ? {backgroundImage:`url(${sThumb})`} : {}}>
                             {!sThumb && <Icon name="play" size={12} style={{color:"rgba(255,255,255,0.3)"}}/>}
                           </div>
                           <div className="modal-sug-info">
@@ -927,7 +938,7 @@ const PlaylistPage = ({ catId }) => {
               ? <CustomYouTubePlayer key={active.id} videoId={ytId} spherical={!!active.has360}/>
               : vimeoId
                 ? <iframe src={`https://player.vimeo.com/video/${vimeoId}`} allow="autoplay; fullscreen" allowFullScreen style={{width:"100%",height:"100%",border:"none",borderRadius:14}} title={active.title}/>
-                : <div className="playlist-noembed" style={activeThumb?{backgroundImage:`url(${activeThumb})`}:{}}><Icon name="play" size={26}/></div>}
+                : <div className={"playlist-noembed" + classeTarja(activeThumb)} style={activeThumb?{backgroundImage:`url(${activeThumb})`}:{}}><Icon name="play" size={26}/></div>}
           </div>
           <div className="playlist-main-info">
             <h1>{active.title}</h1>
@@ -943,7 +954,7 @@ const PlaylistPage = ({ catId }) => {
             const isActive = v.id === active.id;
             return (
               <button key={v.id} className={"playlist-item" + (isActive ? " active" : "")} onClick={() => setActiveId(v.id)} data-cursor="hover">
-                <div className={"playlist-item-thumb" + (ehVertical(v) ? " v916" : "")} style={thumb ? { backgroundImage:`url(${thumb})` } : {}}>
+                <div className={"playlist-item-thumb" + (ehVertical(v) ? " v916" : "") + classeTarja(thumb)} style={thumb ? { backgroundImage:`url(${thumb})` } : {}}>
                   {!thumb && <Icon name="play" size={13}/>}
                   {isActive && <span className="playlist-item-playing"><Icon name="play" size={10}/></span>}
                   {v.duration && <span className="playlist-item-dur">{v.duration}</span>}
@@ -961,4 +972,4 @@ const PlaylistPage = ({ catId }) => {
   );
 };
 
-Object.assign(window, { CategoryPage, VideoModal, ClientBadge, PlaylistPage, getYouTubeId, getVimeoId, getThumbUrl, getThumbHD, thumbReserva, ehVertical });
+Object.assign(window, { CategoryPage, VideoModal, ClientBadge, PlaylistPage, getYouTubeId, getVimeoId, getThumbUrl, getThumbHD, thumbReserva, ehVertical, temTarjaYt, classeTarja });

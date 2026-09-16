@@ -283,7 +283,7 @@ const GlobalSearch = ({ onClose, onOpenCategory, onOpenVideo, onOpenClient, admi
                           hoverTimer.current = setTimeout(() => setHoverVid(v.id), 450);
                         }}
                         onMouseLeave={() => { clearTimeout(hoverTimer.current); setHoverVid(null); }}>
-                        <div className={"gsearch-video-thumb" + (window.ehVertical?.(v) ? " v916" : "")}
+                        <div className={"gsearch-video-thumb" + (window.ehVertical?.(v) ? " v916" : "") + (window.classeTarja?.(thumb) || "")}
                           style={thumb && !isHov ? {backgroundImage:`url(${thumb})`} : {}}>
                           {isHov && ytId && (
                             <iframe
