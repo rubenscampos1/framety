@@ -9124,12 +9124,22 @@ body.home-pronta .whisper.no-ar .whisper-w {
 /* Quem estreita é o CARD inteiro: estreitar só a imagem deixava a moldura do
    card (borda, brilho no hover, cantos) em 16:9 em volta dela — a tal máscara
    no formato antigo. A imagem volta a ocupar o card todo. */
+/* Vídeo em pé solto numa grade de vídeos deitados: estreita dentro da própria
+   coluna, para não virar uma torre no meio da linha. */
 .cat-card.v916 { width: 46%; margin-left: auto; margin-right: auto; }
+/* Grade majoritariamente em pé: mais colunas, e aí o card ocupa a coluna toda
+   — com três colunas largas sobrava um vão enorme entre os cards estreitos. */
+.cat-grid-em-pe { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important; }
+.cat-grid-em-pe .cat-card.v916 { width: 100%; }
+@media (max-width: 560px) {
+  .cat-grid-em-pe { grid-template-columns: repeat(2, 1fr) !important; }
+  .cat-grid-em-pe .cat-card.v916 { width: 100%; }
+}
 .cat-card.v916 .cat-card-thumb, .cat-card-thumb.v916 {
   aspect-ratio: 9 / 16 !important;
   width: 100% !important;
 }
-@media (max-width: 500px) { .cat-card.v916 { width: 58%; } }
+@media (max-width: 500px) { .cat-card.v916 { width: 58%; } .cat-grid-em-pe .cat-card.v916 { width: 100%; } }
 .cat-grid { align-items: start; }
 /* Prévia que acompanha o cursor na visão em lista */
 .cat-list-preview.v916 { width: 200px !important; aspect-ratio: 9 / 16 !important; }

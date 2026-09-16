@@ -555,8 +555,10 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
         </div>
 
         {/* ── Grid view ────────────────────────────── */}
+        {/* Categoria majoritariamente em pé cabe mais por linha: o card é
+            estreito e, com três colunas, sobrava vão demais entre um e outro. */}
         {view === "grid" && (
-          <div className="cat-grid">
+          <div className={"cat-grid" + (filtered.length && filtered.filter(ehVertical).length * 2 >= filtered.length ? " cat-grid-em-pe" : "")}>
             {filtered.map(v => {
               const thumb = getThumbUrl(v);
               const ytId  = getYouTubeId(v.videoUrl);

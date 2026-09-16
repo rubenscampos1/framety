@@ -725,7 +725,7 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
         </div>
 
         {vids.length > 0 ? (
-          <div className="client-page-grid">
+          <div className={"client-page-grid" + (vids.filter(v => window.ehVertical?.(v)).length * 2 >= vids.length && vids.length ? " cat-grid-em-pe" : "")}>
             {vids.map(v => {
               const thumb = window.getThumbUrl?.(v);
               const ytId = window.getYouTubeId?.(v.videoUrl);
