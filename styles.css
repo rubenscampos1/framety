@@ -9112,3 +9112,54 @@ body.home-pronta .whisper.no-ar .whisper-w {
    esconderia a própria existência do recorte. */
 .pres-drop-menu button.vazio { opacity: 0.45; }
 .pres-drop-menu .num { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mute); }
+
+/* ── Vídeo em pé (9:16) ───────────────────────────────────────────────────────
+   A marca vem do cadastro (ver ehVertical, em category.jsx) e vale no site, no
+   console e na apresentação. Só troca a proporção da caixa: a mesma miniatura
+   de sempre, agora sem tarja preta nas laterais. */
+
+/* Grade da categoria e do cliente */
+.cat-card-thumb.v916 { aspect-ratio: 9 / 16 !important; }
+.cat-grid { align-items: start; }
+/* Prévia que acompanha o cursor na visão em lista */
+.cat-list-preview.v916 { width: 200px !important; aspect-ratio: 9 / 16 !important; }
+
+/* Player do vídeo. Em pé ele manda na altura, e a largura vem da proporção —
+   senão um 9:16 com a largura do modal passaria muito da tela. */
+.modal-player.v916 {
+  aspect-ratio: 9 / 16 !important;
+  height: min(72vh, 680px) !important;
+  width: auto !important;
+  margin: 0 auto;
+  /* O modal é uma coluna flexível: sem travar o encolhimento, no celular a
+     caixa em pé era espremida até sumir quando o conteúdo não cabia. */
+  flex: 0 0 auto !important;
+  align-self: center !important;
+}
+.modal-sug-thumb.v916 { aspect-ratio: 9 / 16 !important; }
+
+/* Busca */
+.gsearch-video-thumb.v916 { width: 45px !important; height: 80px !important; }
+
+/* Playlist (/assistir) */
+.playlist-player.v916 {
+  aspect-ratio: 9 / 16 !important;
+  height: min(70vh, 720px) !important;
+  width: auto !important;
+  margin: 0 auto;
+}
+.playlist-item-thumb.v916 { flex: 0 0 60px !important; height: 106px !important; }
+
+/* Modo de apresentação */
+.pres-card-thumb.v916 { aspect-ratio: 9 / 16 !important; }
+/* O destaque é uma faixa larga: aqui o vídeo em pé aparece inteiro, centrado. */
+.pres-hero-thumb.v916 {
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-color: #07070b;
+}
+
+/* Console */
+.admin-row .thumb.v916 { width: 23px; height: 40px !important; }
+.admin-grid-thumb.v916 { aspect-ratio: 9 / 16 !important; }
+.cat-capa-opcao.v916 { aspect-ratio: 9 / 16 !important; }

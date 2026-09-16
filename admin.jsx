@@ -744,7 +744,7 @@ const RowAdmin = ({ v, i, onTogglePub, onToggleFeat, onRemove, onEdit, onDuplica
     >
       <span className="grip" data-cursor="hover"><Icon name="grip" size={14}/></span>
       <span className="num">— {String(i+1).padStart(3,"0")}</span>
-      <div className={`thumb ${cat?.bgClass||"bg-comm"}`}
+      <div className={`thumb${window.ehVertical?.(v) ? " v916" : ""} ${cat?.bgClass||"bg-comm"}`}
         style={thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"cover",backgroundPosition:"center"} : {}}/>
       <div className="title">
         {/* Fora do fluxo do texto: dentro dele a estrela empurrava o título
@@ -778,7 +778,7 @@ const GridCardAdmin = ({ v, cats, onTogglePub, onToggleFeat, onRemove, onEdit, o
   const thumb = window.getThumbUrl ? window.getThumbUrl(v) : null;
   return (
     <SpotlightCard color="red" className="admin-grid-card" data-cursor="hover" style={{ '--radius': 14, '--size': 140 }}>
-      <div className={`admin-grid-thumb ${cat?.bgClass||"bg-comm"}`}
+      <div className={`admin-grid-thumb${window.ehVertical?.(v) ? " v916" : ""} ${cat?.bgClass||"bg-comm"}`}
         style={thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"cover",backgroundPosition:"center"} : {}}>
         <span className={"admin-grid-status " + v.status} onClick={()=>onTogglePub(v.id)}>
           <span className="dot"/>{v.status === "live" ? "público" : "privado"}
@@ -1199,7 +1199,7 @@ const CategoriesPanel = ({ cats, setCats, vids = [] }) => {
                   const thumb = getThumbUrl(v, 320);
                   return (
                     <button type="button" key={v.id} title={v.title} data-cursor="hover"
-                      className={"cat-capa-opcao" + (modo === "video" && c.coverVideoId === v.id ? " ativa" : "")}
+                      className={"cat-capa-opcao" + (window.ehVertical?.(v) ? " v916" : "") + (modo === "video" && c.coverVideoId === v.id ? " ativa" : "")}
                       style={thumb ? { backgroundImage: `url(${thumb})` } : {}}
                       onClick={() => update(c.id, { coverUrl: "", coverVideoId: v.id })}>
                       <span className="cat-capa-legenda">{v.title}</span>
@@ -2526,6 +2526,9 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
   const [feat,     setFeat]     = React.useState(initialData?.featured || false);
   const [aiGen,    setAiGen]    = React.useState(initialData?.aiGenerated || false);
   const [has360,   setHas360]   = React.useState(initialData?.has360 || false);
+  /* Vídeo em pé (9:16): decide a proporção das miniaturas e do player no site,
+     no console e na apresentação. Link de Short já entra marcado. */
+  const [vert,     setVert]     = React.useState(!!window.ehVertical?.(initialData));
   const [status,   setStatus]   = React.useState(initialData?.status || "draft");
   const [thumbUrl, setThumbUrl] = React.useState(initialData?.thumbUrl || "");
   const [baImages, setBaImages] = React.useState(initialData?.baImages || []);
@@ -2873,6 +2876,7 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
       featured: feat,
       aiGenerated: aiGen,
       has360,
+      vertical: vert,
       status,
       views:    views || "—",
       videoUrl: src !== "upload" ? (url || null) : (initialData?.videoUrl || null),
@@ -3264,6 +3268,10 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
           <div className={"toggle " + (has360 ? "on" : "")} onClick={()=>setHas360(a=>!a)} data-cursor="hover"
             style={{ "--toggle-accent": "#FF3B8A" }}>
             <span className="switch"/> Simulação 360°
+          </div>
+          <div className={"toggle " + (vert ? "on" : "")} onClick={()=>setVert(a=>!a)} data-cursor="hover"
+            title="Miniatura e player em pé, como Reels e Shorts">
+            <span className="switch"/> Vídeo vertical (9:16)
           </div>
           <div className={"toggle " + (status==="live" ? "on" : "")}
             onClick={()=>setStatus(s => s==="live" ? "draft" : "live")}

@@ -740,7 +740,7 @@ const ClientPageOverlay = ({ client, onClose, savedScrollRef, onOpenVideo }) => 
                   onMouseLeave={handleLeave}
                   style={{ '--radius': 12, '--backdrop': 'transparent', '--backup-border': 'transparent' }}>
 
-                  <div className={`cat-card-thumb${thumb || isPrev ? "" : ` ${cat?.bgClass || "bg-comm"}`}`}
+                  <div className={`cat-card-thumb${window.ehVertical?.(v) ? " v916" : ""}${thumb || isPrev ? "" : ` ${cat?.bgClass || "bg-comm"}`}`}
                     style={!isPrev && thumb ? { backgroundImage: `url(${thumb})`, backgroundSize: "var(--zoom-thumb, cover)", backgroundPosition: "center" } : {}}>
 
                     {isPrev && ytId && (
@@ -1066,6 +1066,10 @@ const FeaturedSection = ({ onOpenVideo }) => {
                 /* Aqui o card chega a ocupar meia tela, e a capa padrão do
                    YouTube (480px) aparecia lavada. */
                 const thumb = window.getThumbHD ? window.getThumbHD(v) : { src: null, reserva: "" };
+                /* Vídeo em pé mantém a altura do corredor e estreita a largura
+                   até 9:16 — a geometria do trajeto não muda, só a caixa. */
+                const emPe = !!window.ehVertical?.(v);
+                const larguraCard = emPe ? p.cardHeight * 9 / 16 : p.cardWidth;
                 const cat = window.FRAMETY_DATA.categories.find(c => c.id === v.category);
                 // As duas animações compartilham duração e atraso, então andam juntas.
                 const ritmo = {
@@ -1085,9 +1089,9 @@ const FeaturedSection = ({ onOpenVideo }) => {
                     style={{
                       left: "50%",
                       top: `${CORRIDOR_AXIS}%`,
-                      width: `${p.cardWidth}cqw`,
+                      width: `${larguraCard}cqw`,
                       height: `${p.cardHeight}cqw`,
-                      marginLeft: `${-p.cardWidth / 2}cqw`,
+                      marginLeft: `${-larguraCard / 2}cqw`,
                       marginTop: `${-p.cardHeight / 2}cqw`,
                       // Propriedades separadas de propósito: o atalho `animation` traz
                       // `play-state: running` embutido e, vindo inline, venceria a regra
@@ -1194,7 +1198,7 @@ const FeaturedSection = ({ onOpenVideo }) => {
           const cat   = window.FRAMETY_DATA.categories.find(c => c.id === v.category);
           return (
             <div key={v.id} className="feat-gal-mobile-item" onClick={() => onOpenVideo(v.id)}>
-              <div className="feat-gal-card" style={{ width: 240, height: 135 }}>
+              <div className="feat-gal-card" style={window.ehVertical?.(v) ? { width: 135, height: 240 } : { width: 240, height: 135 }}>
                 {thumb
                   ? <img src={thumb} alt={v.title} className="feat-gal-thumb" loading="lazy" decoding="async" />
                   : <div className={`feat-gal-thumb feat-gal-thumb--ph ${cat?.bgClass || 'bg-comm'}`} />

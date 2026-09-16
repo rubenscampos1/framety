@@ -470,6 +470,9 @@ const SPA_ROUTES = ['/', '/console', '/console/*', '/presentation', '/presentati
 
 app.get(SPA_ROUTES, (req, res) => enviarSpa(req, res, null));
 
+// Link de Short é vertical por natureza: quem cadastra não precisa marcar.
+const ehVerticalPorUrl = (url) => /\/shorts\//i.test(String(url || ''));
+
 function capaDoVideo(vid) {
   if (vid.thumbUrl) return vid.thumbUrl;
   const ytMatch = vid.videoUrl?.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
@@ -845,6 +848,7 @@ app.post('/api/videos', requireAuth, (req, res) => {
   delete body.slug; delete body.slugsAntigos;
   if (typeof body.description === 'string') body.description = sanitizeHtml(body.description);
   const novo = { ...body, id, sortOrder: maxOrder + 1, updatedAt: new Date().toISOString() };
+  if (typeof novo.vertical !== 'boolean') novo.vertical = ehVerticalPorUrl(novo.videoUrl);
   novo.slug = slugDoVideo(novo, null);
   db.videos.push(novo);
   save();
@@ -870,6 +874,7 @@ app.put('/api/videos/:id', requireAuth, (req, res) => {
   if (typeof body.description === 'string') body.description = sanitizeHtml(body.description);
   const antes = db.videos[idx];
   const depois = { ...antes, ...body, id: req.params.id, updatedAt: new Date().toISOString() };
+  if (typeof depois.vertical !== 'boolean') depois.vertical = ehVerticalPorUrl(depois.videoUrl);
   if (!antes.slug || depois.title !== antes.title || depois.category !== antes.category) {
     depois.slug = slugDoVideo(depois, antes);
     if (antes.slug) depois.slugsAntigos = comAntigo(antes.slugsAntigos, `${antes.category}/${antes.slug}`, `${depois.category}/${depois.slug}`);

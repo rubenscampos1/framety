@@ -1,10 +1,6 @@
 /* tutorial.jsx — Página pública de tutorial / suporte ao cliente */
 
-const getYouTubeId = (url) => {
-  if (!url) return null;
-  const m = url.match(/(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/);
-  return m ? m[1] : null;
-};
+/* getYouTubeId vive em category.jsx — uma definicao so para o site todo. */
 
 const TutorialPage = () => {
   const [data, setData] = React.useState(null);

@@ -1,8 +1,18 @@
 /* category.jsx */
 
+/* Id do vídeo no YouTube, em qualquer endereço que ele use hoje: youtu.be/ID,
+   watch?v=ID (mesmo com outros parâmetros antes), shorts/ID, live/ID, embed/ID
+   e /v/ID.
+
+   É a ÚNICA definição no site. O tutorial tinha a sua, carregada depois, e por
+   isso ela vencia esta em todas as páginas — e não conhecia /shorts/. Sem id, o
+   player não era montado, o botão de play não fazia nada e a capa automática
+   não aparecia. */
 const getYouTubeId = (url) => {
   if (!url) return null;
-  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  const s = String(url);
+  const m = s.match(/(?:youtube(?:-nocookie)?\.com\/(?:shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+    || s.match(/[?&]v=([A-Za-z0-9_-]{11})/);
   return m ? m[1] : null;
 };
 const getVimeoId = (url) => {
@@ -10,6 +20,13 @@ const getVimeoId = (url) => {
   const m = url.match(/vimeo\.com\/(\d+)/);
   return m ? m[1] : null;
 };
+
+/* Vídeo em pé (9:16). O console grava `vertical` no cadastro; quem veio de um
+   Short e nunca passou pelo console é vertical por padrão, que é o que o
+   formato do link diz. Onde a miniatura ou o player aparecem, esta resposta
+   troca a proporção — ver a classe .v916 no styles.css. */
+const ehVertical = (v) => !!v && (v.vertical === true ||
+  (v.vertical == null && /\/shorts\//i.test(v.videoUrl || "")));
 /* A capa gravada no vídeo pode ser uma imagem do próprio YouTube: os cadastros
    importados vieram assim, e o seletor de frame do console grava 1.jpg, 2.jpg
    ou 3.jpg — o quadro a um quarto, na metade e a três quartos do vídeo. Esses
@@ -33,7 +50,7 @@ const capaYoutube = (url) => {
   const prefixo = base.slice(0, -1);
   const eQuadro = base.length > 0
     && ["1", "2", "3"].indexOf(numero) >= 0
-    && ["", "hq", "mq", "sd", "maxres"].indexOf(prefixo) >= 0;
+    && ["", "hq", "mq", "sd", "maxres", "oar"].indexOf(prefixo) >= 0;
   return { id, arquivo, quadro: eQuadro ? numero : null };
 };
 const enderecoYt = (id, arquivo) => "https://img.youtube.com/vi/" + id + "/" + arquivo;
@@ -42,8 +59,15 @@ const escadaYt = (id, quadro) => (quadro
   ? ["maxres" + quadro, "sd" + quadro, "hq" + quadro]
   : ["maxresdefault", "sddefault", "hqdefault"]).map(f => enderecoYt(id, f + ".jpg"));
 
+/* Short guarda a capa também no formato original, em oardefault/oar1..3
+   (1080×1920). As hqdefault/hq1..3 de um Short vêm 4:3 com as tarjas pretas
+   queimadas na imagem — é de lá que vinham as barras nos cards. */
+const ehShortYt = (v) => /\/shorts\//i.test(String((v && v.videoUrl) || ""));
+const capaEmPe = (id, quadro) => enderecoYt(id, (quadro ? "oar" + quadro : "oardefault") + ".jpg");
+
 const getThumbUrl = (v, largura = 800) => {
   const capa = capaYoutube(v.thumbUrl);
+  if (capa && ehShortYt(v)) return capaEmPe(capa.id, capa.quadro);
   if (capa) {
     /* hq1/hq2/hq3 existem sempre, e aqui isso importa: em vários lugares a capa
        entra como fundo de CSS, onde não há como tratar erro de carregamento —
@@ -54,6 +78,7 @@ const getThumbUrl = (v, largura = 800) => {
   }
   if (v.thumbUrl) return IMG_CDN(v.thumbUrl, largura);
   const ytId = getYouTubeId(v.videoUrl);
+  if (ytId && ehShortYt(v)) return capaEmPe(ytId, null);
   // hqdefault always exists (maxresdefault 404s for non-HD videos → broken thumb).
   if (ytId) return enderecoYt(ytId, "hqdefault.jpg");
   return null;
@@ -64,12 +89,17 @@ const getThumbUrl = (v, largura = 800) => {
    lista em data-reserva e o onError/onLoad em thumbReserva. */
 const getThumbHD = (v, largura = 1600) => {
   const capa = capaYoutube(v.thumbUrl);
+  // Short: a capa em pé já é 1080×1920; a 4:3 com tarjas fica só de reserva.
+  if (capa && ehShortYt(v)) {
+    return { src: capaEmPe(capa.id, capa.quadro), reserva: escadaYt(capa.id, capa.quadro).join(",") };
+  }
   if (capa) {
     const urls = escadaYt(capa.id, capa.quadro);
     return { src: urls[0], reserva: urls.slice(1).join(",") };
   }
   if (v.thumbUrl) return { src: IMG_CDN(v.thumbUrl, largura), reserva: "" };
   const ytId = getYouTubeId(v.videoUrl);
+  if (ytId && ehShortYt(v)) return { src: capaEmPe(ytId, null), reserva: escadaYt(ytId, null).join(",") };
   if (ytId) {
     const urls = escadaYt(ytId, null);
     return { src: urls[0], reserva: urls.slice(1).join(",") };
@@ -536,7 +566,7 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
                   onMouseEnter={() => handleCardEnter(v)}
                   onMouseLeave={handleCardLeave}
                   style={{ '--radius': 12, '--backdrop': 'transparent', '--backup-border': 'transparent' }}>
-                  <div className={`cat-card-thumb${thumb || isPreview ? "" : ` ${cat?.bgClass||"bg-comm"}`}`}
+                  <div className={`cat-card-thumb${ehVertical(v) ? " v916" : ""}${thumb || isPreview ? "" : ` ${cat?.bgClass||"bg-comm"}`}`}
                     style={!isPreview && thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"var(--zoom-thumb, cover)",backgroundPosition:"center"} : {}}>
 
                     {/* YouTube preview iframe on hover */}
@@ -587,7 +617,7 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
                 </div>
                 <div className="meta-tags">{v.tags.map(t => <span key={t}>{t}</span>)}</div>
                 <div className="arrow"><Icon name="arrow-up-right" size={14}/></div>
-                <div className={`cat-list-preview ${cat?.bgClass||"bg-comm"}`}
+                <div className={`cat-list-preview${ehVertical(v) ? " v916" : ""} ${cat?.bgClass||"bg-comm"}`}
                   style={window.getThumbUrl?.(v) ? { backgroundImage: `url(${window.getThumbUrl(v)})`, backgroundSize: "cover", backgroundPosition: "center" } : {}}>
                   {!window.getThumbUrl?.(v) && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-mono)",fontSize:10,letterSpacing:"0.2em",color:"rgba(255,255,255,0.4)"}}>[ PREVIEW ]</div>}
                 </div>
@@ -726,7 +756,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
         </div>
 
         {/* ── Player ── */}
-        <div className="modal-player">
+        <div className={"modal-player" + (ehVertical(v) ? " v916" : "")}>
           {/* YouTube is pre-mounted (cued) and revealed on play, so the tap that
               starts it happens on a ready player → one-tap play with sound on mobile.
               Fullscreen is handled by the native YouTube controls now. */}
@@ -807,7 +837,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
                       return (
                         <button key={s.id} className="modal-sug-card"
                           onClick={() => onOpenVideo && onOpenVideo(s.id)}>
-                          <div className="modal-sug-thumb" style={sThumb ? {backgroundImage:`url(${sThumb})`} : {}}>
+                          <div className={"modal-sug-thumb" + (ehVertical(s) ? " v916" : "")} style={sThumb ? {backgroundImage:`url(${sThumb})`} : {}}>
                             {!sThumb && <Icon name="play" size={12} style={{color:"rgba(255,255,255,0.3)"}}/>}
                           </div>
                           <div className="modal-sug-info">
@@ -885,7 +915,7 @@ const PlaylistPage = ({ catId }) => {
 
       <div className="playlist-body">
         <div className="playlist-main">
-          <div className="playlist-player">
+          <div className={"playlist-player" + (ehVertical(active) ? " v916" : "")}>
             {ytId
               ? <CustomYouTubePlayer key={active.id} videoId={ytId} spherical={!!active.has360}/>
               : vimeoId
@@ -906,7 +936,7 @@ const PlaylistPage = ({ catId }) => {
             const isActive = v.id === active.id;
             return (
               <button key={v.id} className={"playlist-item" + (isActive ? " active" : "")} onClick={() => setActiveId(v.id)} data-cursor="hover">
-                <div className="playlist-item-thumb" style={thumb ? { backgroundImage:`url(${thumb})` } : {}}>
+                <div className={"playlist-item-thumb" + (ehVertical(v) ? " v916" : "")} style={thumb ? { backgroundImage:`url(${thumb})` } : {}}>
                   {!thumb && <Icon name="play" size={13}/>}
                   {isActive && <span className="playlist-item-playing"><Icon name="play" size={10}/></span>}
                   {v.duration && <span className="playlist-item-dur">{v.duration}</span>}
@@ -924,4 +954,4 @@ const PlaylistPage = ({ catId }) => {
   );
 };
 
-Object.assign(window, { CategoryPage, VideoModal, ClientBadge, PlaylistPage, getYouTubeId, getVimeoId, getThumbUrl, getThumbHD, thumbReserva });
+Object.assign(window, { CategoryPage, VideoModal, ClientBadge, PlaylistPage, getYouTubeId, getVimeoId, getThumbUrl, getThumbHD, thumbReserva, ehVertical });
