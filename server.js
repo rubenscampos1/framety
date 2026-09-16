@@ -473,6 +473,55 @@ app.get(SPA_ROUTES, (req, res) => enviarSpa(req, res, null));
 // Link de Short é vertical por natureza: quem cadastra não precisa marcar.
 const ehVerticalPorUrl = (url) => /\/shorts\//i.test(String(url || ''));
 
+/* Formato do vídeo, medido no próprio YouTube ───────────────────────────────
+   Nem todo vídeo em pé vem de um link /shorts/ — um 9:16 publicado como vídeo
+   comum tem link igual ao de qualquer outro. Mas o YouTube guarda a capa no
+   formato ORIGINAL em oardefault.jpg, e só a gera quando o vídeo não é 16:9:
+   para um vídeo deitado esse endereço responde 404 (com uma imagem cinza de
+   120x90 no corpo). Então medir essa capa responde as duas perguntas de uma
+   vez: se o vídeo é vertical e se existe capa em pé para usar no lugar da
+   hqdefault, que vem 4:3 com as tarjas queimadas.
+
+   A leitura pede só os primeiros 3 KB: o tamanho está no cabeçalho do JPEG, e
+   baixar os 180 KB da imagem inteira para ler dois números seria desperdício. */
+function tamanhoJpeg(buf) {
+  let i = 2;
+  while (i < buf.length - 9) {
+    if (buf[i] !== 0xFF) { i++; continue; }
+    const marca = buf[i + 1];
+    // SOFn carrega as medidas; DHT/DAC/RSTn não são quadros.
+    if (marca >= 0xC0 && marca <= 0xCF && marca !== 0xC4 && marca !== 0xC8 && marca !== 0xCC) {
+      return { largura: buf.readUInt16BE(i + 7), altura: buf.readUInt16BE(i + 5) };
+    }
+    i += 2 + buf.readUInt16BE(i + 2);
+  }
+  return null;
+}
+
+async function medeFormatoYoutube(videoUrl) {
+  const m = String(videoUrl || '').match(/(?:youtube(?:-nocookie)?\.com\/(?:shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+    || String(videoUrl || '').match(/[?&]v=([A-Za-z0-9_-]{11})/);
+  if (!m) return { vertical: ehVerticalPorUrl(videoUrl), capaEmPe: false };
+  try {
+    const r = await fetch(`https://img.youtube.com/vi/${m[1]}/oardefault.jpg`, {
+      headers: { Range: 'bytes=0-3000' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (r.status !== 200 && r.status !== 206) return { vertical: ehVerticalPorUrl(videoUrl), capaEmPe: false };
+    const t = tamanhoJpeg(Buffer.from(await r.arrayBuffer()));
+    if (!t || !t.largura) return { vertical: ehVerticalPorUrl(videoUrl), capaEmPe: false };
+    const emPe = t.altura > t.largura;
+    return { vertical: emPe, capaEmPe: emPe };
+  } catch (_) {
+    return { vertical: ehVerticalPorUrl(videoUrl), capaEmPe: false };
+  }
+}
+
+// O console usa isto ao colar o link, para já marcar o formato certo.
+app.get('/api/video-formato', requireAuth, async (req, res) => {
+  res.json(await medeFormatoYoutube(req.query.url || ''));
+});
+
 function capaDoVideo(vid) {
   if (vid.thumbUrl) return vid.thumbUrl;
   const ytMatch = vid.videoUrl?.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
@@ -853,6 +902,14 @@ app.post('/api/videos', requireAuth, (req, res) => {
   db.videos.push(novo);
   save();
   res.json({ id });
+  // Mede o formato no YouTube depois de responder, como a duração.
+  medeFormatoYoutube(novo.videoUrl).then((f) => {
+    const v = db.videos.find(x => x.id === id);
+    if (!v) return;
+    if (typeof body.vertical !== 'boolean') v.vertical = f.vertical;
+    v.capaEmPe = f.capaEmPe;
+    save();
+  }).catch(() => {});
   // Sem duração digitada, busca no YouTube depois de responder: quem cadastrou
   // não espera a ida à rede, e o card já nasce com o número certo.
   if (!body.duration) {
@@ -875,6 +932,7 @@ app.put('/api/videos/:id', requireAuth, (req, res) => {
   const antes = db.videos[idx];
   const depois = { ...antes, ...body, id: req.params.id, updatedAt: new Date().toISOString() };
   if (typeof depois.vertical !== 'boolean') depois.vertical = ehVerticalPorUrl(depois.videoUrl);
+  const urlMudou = depois.videoUrl !== antes.videoUrl;
   if (!antes.slug || depois.title !== antes.title || depois.category !== antes.category) {
     depois.slug = slugDoVideo(depois, antes);
     if (antes.slug) depois.slugsAntigos = comAntigo(antes.slugsAntigos, `${antes.category}/${antes.slug}`, `${depois.category}/${depois.slug}`);
@@ -882,6 +940,16 @@ app.put('/api/videos/:id', requireAuth, (req, res) => {
   db.videos[idx] = depois;
   save();
   res.json({ ok: true });
+  // Link novo (ou vídeo que nunca foi medido): confere o formato no YouTube.
+  if (urlMudou || typeof depois.capaEmPe !== 'boolean') {
+    medeFormatoYoutube(depois.videoUrl).then((f) => {
+      const v = db.videos.find(x => x.id === req.params.id);
+      if (!v) return;
+      if (typeof body.vertical !== 'boolean') v.vertical = f.vertical;
+      v.capaEmPe = f.capaEmPe;
+      save();
+    }).catch(() => {});
+  }
   if (!db.videos[idx].duration) {
     duracaoDoYoutube(db.videos[idx].videoUrl).then(d => {
       if (!d) return;
@@ -2061,4 +2129,22 @@ setInterval(() => {
   app.listen(PORT, () => {
     console.log(`\n  Framety  →  http://localhost:${PORT}/Framety.html\n`);
   });
+
+  /* Formato dos vídeos já cadastrados: quem nunca foi medido é medido agora,
+     um de cada vez e depois que o site já está no ar — é ida à rede, e não
+     pode segurar o arranque. Só grava se algo mudou. */
+  (async () => {
+    const semMedida = db.videos.filter(v => typeof v.capaEmPe !== 'boolean');
+    if (!semMedida.length) return;
+    let emPe = 0;
+    for (const v of semMedida) {
+      const f = await medeFormatoYoutube(v.videoUrl);
+      v.capaEmPe = f.capaEmPe;
+      if (typeof v.vertical !== 'boolean' || (f.vertical && !v.vertical)) v.vertical = f.vertical;
+      if (f.vertical) emPe++;
+      await new Promise(r => setTimeout(r, 120));
+    }
+    await saveDB(db);
+    console.log(`  formato medido em ${semMedida.length} vídeos — ${emPe} em pé (9:16)`);
+  })().catch(e => console.error('[formato]', e.message || e));
 })();

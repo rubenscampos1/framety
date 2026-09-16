@@ -47,6 +47,8 @@
     getData: () => fetch('/api/data', { headers: { 'x-auth-token': getToken() } }).then(r => r.json()),
 
     // Videos
+    // Formato do vídeo medido no YouTube (9:16 ou não) — ver /api/video-formato.
+    getVideoFormato: (url) => req('GET', '/api/video-formato?url=' + encodeURIComponent(url)),
     addVideo:      (v)    => req('POST',   '/api/videos',          v),
     updateVideo:   (id,v) => req('PUT',    `/api/videos/${id}`,    v),
     deleteVideo:   (id)   => req('DELETE', `/api/videos/${id}`),

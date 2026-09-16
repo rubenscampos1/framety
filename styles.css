@@ -9118,8 +9118,15 @@ body.home-pronta .whisper.no-ar .whisper-w {
    console e na apresentação. Só troca a proporção da caixa: a mesma miniatura
    de sempre, agora sem tarja preta nas laterais. */
 
-/* Grade da categoria e do cliente */
-.cat-card-thumb.v916 { aspect-ratio: 9 / 16 !important; }
+/* Grade da categoria e do cliente. O card em pé não ocupa a coluna inteira:
+   com a largura toda ele ficaria quase o dobro da altura de um card deitado e
+   dominaria a grade. Fica estreito e centrado na própria coluna. */
+.cat-card-thumb.v916 {
+  aspect-ratio: 9 / 16 !important;
+  width: 46% !important;
+  margin: 0 auto;
+}
+@media (max-width: 500px) { .cat-card-thumb.v916 { width: 58% !important; } }
 .cat-grid { align-items: start; }
 /* Prévia que acompanha o cursor na visão em lista */
 .cat-list-preview.v916 { width: 200px !important; aspect-ratio: 9 / 16 !important; }

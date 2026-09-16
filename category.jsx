@@ -63,11 +63,16 @@ const escadaYt = (id, quadro) => (quadro
    (1080×1920). As hqdefault/hq1..3 de um Short vêm 4:3 com as tarjas pretas
    queimadas na imagem — é de lá que vinham as barras nos cards. */
 const ehShortYt = (v) => /\/shorts\//i.test(String((v && v.videoUrl) || ""));
+/* Nem todo vídeo em pé veio de um link /shorts/. Quem confirma é o servidor,
+   que mede a capa original no YouTube e grava `capaEmPe` (ver medeFormatoYoutube
+   no server.js); o link de Short serve de resposta imediata para cadastro
+   recém-feito, antes de a medição terminar. */
+const temCapaEmPe = (v) => !!v && (v.capaEmPe === true || (v.capaEmPe == null && ehShortYt(v)));
 const capaEmPe = (id, quadro) => enderecoYt(id, (quadro ? "oar" + quadro : "oardefault") + ".jpg");
 
 const getThumbUrl = (v, largura = 800) => {
   const capa = capaYoutube(v.thumbUrl);
-  if (capa && ehShortYt(v)) return capaEmPe(capa.id, capa.quadro);
+  if (capa && temCapaEmPe(v)) return capaEmPe(capa.id, capa.quadro);
   if (capa) {
     /* hq1/hq2/hq3 existem sempre, e aqui isso importa: em vários lugares a capa
        entra como fundo de CSS, onde não há como tratar erro de carregamento —
@@ -78,7 +83,7 @@ const getThumbUrl = (v, largura = 800) => {
   }
   if (v.thumbUrl) return IMG_CDN(v.thumbUrl, largura);
   const ytId = getYouTubeId(v.videoUrl);
-  if (ytId && ehShortYt(v)) return capaEmPe(ytId, null);
+  if (ytId && temCapaEmPe(v)) return capaEmPe(ytId, null);
   // hqdefault always exists (maxresdefault 404s for non-HD videos → broken thumb).
   if (ytId) return enderecoYt(ytId, "hqdefault.jpg");
   return null;
@@ -90,7 +95,7 @@ const getThumbUrl = (v, largura = 800) => {
 const getThumbHD = (v, largura = 1600) => {
   const capa = capaYoutube(v.thumbUrl);
   // Short: a capa em pé já é 1080×1920; a 4:3 com tarjas fica só de reserva.
-  if (capa && ehShortYt(v)) {
+  if (capa && temCapaEmPe(v)) {
     return { src: capaEmPe(capa.id, capa.quadro), reserva: escadaYt(capa.id, capa.quadro).join(",") };
   }
   if (capa) {
@@ -99,7 +104,7 @@ const getThumbHD = (v, largura = 1600) => {
   }
   if (v.thumbUrl) return { src: IMG_CDN(v.thumbUrl, largura), reserva: "" };
   const ytId = getYouTubeId(v.videoUrl);
-  if (ytId && ehShortYt(v)) return { src: capaEmPe(ytId, null), reserva: escadaYt(ytId, null).join(",") };
+  if (ytId && temCapaEmPe(v)) return { src: capaEmPe(ytId, null), reserva: escadaYt(ytId, null).join(",") };
   if (ytId) {
     const urls = escadaYt(ytId, null);
     return { src: urls[0], reserva: urls.slice(1).join(",") };

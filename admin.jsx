@@ -2529,6 +2529,20 @@ const VideoFormModal = ({ cats, clients, initialData, onClose, onSave, onNovoCli
   /* Vídeo em pé (9:16): decide a proporção das miniaturas e do player no site,
      no console e na apresentação. Link de Short já entra marcado. */
   const [vert,     setVert]     = React.useState(!!window.ehVertical?.(initialData));
+
+  /* Link novo? O formato vem medido do próprio YouTube: um 9:16 publicado como
+     vídeo comum não se denuncia pelo endereço. Só em link colado — abrir um
+     vídeo já cadastrado não mexe na escolha que está salva. */
+  React.useEffect(() => {
+    if (!url || src !== "youtube" || url === initialData?.videoUrl) return;
+    let vivo = true;
+    const t = setTimeout(() => {
+      window.API.getVideoFormato(url)
+        .then((f) => { if (vivo && f && typeof f.vertical === "boolean") setVert(f.vertical); })
+        .catch(() => {});
+    }, 600);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [url, src]);
   const [status,   setStatus]   = React.useState(initialData?.status || "draft");
   const [thumbUrl, setThumbUrl] = React.useState(initialData?.thumbUrl || "");
   const [baImages, setBaImages] = React.useState(initialData?.baImages || []);
