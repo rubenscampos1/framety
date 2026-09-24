@@ -547,7 +547,11 @@ function enviarSpa(req, res, rotaResolvida) {
   // Prévia escolhida no console para esta página. Vence o padrão e perde para
   // categoria/vídeo logo abaixo, que trazem a capa do próprio conteúdo. Seções
   // e clientes são pedaços da home, então usam a prévia dela ('/framety').
-  const chavePrevia = (rota && (rota.tipo === 'home' || rota.tipo === 'cliente')) ? '/framety' : p;
+  // Subpáginas herdam a prévia da página-mãe: /screendimension/semicircular (e
+  // o link compartilhável, que leva as medidas na query) usa a de /screendimension.
+  // Sem isso o WhatsApp recebia a imagem padrão do site nesses endereços.
+  const chavePrevia = (rota && (rota.tipo === 'home' || rota.tipo === 'cliente')) ? '/framety'
+    : (ROTAS_COM_PREVIA.find(r => p === r || p.startsWith(r + '/')) || p);
   const daPagina = (marca.paginas || {})[chavePrevia];
   if (daPagina) {
     if (daPagina.titulo)    title = daPagina.titulo;
@@ -579,9 +583,10 @@ function enviarSpa(req, res, rotaResolvida) {
     image = capaDoVideo(vid) || image;
   }
 
+  // Texto padrão do screendimension — só quando o console não definiu o da página.
   if (p === '/screendimension' || p.startsWith('/screendimension/')) {
-    title = "Configurador de Sala Imersiva | Framety";
-    desc = "Ferramenta de dimensionamento de projeções para salas imersivas.";
+    if (!daPagina || !daPagina.titulo)    title = "Configurador de Sala Imersiva | Framety";
+    if (!daPagina || !daPagina.descricao) desc = "Ferramenta de dimensionamento de projeções para salas imersivas.";
   }
 
   // Link do cliente: é o único que descreve o documento nas meta tags, porque é

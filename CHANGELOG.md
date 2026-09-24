@@ -5,6 +5,12 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Prévia de link (WhatsApp) nas subpáginas.** A prévia escolhida no console
+  para uma página só valia no endereço exato: `/screendimension/semicircular`
+  e os links compartilháveis caíam na imagem padrão do site. Agora subpáginas
+  herdam a prévia da página-mãe. E o título/descrição que o console define
+  para o screendimension deixaram de ser sobrescritos pelo texto fixo do código.
+
 - **screendimension: "Margem extra de sangria"** (laranja, abaixo do "Testar
   um vídeo"). Ligada, abre um campo de porcentagem (10% por padrão) e calcula
   a área essa porcentagem maior, na mesma proporção (tela na
