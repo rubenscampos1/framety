@@ -1703,7 +1703,7 @@ const sbFind = (id) => db.storyboards.find(s => s.id === id);
 // e o site remonta a ficha para baixar de novo ou editar. Só para quem está logado
 // no console — as fichas levam nome de cliente.
 const SD_MODES = ['rect', 'curve'];
-const SD_INPUT_KEYS = ['A', 'L', 'P', 'fBaseM', 'fDepM', 'C', 'Ang', 'Bl'];
+const SD_INPUT_KEYS = ['A', 'L', 'P', 'fBaseM', 'fDepM', 'C', 'Ang', 'Bl', 'Vw', 'Vh'];
 function sdClean(b, prev = {}) {
   const inputs = {};
   const src = b.inputs && typeof b.inputs === 'object' ? b.inputs : (prev.inputs || {});

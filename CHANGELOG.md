@@ -5,6 +5,26 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **screendimension: link compartilhável.** As medidas digitadas vivem na
+  URL (`/screendimension/semicircular?altura=3.67&curva=9.18&angulo=180&blend=0&video=2560x1080`,
+  e na retangular `altura`, `largura`, `profundidade`, `chao_base`,
+  `chao_prof`) e o endereço se atualiza a cada número, sem recarregar. O botão
+  "Compartilhar" copia o link (no celular abre o compartilhar do sistema), e
+  quem abre vê a mesma sala. O link não leva cliente nem projeto — esses
+  continuam só nas fichas salvas, atrás do login.
+
+- **screendimension: "Testar um vídeo".** Nas duas salas, um campo largura ×
+  altura (px) compara um vídeo com a área total — a tela inteira na
+  semicircular, a timeline na retangular. O vídeo é encaixado pela altura e a
+  diferença de largura vira corte (vídeo mais largo) ou esticamento (mais
+  estreito). Até 10% ele encaixa; acima disso aparece o aviso de vídeo não
+  compatível. A marcação é um quadro roxo tracejado (vermelho quando não
+  compatível) na tela planificada, no 3D e no mapa do PDF da semicircular; na
+  retangular, numa miniatura da timeline (paredes em cima, chão embaixo). O
+  vídeo testado entra na ficha salva e numa linha do "Resultado" do PDF.
+  O topo da ficha e as linhas das tabelas ficaram um pouco mais compactos para
+  caber essa linha.
+
 - **screendimension: pinça no 3D pelo celular.** Com dois dedos a cena pulava:
   os dois disputavam a mesma posição e cada um puxava a rotação para um lado.
   Agora cada toque é rastreado pelo id — um dedo gira, dois dedos fazem pinça

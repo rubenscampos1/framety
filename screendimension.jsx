@@ -11,6 +11,74 @@ const SD_FLOOR_BASE = 1920;   // limite da base do chão (px)
    concentrar textos e conteúdo importante — não entra em nenhuma conta. */
 const SD_SAFE     = 0.10;
 const SD_SAFE_HEX = "#FFB547", SD_SAFE_3D = 0xFFB547;
+/* Link compartilhável: as medidas digitadas vivem na própria URL
+   (/screendimension/semicircular?altura=3.67&curva=9.18…). Cada número novo
+   reescreve o endereço (sem recarregar), e quem abre o link recebe a sala com os
+   mesmos valores. Nomes legíveis no link; os internos ficam no código. */
+const SD_URL_KEYS = { A: "altura", L: "largura", P: "profundidade", fBaseM: "chao_base", fDepM: "chao_prof", C: "curva", Ang: "angulo", Bl: "blend" };
+const sdCleanVal = (v) => String(v ?? "").replace(/[^0-9.,]/g, "").slice(0, 12);
+const sdUrlFor = (mode, raw) => {
+  const q = new URLSearchParams();
+  Object.entries(SD_URL_KEYS).forEach(([k, name]) => { const v = sdCleanVal(raw[k]); if (v) q.set(name, v); });
+  const vw = sdCleanVal(raw.Vw), vh = sdCleanVal(raw.Vh);
+  if (vw && vh) q.set("video", `${vw}x${vh}`);
+  const path = mode === "curve" ? "/screendimension/semicircular" : "/screendimension";
+  const qs = q.toString();
+  return path + (qs ? "?" + qs : "");
+};
+const sdSyncUrl = (mode, raw) => {
+  try { const u = sdUrlFor(mode, raw); if (u !== location.pathname + location.search) history.replaceState(history.state, "", u); } catch (_) {}
+};
+const sdReadUrl = () => {
+  try {
+    const q = new URLSearchParams(location.search), out = {};
+    Object.entries(SD_URL_KEYS).forEach(([k, name]) => { const v = sdCleanVal(q.get(name)); if (v) out[k] = v; });
+    const m = /^([0-9.,]+)x([0-9.,]+)$/i.exec(q.get("video") || "");
+    if (m) { out.Vw = sdCleanVal(m[1]); out.Vh = sdCleanVal(m[2]); }
+    return Object.keys(out).length ? out : null;
+  } catch (_) { return null; }
+};
+
+/* Testar um vídeo: um arquivo W×H é encaixado na área total pela ALTURA (a
+   projeção tem altura fixa); o que muda é a largura. Mais largo que a área →
+   corta nas laterais; mais estreito → estica (ou sobra faixa). Até 10% é
+   aceitável; além disso o vídeo não é compatível. */
+const SD_PURPLE = "#A855F7", SD_PURPLE_3D = 0xA855F7, SD_FIT_TOL = 0.10;
+const sdPct = (f) => `${(f * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+const sdFit = (aw, ah, vwRaw, vhRaw) => {
+  const vw = sdNum(vwRaw), vh = sdNum(vhRaw);
+  if (!vw || !vh || !aw || !ah) return null;
+  const rA = aw / ah, rV = vw / vh;
+  const sw = vw * ah / vh;                      // largura do vídeo já na altura da área
+  const wider = rV >= rA;
+  const diff = wider ? 1 - rA / rV : rA / rV - 1;
+  const each = Math.abs(sw - aw) / 2;           // px da área, em cada lado
+  const ok = diff <= SD_FIT_TOL + 1e-9, exact = diff < 0.001;
+  const esc = Math.abs(ah / vh - 1) > 0.001 ? ` O vídeo sobe de ${sdFmt(vh)} para ${sdFmt(ah)} px de altura (${sdPct(ah / vh)}).` : "";
+  let msg;
+  if (exact) msg = `Encaixa perfeitamente: mesma proporção da área (${sdRatio(aw, ah)}).${esc}`;
+  else if (ok && wider) msg = `Encaixa cortando ${sdPct(diff)} da largura do vídeo — ${sdFmt(each)} px de cada lado ficam fora da tela.${esc}`;
+  else if (ok) msg = `Encaixa esticando ${sdPct(diff)} na largura — ou deixando uma faixa de ${sdFmt(each)} px em cada lado.${esc}`;
+  else if (wider) msg = `Vídeo não compatível: seria preciso cortar ${sdPct(diff)} da largura (${sdFmt(each)} px de cada lado), acima do limite de 10%. O corte seria abrupto.`;
+  else msg = `Vídeo não compatível: seria preciso esticar ${sdPct(diff)} na largura (faltam ${sdFmt(each)} px de cada lado), acima do limite de 10%. O esticamento seria abrupto.`;
+  return { vw, vh, sw, aw, ah, wider, diff, each, ok, exact, msg,
+           a: (aw - sw) / 2 / aw, b: (aw + sw) / 2 / aw };   // posição do vídeo na área (0–1)
+};
+
+const SDVideoTest = ({ vw, vh, setVw, setVh, fit, areaLbl, children }) => (
+  <div className="sd-vtest">
+    <div className="sd-vtest-h"><b><i />Testar um vídeo</b><span>compara com a {areaLbl}</span></div>
+    <div className="sd-vtest-in">
+      <span className="sd-input-wrap sd-input-v"><input type="number" min="1" step="1" inputMode="numeric" value={vw} placeholder="largura" onChange={(e) => setVw(e.target.value)} /><b>px</b></span>
+      <span className="sd-vtest-x">×</span>
+      <span className="sd-input-wrap sd-input-v"><input type="number" min="1" step="1" inputMode="numeric" value={vh} placeholder="altura" onChange={(e) => setVh(e.target.value)} /><b>px</b></span>
+      {(vw || vh) && <button type="button" className="sd-btn ghost sm" onClick={() => { setVw(""); setVh(""); }}>limpar</button>}
+    </div>
+    {children}
+    {fit && <div className={`sd-vfit ${fit.ok ? "ok" : "bad"}`}>{fit.ok ? "✓ " : "⚠ "}{fit.msg}</div>}
+  </div>
+);
+
 /* Faixas de projetor na profundidade do chão: 1080 inteiros a partir da entrada,
    e a última com o resto. */
 const sdFloorRows = (depth) => {
@@ -418,6 +486,14 @@ const SDPreview3D = ({ res, initView }) => {
       }
       put(`P${i + 1} · ${sdFmt(Math.min(pw, r.Wpx))} × ${sdFmt(SD_MAX_H)}`, pt((u0 + u1) / 2, H / 2, 0.97), "rgba(255,255,255,0.45)", 0.8);
     });
+    // vídeo testado: onde ele cai na curva, em roxo, um pouco à frente da tela
+    if (r.fit) {
+      const { a, b } = r.fit, K = 0.985, col = r.fit.ok ? SD_PURPLE_3D : 0xff4d4d;
+      strip(a, b, 0, H, new THREE.MeshBasicMaterial({ color: SD_PURPLE_3D, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }), 3, K);
+      [0, H].forEach((y) => { const seg = 40; for (let i = 0; i < seg; i += 2) poly([pt(a + (b - a) * i / seg, y, K), pt(a + (b - a) * (i + 1) / seg, y, K)], col, 0.95); });
+      [a, b].forEach((u) => { for (let i = 0; i < 12; i += 2) poly([pt(u, H * i / 12, K), pt(u, H * (i + 1) / 12, K)], col, 0.95); });
+      put(`vídeo ${sdFmt(r.fit.vw)} × ${sdFmt(r.fit.vh)}${r.fit.ok ? "" : " · não compatível"}`, pt((a + b) / 2, H * 0.1, K), r.fit.ok ? "rgba(168,85,247,0.9)" : "rgba(255,77,77,0.9)", 0.6);
+    }
     put(`${sdFmt(r.Wpx)} × ${sdFmt(SD_MAX_H)}`, pt(0.5, H * 1.08, 1), "rgba(94,200,242,0.7)");
     put(`R ${String(Math.round((r.radiusM || 0) * 100) / 100).replace(".", ",")} m`, [0, 0.01, 0], "rgba(255,255,255,0.3)", 0.7);
 
@@ -456,6 +532,31 @@ const SDIn = ({ value, onChange, placeholder }) => (
   </span>
 );
 
+/* Timeline da sala retangular em miniatura: as três paredes em cima, o chão
+   centrado embaixo da central, e o vídeo testado por cima em roxo. */
+const SDTimelineFit = ({ R, fit }) => {
+  const TW = R.timelineW, TH = R.timelineH;
+  const box = Math.max(TW, fit.sw);
+  const k = Math.min(340 / box, 150 / TH);
+  const ox = (box - TW) / 2 * k;                 // timeline centrada quando o vídeo é mais largo
+  const fx = (TW - R.frontTotalW) / 2;
+  const fW = Math.max(R.fBase, R.fTop);
+  const parts = [
+    ["E", fx, 0, R.Ws, R.H], ["Central", fx + R.Ws, 0, R.Wc, R.H], ["D", fx + R.Ws + R.Wc, 0, R.Ws, R.H],
+    ["Chão", fx + R.Ws + (R.Wc - fW) / 2, R.H, fW, R.fDepth],
+  ];
+  return (
+    <div className="sd-tlfit" style={{ width: box * k, height: TH * k }}>
+      <div className="sd-tl" style={{ left: ox, width: TW * k, height: TH * k }}>
+        {parts.map(([n, x, y, w, h]) => (
+          <div key={n} className={`sd-tl-p ${n === "Chão" ? "f" : n === "Central" ? "c" : ""}`} style={{ left: x * k, top: y * k, width: w * k, height: h * k }}><span>{n}</span></div>
+        ))}
+      </div>
+      <div className={`sd-vbox ${fit.ok ? "" : "bad"}`} style={{ left: (box - fit.sw) / 2 * k, width: fit.sw * k, top: 0, bottom: 0 }}><span>vídeo {sdFmt(fit.vw)} × {sdFmt(fit.vh)}</span></div>
+    </div>
+  );
+};
+
 /* ─────────────────────── Sala retangular (3 paredes + chão) ──────────────────── */
 const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const [A, setA] = React.useState(initial.A ?? "3");        // altura / pé-direito (m) — escala (já vem preenchida)
@@ -463,6 +564,9 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const [P, setP] = React.useState(initial.P ?? "");        // profundidade das laterais (m)
   const [fBaseM, setFBaseM] = React.useState(initial.fBaseM ?? ""); // chão: base (m)
   const [fDepM,  setFDepM]  = React.useState(initial.fDepM ?? "");  // chão: profundidade própria (m)
+  const [Vw, setVw] = React.useState(initial.Vw ?? "");     // vídeo a testar (px)
+  const [Vh, setVh] = React.useState(initial.Vh ?? "");
+  React.useEffect(() => sdSyncUrl("rect", { A, L, P, fBaseM, fDepM, Vw, Vh }), [A, L, P, fBaseM, fDepM, Vw, Vh]);
   // topo do chão = largura da tela central (sempre travados) → usa L
   const a = sdNum(A) || 3;                      // altura sempre tem valor (padrão 3) — nunca congela
   const ready = !!sdNum(A);                     // só pra saber se o usuário já digitou
@@ -492,8 +596,9 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const projCount = (w, h) => Math.max(1, Math.ceil(w / 1920)) * Math.max(1, Math.ceil(h / 1080));
   const nProj = projCount(R.Wc, R.H) + projCount(R.Ws, R.H) * 2 + projCount(Math.max(R.fBase, R.fTop), R.fDepth);
   const typed = (v, res, hint) => (sdNum(v) ? `${sdM(res)} m` : `${sdM(res)} m  ·  ${hint}`);
+  const fit = sdFit(R.timelineW, R.timelineH, Vw, Vh);
   docRef.current = {
-    mode: "rect", raw: { A, L, P, fBaseM, fDepM },   // o que a ficha salva guarda
+    mode: "rect", raw: { A, L, P, fBaseM, fDepM, Vw, Vh },   // o que a ficha salva guarda
     resumo: `timeline ${sdFmt(R.timelineW)} × ${sdFmt(R.timelineH)}  ·  ${nProj} projetores`,
     name: `sala-imersiva${ready ? `-alt${Math.round(a)}m` : ""}`,
     title: "Sala retangular",
@@ -518,6 +623,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
       ["Área segura · central", `${sdSafeTxt(R.Wc, R.H)} px`, "margem de 10%"],
       ["Área segura · laterais", `${sdSafeTxt(R.Ws, R.H)} px`, "margem de 10%"],
       ["Escala", `${R.scale.toFixed(1)} px/m`, "altura → 1080 px"],
+      ...(fit ? [["Vídeo testado", `${sdFmt(fit.vw)} × ${sdFmt(fit.vh)} px`, fit.ok ? "compatível" : "não compatível"]] : []),
     ],
     diagram: <SDPdfRectDiagram R={R} />,
     diagramTitle: "Mapa das telas planificadas",
@@ -577,6 +683,9 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
                 <span className="sd-res2">base {sdFmt(R.fBase)} · topo {sdFmt(R.fTop)}</span></div>
             </div>
             <div className="sd-safekey"><i />margem de proteção · 10% de cada borda — concentre textos e conteúdo dentro do tracejado</div>
+            <SDVideoTest vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} fit={fit} areaLbl={`timeline de ${sdFmt(R.timelineW)} × ${sdFmt(R.timelineH)} px`}>
+              {fit && <SDTimelineFit R={R} fit={fit} />}
+            </SDVideoTest>
             {ready && (R.Wc > 1920 || R.Ws > 1920) && <div className="sd-note warn">Alguma parede passou de 1920px — precisará de mais de um projetor por parede.</div>}
           </section>
 
@@ -614,6 +723,9 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
   const [C, setC]     = React.useState(initial.C ?? "");       // comprimento ao longo da curva (m)
   const [Ang, setAng] = React.useState(initial.Ang ?? "180");  // ângulo do arco (°)
   const [Bl, setBl]   = React.useState(initial.Bl ?? "0");     // sobreposição mínima entre projetores (%)
+  const [Vw, setVw]   = React.useState(initial.Vw ?? "");      // vídeo a testar (px)
+  const [Vh, setVh]   = React.useState(initial.Vh ?? "");
+  React.useEffect(() => sdSyncUrl("curve", { A, C, Ang, Bl, Vw, Vh }), [A, C, Ang, Bl, Vw, Vh]);
 
   const a = sdNum(A) || 3;
   const ready = !!sdNum(A) && !!sdNum(C);
@@ -639,6 +751,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     const depthM = radiusM * (1 - Math.cos(theta / 2));   // da abertura até o fundo da curva
     return { scale, Wpx, N, ov, pw, cut, projs, theta, radiusM, chordM, depthM, projM: pw / scale };
   }, [a, arc, angDeg, blend]);
+  const fit = sdFit(R.Wpx, SD_MAX_H, Vw, Vh);   // vídeo testado contra a tela inteira
 
   const [diagW, setDiagW] = React.useState(680);
   const diagRef = React.useRef(null);
@@ -648,9 +761,9 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     return () => window.removeEventListener("resize", onR);
   }, []);
   // cabe a tela + o quadro vermelho que passa das pontas (o corte das bordas)
-  const disp = Math.min(150 / SD_MAX_H, (Math.max(diagW, 280) - 40) / Math.max(R.Wpx + 2 * R.cut, 1920));
+  const disp = Math.min(150 / SD_MAX_H, (Math.max(diagW, 280) - 40) / Math.max(R.Wpx + 2 * R.cut, fit ? fit.sw : 0, 1920));
   docRef.current = {
-    mode: "curve", raw: { A, C, Ang, Bl },           // o que a ficha salva guarda
+    mode: "curve", raw: { A, C, Ang, Bl, Vw, Vh },   // o que a ficha salva guarda
     resumo: `vídeo ${sdFmt(R.Wpx)} × ${sdFmt(SD_MAX_H)}  ·  ${R.N} projetor${R.N > 1 ? "es" : ""}`,
     name: `sala-semicircular${ready ? `-${sdM(arc).replace(",", "_")}x${sdM(a).replace(",", "_")}m` : ""}`,
     title: "Sala semicircular",
@@ -673,8 +786,9 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
       ["Raio da curva", `${sdM(R.radiusM)} m`, R.chordM > 0 ? `abertura ${sdM(R.chordM)} m` : "círculo fechado"],
       ["Área segura", `${sdSafeTxt(R.Wpx)} px`, `${sdM(arc * 0.8)} × ${sdM(a * 0.8)} m`],
       ["Fundo da sala", `${sdM(R.depthM)} m`, "da abertura ao fundo"],
+      ...(fit ? [["Vídeo testado", `${sdFmt(fit.vw)} × ${sdFmt(fit.vh)} px`, fit.ok ? "compatível" : "não compatível"]] : []),
     ],
-    diagram: <SDPdfCurveDiagram R={R} />,
+    diagram: <SDPdfCurveDiagram R={R} fit={fit} />,
     diagramTitle: "Mapa de projeção",
   };
 
@@ -726,10 +840,13 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
                 <div key={"j" + i} className="sd-blend" style={{ left: `${j.x0 / R.Wpx * 100}%`, width: `${(j.x1 - j.x0) / R.Wpx * 100}%` }} />
               ))}
             </div>
+              {fit && <div className={`sd-vbox ${fit.ok ? "" : "bad"}`} style={{ left: `${fit.a * 100}%`, width: `${(fit.b - fit.a) * 100}%` }}><span>vídeo {sdFmt(fit.vw)} × {sdFmt(fit.vh)}</span></div>}
             </div>
             <div className="sd-res"><b>{sdFmt(R.Wpx)} × {sdFmt(SD_MAX_H)} px</b><span className="sd-res-r">{sdRatio(R.Wpx, SD_MAX_H)}</span>
               <span className="sd-res2">{sdM(arc)} m × {sdM(a)} m · {R.N} projetor{R.N > 1 ? "es" : ""} lado a lado · cada um usa {sdFmt(R.pw)} × 1.080</span></div>
           </div>
+
+          <SDVideoTest vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} fit={fit} areaLbl={`tela de ${sdFmt(R.Wpx)} × ${sdFmt(SD_MAX_H)} px`} />
 
           <div className="sd-topview">
             <svg viewBox={top.vb} style={{ width: Math.min(260, 140 * top.ratio), aspectRatio: top.ratio }}>
@@ -748,7 +865,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
 
         <section className="sd-3dsection" ref={preview3dRef} data-html2canvas-ignore="true">
           <div className="sd-3dtitle">Preview 3D — faixa de cada projetor</div>
-          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM }} />
+          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM, fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok } : null }} />
         </section>
       </div>
 
@@ -778,7 +895,7 @@ const sdAccent = () => {
 };
 
 /* Sala semicircular: a tela planificada com a faixa de cada projetor + vista de cima. */
-const SDPdfCurveDiagram = ({ R }) => {
+const SDPdfCurveDiagram = ({ R, fit }) => {
   const ac = sdAccent();
   // cabe a tela + o quadro vermelho de 1920 que passa das pontas (o corte)
   let sw = 520 * R.Wpx / (R.Wpx + 2 * R.cut), sh = sw * SD_MAX_H / R.Wpx;
@@ -816,6 +933,7 @@ const SDPdfCurveDiagram = ({ R }) => {
           ))}
           <div className="pd-safe"><span>área segura {sdSafeTxt(R.Wpx)} px</span></div>
         </div>
+        {fit && <div className={`pd-vbox ${fit.ok ? "" : "bad"}`} style={{ left: `${fit.a * 100}%`, width: `${(fit.b - fit.a) * 100}%` }} />}
         </div>
         <div className="pd-dimh" style={{ height: sh }}><span>{sdFmt(SD_MAX_H)} px</span></div>
       </div>
@@ -833,6 +951,7 @@ const SDPdfCurveDiagram = ({ R }) => {
           <div className="pd-legend-t">Vista de cima</div>
           <div><i style={{ background: ac }} />tela curva  ·  {Math.round(R.theta * 180 / Math.PI)}°</div>
           {R.N > 1 && <div><i style={{ background: "#111114" }} />faixa de cada projetor</div>}
+          {fit && <div><i className={`vid ${fit.ok ? "" : "bad"}`} />vídeo testado  ·  {sdFmt(fit.vw)} × {sdFmt(fit.vh)}{fit.ok ? "" : "  ·  não compatível"}</div>}
           {R.cut > 0.5 && <div><i className="cut" />corte dos projetores  ·  {sdFmt(R.cut)} px em cada borda</div>}
           <div><i className="safe" />área segura  ·  {sdSafeTxt(R.Wpx)} px</div>
           {junctions.length > 0 && <div><i className="hatch" />sobreposição (blend)</div>}
@@ -988,7 +1107,7 @@ async function sdExportPDF(doc, cv3d) {
 }
 
 const SD_PDF_CSS = `
-.pd-page{ position:relative; width:${SD_PDF_W}px; height:${SD_PDF_H}px; box-sizing:border-box; padding:40px 56px 0; background:#f4f3ef; color:#111114;
+.pd-page{ position:relative; width:${SD_PDF_W}px; height:${SD_PDF_H}px; box-sizing:border-box; padding:32px 56px 0; background:#f4f3ef; color:#111114;
   font-family:'Albert Sans', 'Inter', system-ui, sans-serif; display:flex; flex-direction:column; }
 .pd-page *{ box-sizing:border-box; }
 .pd-page > *{ flex-shrink:0; }
@@ -1001,11 +1120,11 @@ const SD_PDF_CSS = `
 .pd-head-r{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; font-family:'JetBrains Mono', monospace; }
 .pd-head-r b{ font-size:13px; font-weight:500; letter-spacing:.02em; }
 .pd-head-r span{ font-size:10.5px; color:#7c7a74; letter-spacing:.04em; }
-.pd-titles{ margin-top:18px; }
+.pd-titles{ margin-top:14px; }
 .pd-titles h1{ margin:0; font-size:38px; line-height:1.05; font-weight:700; letter-spacing:-0.02em; }
 .pd-titles p{ margin:7px 0 0; font-size:15px; color:#62605b; white-space:pre; }
 .pd-lbl{ font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#8d8a83; }
-.pd-hero{ display:grid; grid-template-columns:1.25fr 1fr 1fr; gap:14px; margin-top:16px; }
+.pd-hero{ display:grid; grid-template-columns:1.25fr 1fr 1fr; gap:14px; margin-top:12px; }
 .pd-stat{ background:#fff; border:1px solid #e3e0d8; border-radius:14px; padding:15px 20px 14px; }
 .pd-stat.main{ background:#111114; border-color:#111114; color:#fff; }
 .pd-stat.main .pd-lbl{ color:#9a9aa3; }
@@ -1030,6 +1149,10 @@ const SD_PDF_CSS = `
 .pd-frame span b{ font-size:9.5px; font-weight:600; }
 .pd-frame.l span{ left:0; align-items:flex-start; }
 .pd-frame.r span{ right:0; align-items:flex-end; }
+.pd-vbox{ position:absolute; top:-3px; bottom:-3px; border:2px dashed #9333ea; background:rgba(147,51,234,.14); border-radius:3px; }
+.pd-vbox.bad{ border-color:#e53935; background:rgba(229,57,53,.12); }
+.pd-legend i.vid{ height:10px; background:rgba(147,51,234,.18); border:1.5px dashed #9333ea; }
+.pd-legend i.vid.bad{ background:rgba(229,57,53,.18); border-color:#e53935; }
 .pd-legend i.cut{ height:10px; background:rgba(229,57,53,.25); border:1px dashed #e53935; }
 .pd-band{ position:absolute; top:0; bottom:0; background:rgba(255,255,255,.1); border-left:1px solid rgba(255,255,255,.85); border-right:1px solid rgba(255,255,255,.85); display:flex; align-items:flex-end; justify-content:center; }
 .pd-band.odd{ top:8%; bottom:8%; background:rgba(0,0,0,.12); }
@@ -1039,8 +1162,8 @@ const SD_PDF_CSS = `
 .pd-dimh{ position:relative; width:52px; border-top:1px solid #111114; border-bottom:1px solid #111114; }
 .pd-dimh::before{ content:""; position:absolute; top:0; bottom:0; left:6px; border-left:1px solid #111114; }
 .pd-dimh span{ position:absolute; left:12px; top:50%; transform:translateY(-50%); font-family:'JetBrains Mono', monospace; font-size:10.5px; white-space:nowrap; }
-.pd-dgfoot{ display:flex; align-items:center; gap:22px; margin-top:26px; }
-.pd-legend{ display:flex; flex-direction:column; gap:3px; font-size:11.5px; color:#3c3b38; white-space:pre; }
+.pd-dgfoot{ display:flex; align-items:center; gap:22px; margin-top:22px; }
+.pd-legend{ display:flex; flex-direction:column; gap:1px; font-size:11px; color:#3c3b38; white-space:pre; }
 .pd-legend-t{ font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#8d8a83; margin-bottom:2px; }
 .pd-legend i{ display:inline-block; width:18px; height:4px; border-radius:2px; margin-right:9px; vertical-align:middle; }
 .pd-legend i.hatch{ height:10px; background:#cfd9e3; }
@@ -1056,9 +1179,9 @@ const SD_PDF_CSS = `
 .pd-floorsvg{ position:absolute; left:0; top:0; width:100%; height:100%; }
 .pd-wall span, .pd-wall b{ position:relative; }
 .pd-tables{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
-.pd-tables .pd-card{ padding:12px 20px 8px; }
-.pd-tables .pd-lbl{ margin-bottom:4px; }
-.pd-row{ display:flex; align-items:baseline; gap:10px; padding:5px 0; border-top:1px solid #eeebe4; font-size:12.5px; }
+.pd-tables .pd-card{ padding:10px 20px 6px; }
+.pd-tables .pd-lbl{ margin-bottom:2px; }
+.pd-row{ display:flex; align-items:baseline; gap:10px; padding:3px 0; border-top:1px solid #eeebe4; font-size:12px; }
 .pd-row:first-of-type{ border-top:none; }
 .pd-row span{ flex:1; color:#62605b; }
 .pd-row b{ font-weight:600; font-variant-numeric:tabular-nums; white-space:pre; }
@@ -1213,6 +1336,17 @@ const SDSavedPanel = ({ onClose, onOpen, onDownload, currentId, onDeleted }) => 
 
 const ScreenDimensionPage = () => {
   const [mode, setModeS] = React.useState(() => (/^\/screendimension\/semicircular\/?$/.test(location.pathname) ? "curve" : "rect"));
+  // link aberto com medidas: vale só para a sala do link, na primeira montagem
+  const urlInit = React.useRef({ mode: /^\/screendimension\/semicircular\/?$/.test(location.pathname) ? "curve" : "rect", inputs: sdReadUrl() }).current;
+  React.useEffect(() => { urlInit.inputs = null; }, []);   // usado uma vez só: trocar de aba ou fechar ficha não o traz de volta
+  const share = async () => {
+    const url = location.href;
+    try {
+      if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) { await navigator.share({ title: "screendimension", url }); return; }
+    } catch (e) { if (e?.name === "AbortError") return; }
+    try { await navigator.clipboard.writeText(url); setToast("Link copiado — quem abrir vê a sala com estes mesmos números."); }
+    catch (_) { window.prompt("Copie o link da sala:", url); }
+  };
   const setMode = (m) => {
     setModeS(m);
     try { history.replaceState(history.state, "", SD_MODES.find((x) => x.id === m).path); } catch (_) {}
@@ -1294,6 +1428,7 @@ const ScreenDimensionPage = () => {
             <button key={m.id} className={`sd-tab ${mode === m.id ? "on" : ""}`} onClick={() => setMode(m.id)}>{m.label}</button>
           ))}
         </nav>
+        <button className="sd-btn ghost" onClick={share} title="Copia o link desta sala com as medidas digitadas">Compartilhar</button>
         <button className="sd-btn ghost" onClick={() => setDrawer(true)}>Fichas salvas</button>
         <button className="sd-export" onClick={() => setModal(true)} disabled={!!busyMsg}>{busyMsg || "Exportar PDF"}</button>
       </header>
@@ -1306,7 +1441,7 @@ const ScreenDimensionPage = () => {
       )}
 
       <Mode key={`${mode}-${loadKey}`} sheetRef={sheetRef} preview3dRef={preview3dRef} docRef={docRef}
-            initial={init?.inputs || undefined} view={init?.view || undefined} />
+            initial={init?.inputs || (urlInit.inputs && urlInit.mode === mode ? urlInit.inputs : undefined)} view={init?.view || undefined} />
 
       {modal && <SDExportModal current={current} onClose={() => setModal(false)} onGo={onExport} />}
       {drawer && <SDSavedPanel currentId={current?.id} onClose={() => setDrawer(false)}
@@ -1397,6 +1532,32 @@ const SD_CSS = `
 .sd-curvein .sd-input-wrap{ width:100%; }
 .sd-curvein .sd-input-wrap input{ flex:1; width:auto; min-width:0; font-size:17px; padding:9px 8px 9px 12px; }
 .sd-flat{ position:relative; overflow:hidden; background:linear-gradient(160deg,#4576b8,#2f5990); border-radius:4px; box-shadow:0 5px 18px rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; min-width:40px; min-height:20px; margin-top:6px; }
+.sd-vbox{ position:absolute; top:-4px; bottom:-4px; border:2px dashed #A855F7; background:rgba(168,85,247,.16); border-radius:3px; pointer-events:none; box-sizing:border-box; z-index:3; }
+.sd-vbox.bad{ border-color:#ff5a5a; background:rgba(255,90,90,.14); }
+.sd-vbox span{ position:absolute; top:3px; left:50%; transform:translateX(-50%); white-space:nowrap; font-family:var(--font-mono,monospace); font-size:9.5px; font-weight:700; color:#fff; background:#A855F7; padding:1px 6px; border-radius:4px; }
+.sd-vbox.bad span{ background:#e5484d; }
+.sd-vtest{ width:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; gap:10px; padding:14px 12px 12px; border-radius:12px; position:relative; margin-top:8px;
+  background:rgba(168,85,247,.07); border:1px solid rgba(168,85,247,.4); }
+.sd-vtest-h{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; justify-content:center; }
+.sd-vtest-h b{ font-size:13px; color:#f0f0f3; display:flex; align-items:center; gap:7px; }
+.sd-vtest-h b i{ width:12px; height:12px; border-radius:3px; border:2px dashed #A855F7; }
+.sd-vtest-h span{ font-size:11px; color:#9a9aa3; }
+.sd-vtest-in{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center; }
+.sd-vtest-x{ color:#9a9aa3; font-size:14px; }
+.sd-input-v{ border-color:rgba(168,85,247,.6) !important; box-shadow:0 0 0 3px rgba(168,85,247,.1) !important; }
+.sd-input-v:focus-within{ border-color:#A855F7 !important; box-shadow:0 0 0 4px rgba(168,85,247,.28) !important; }
+.sd-input-v input{ width:84px; }
+.sd-input-v b{ color:#c18cfa !important; }
+.sd-vfit{ max-width:560px; font-size:12px; line-height:1.5; border-radius:8px; padding:8px 12px; text-align:center; }
+.sd-vfit.ok{ color:#e3cffd; background:rgba(168,85,247,.14); border:1px solid rgba(168,85,247,.45); }
+.sd-vfit.bad{ color:#ffd0d0; background:rgba(229,72,77,.14); border:1px solid rgba(229,72,77,.55); font-weight:600; }
+.sd-tlfit{ position:relative; margin:6px 0 2px; }
+.sd-tl{ position:absolute; top:0; }
+.sd-tl-p{ position:absolute; box-sizing:border-box; background:#3a4f6b; border:1px solid rgba(255,255,255,.35); display:flex; align-items:center; justify-content:center; }
+.sd-tl-p.c{ background:#2f6fa8; }
+.sd-tl-p.f{ background:#237567; }
+.sd-tl-p span{ font-size:9px; color:rgba(255,255,255,.8); font-family:var(--font-mono,monospace); }
+.sd-tlfit .sd-vbox{ top:0; bottom:0; }
 .sd-flatwrap{ position:relative; margin:8px 0 30px; }
 .sd-flatwrap .sd-flat{ margin-top:0; width:100% !important; height:100% !important; }
 .sd-frame{ position:absolute; top:0; bottom:0; background:rgba(255,59,59,.18); border:1.5px dashed rgba(255,77,77,.85); box-sizing:border-box; }
