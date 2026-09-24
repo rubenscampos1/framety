@@ -93,14 +93,42 @@ const SDPreview3D = ({ res, initView }) => {
         if (initView) ["theta", "phi", "dist"].forEach((k) => { if (typeof initView[k] === "number") ctl[k] = initView[k]; });
         setReady(true);
 
-        let dragging = false, px = 0, py = 0;
-        const down = (e) => { dragging = true; px = e.clientX; py = e.clientY; renderer.domElement.style.cursor = "grabbing"; e.target.setPointerCapture?.(e.pointerId); };
-        const move = (e) => { if (!dragging) return; const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY; ctl.theta -= dx * 0.008; ctl.phi = Math.max(0.15, Math.min(Math.PI - 0.15, ctl.phi - dy * 0.008)); };
-        const up = () => { dragging = false; renderer.domElement.style.cursor = "grab"; };
+        // Um dedo (ou o mouse) gira; dois dedos fazem pinça = zoom. Cada ponteiro é
+        // rastreado pelo id — antes os dois dedos disputavam a mesma posição e a
+        // rotação pulava de um para o outro.
+        const pts = new Map();
+        let pinch0 = 0, dist0 = 0;
+        const gap = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+        const down = (e) => {
+          pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          try { e.target.setPointerCapture?.(e.pointerId); } catch (_) {}
+          if (pts.size === 2) { pinch0 = gap(); dist0 = ctl.dist; }
+          renderer.domElement.style.cursor = "grabbing";
+        };
+        const move = (e) => {
+          const p = pts.get(e.pointerId);
+          if (!p) return;
+          const dx = e.clientX - p.x, dy = e.clientY - p.y;
+          p.x = e.clientX; p.y = e.clientY;
+          if (pts.size === 1) {
+            ctl.theta -= dx * 0.008;
+            ctl.phi = Math.max(0.15, Math.min(Math.PI - 0.15, ctl.phi - dy * 0.008));
+          } else if (pts.size === 2 && pinch0 > 0) {
+            const g = gap();
+            if (g > 0) ctl.dist = Math.max(2, Math.min(120, dist0 * pinch0 / g));   // afastar os dedos = aproximar
+          }
+        };
+        const up = (e) => {
+          pts.delete(e.pointerId);
+          // saiu da pinça para um dedo: o que ficou continua de onde está, sem salto
+          if (pts.size < 2) pinch0 = 0;
+          if (!pts.size) renderer.domElement.style.cursor = "grab";
+        };
         const wheel = (e) => { e.preventDefault(); ctl.dist = Math.max(2, Math.min(120, ctl.dist * (1 + Math.sign(e.deltaY) * 0.1))); };
         renderer.domElement.addEventListener("pointerdown", down);
         renderer.domElement.addEventListener("pointermove", move);
         window.addEventListener("pointerup", up);
+        window.addEventListener("pointercancel", up);
         renderer.domElement.addEventListener("wheel", wheel, { passive: false });
         const onResize = () => { if (!mount) return; const nw = mount.clientWidth, nh = mount.clientHeight || 300; camera.aspect = nw / nh; camera.updateProjectionMatrix(); renderer.setSize(nw, nh); };
         window.addEventListener("resize", onResize);
@@ -141,6 +169,7 @@ const SDPreview3D = ({ res, initView }) => {
           cancelAnimationFrame(raf);
           window.removeEventListener("resize", onResize);
           window.removeEventListener("pointerup", up);
+          window.removeEventListener("pointercancel", up);
           renderer.domElement.removeEventListener("pointerdown", down);
           renderer.domElement.removeEventListener("pointermove", move);
           renderer.domElement.removeEventListener("wheel", wheel);

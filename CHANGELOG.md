@@ -5,6 +5,12 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **screendimension: pinça no 3D pelo celular.** Com dois dedos a cena pulava:
+  os dois disputavam a mesma posição e cada um puxava a rotação para um lado.
+  Agora cada toque é rastreado pelo id — um dedo gira, dois dedos fazem pinça
+  (zoom), e ao soltar um dos dedos o outro continua sem salto. Toque cancelado
+  pelo sistema (`pointercancel`) também solta.
+
 - **screendimension: Cliente e Projeto não saem mais cortados no PDF.** O
   `overflow:hidden` do nome fazia o html2canvas recortar a parte de baixo das
   letras. Agora a linha tem altura folgada, sem recorte, e nomes longos são
