@@ -1,4 +1,4 @@
-/* screendimension.jsx — Configurador de Sala Imersiva (/screendimension)
+/* screendimension.jsx — Aspecty, configurador de sala imersiva (/screendimension)
    Ferramenta pura (sem banco). Regra base: a ALTURA da projeção é sempre 1080px;
    a partir dela (escala = 1080 / altura_em_metros) calculamos a largura em pixels
    de cada projeção. O chão tem medidas próprias (base/topo/profundidade) e pode
@@ -1089,7 +1089,7 @@ const SDReport = ({ doc, shot }) => {
           <div><span className="pd-lbl">Cliente</span><b>{sdClip(doc.cliente, 28) || "—"}</b></div>
           <div><span className="pd-lbl">Projeto</span><b>{sdClip(doc.projeto, 34) || "—"}</b></div>
         </div>
-        <div className="pd-head-r"><b>screendimension</b><span>Ficha técnica  ·  {date}</span></div>
+        <div className="pd-head-r"><img className="pd-aspecty" src="/aspecty_logo_dark.svg" alt="Aspecty" /><span>Ficha técnica  ·  {date}</span></div>
       </header>
 
       <div className="pd-titles">
@@ -1177,7 +1177,7 @@ async function sdExportPDF(doc, cv3d) {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ orientation: "l", unit: "px", format: [SD_PDF_W, SD_PDF_H], compress: true });
   pdf.addImage(canvas.toDataURL("image/jpeg", 0.94), "JPEG", 0, 0, SD_PDF_W, SD_PDF_H);
-  pdf.setProperties({ title: `${doc.title} — screendimension`, author: "Framety · Grupo Skyline" });
+  pdf.setProperties({ title: `${doc.title} — Aspecty`, author: "Framety · Grupo Skyline" });
   const quem = [doc.cliente, doc.projeto].map(sdSlug).filter(Boolean).join("-");
   pdf.save(`${quem ? quem + "-" : ""}${doc.name}.pdf`);
 }
@@ -1195,6 +1195,7 @@ const SD_PDF_CSS = `
 .pd-who b{ font-size:17px; line-height:1.35; padding-bottom:2px; font-weight:700; letter-spacing:-0.01em; white-space:nowrap; }
 .pd-head-r{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; font-family:'JetBrains Mono', monospace; }
 .pd-head-r b{ font-size:13px; font-weight:500; letter-spacing:.02em; }
+.pd-aspecty{ height:15px; width:auto; display:block; margin-bottom:2px; }
 .pd-head-r span{ font-size:10.5px; color:#7c7a74; letter-spacing:.04em; }
 .pd-titles{ margin-top:14px; }
 .pd-titles h1{ margin:0; font-size:38px; line-height:1.05; font-weight:700; letter-spacing:-0.02em; }
@@ -1418,7 +1419,7 @@ const ScreenDimensionPage = () => {
   const share = async () => {
     const url = location.href;
     try {
-      if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) { await navigator.share({ title: "screendimension", url }); return; }
+      if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) { await navigator.share({ title: "Aspecty", url }); return; }
     } catch (e) { if (e?.name === "AbortError") return; }
     try { await navigator.clipboard.writeText(url); setToast("Link copiado — quem abrir vê a sala com estes mesmos números."); }
     catch (_) { window.prompt("Copie o link da sala:", url); }
@@ -1498,7 +1499,7 @@ const ScreenDimensionPage = () => {
       <style>{SD_CSS}</style>
 
       <header className="sd-head">
-        <h1 className="sd-title">screen<span className="sd-title-ac">dimension</span></h1>
+        <h1 className="sd-title"><img className="sd-logo" src="/aspecty_logo.svg" alt="Aspecty" /></h1>
         <nav className="sd-tabs">
           {SD_MODES.map((m) => (
             <button key={m.id} className={`sd-tab ${mode === m.id ? "on" : ""}`} onClick={() => setMode(m.id)}>{m.label}</button>
@@ -1535,6 +1536,7 @@ const SD_CSS = `
 .sd-kicker{ font-family:var(--font-mono, monospace); font-size:10px; letter-spacing:0.26em; color:var(--accent,#2E86C1); margin-bottom:4px; }
 .sd-title{ font-family:var(--font-mono,monospace); font-size:clamp(21px,2.6vw,30px); font-weight:800; letter-spacing:-0.01em; margin:0; color:#f4f4f6; }
 .sd-title-ac{ color:var(--accent,#2E86C1); }
+.sd-logo{ display:block; height:clamp(20px,2.4vw,28px); width:auto; }
 .sd-head-r{ display:flex; align-items:flex-end; gap:16px; }
 .sd-altfield{ display:flex; flex-direction:column; gap:5px; }
 .sd-altfield-lbl{ font-size:11.5px; color:#d6d6db; display:flex; gap:7px; align-items:baseline; }

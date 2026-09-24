@@ -1980,7 +1980,7 @@ const MARCA_PAGINAS = [
   { rota: "/novidades",       nome: "Novidades",            hint: "o mini blog" },
   { rota: "/tutorial",        nome: "Tutorial",             hint: "página de ajuda ao cliente" },
   { rota: "/cadastroparceiro", nome: "Cadastro de parceiro", hint: "formulário de parceiros" },
-  { rota: "/screendimension", nome: "Configurador de sala",  hint: "dimensionamento de projeção" },
+  { rota: "/screendimension", nome: "Aspecty",               hint: "configurador de sala imersiva" },
 ];
 
 const MARCA_VAZIA = { favicon: "", ogTitulo: "", ogDescricao: "", ogImagem: "", paginas: {} };

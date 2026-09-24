@@ -5,6 +5,13 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **screendimension agora se chama Aspecty.** Logo (`aspecty_logo.svg`, branco)
+  no topo da página no lugar do texto "screendimension", e a versão escura
+  (`aspecty_logo_dark.svg`) no topo da ficha em PDF — o PDF ignora
+  `filter:invert`. Título padrão da página "Aspecty | Framety", título do PDF,
+  compartilhar do celular e o nome da página no console (Marca) também
+  mudaram. O endereço continua `/screendimension`. O logo é só do Aspecty.
+
 - **Prévia de link (WhatsApp) nas subpáginas.** A prévia escolhida no console
   para uma página só valia no endereço exato: `/screendimension/semicircular`
   e os links compartilháveis caíam na imagem padrão do site. Agora subpáginas

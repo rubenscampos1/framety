@@ -585,8 +585,8 @@ function enviarSpa(req, res, rotaResolvida) {
 
   // Texto padrão do screendimension — só quando o console não definiu o da página.
   if (p === '/screendimension' || p.startsWith('/screendimension/')) {
-    if (!daPagina || !daPagina.titulo)    title = "Configurador de Sala Imersiva | Framety";
-    if (!daPagina || !daPagina.descricao) desc = "Ferramenta de dimensionamento de projeções para salas imersivas.";
+    if (!daPagina || !daPagina.titulo)    title = "Aspecty | Framety";
+    if (!daPagina || !daPagina.descricao) desc = "Aspecty — dimensionamento de projeções para salas imersivas.";
   }
 
   // Link do cliente: é o único que descreve o documento nas meta tags, porque é
