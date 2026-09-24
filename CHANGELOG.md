@@ -5,6 +5,13 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **screendimension (semicircular): projetores não invadem mais um ao outro.**
+  Antes cada projetor ocupava os 1920px inteiros e a sobra virava sobreposição
+  entre eles. Agora a curva é dividida em fatias iguais, uma por projetor,
+  encostadas; o que sobra dos 1920px é cortado por igual nas duas bordas de
+  cada projetor, com a altura sempre em 1080 (ex. 2.701 px → 2 × 1.351, corte
+  de 285 px em cada borda). Sobreposição só existe se for pedida no campo de
+  blend. Indicadores e PDF mostram a largura usada e o corte.
 - **screendimension: aba "Sala semicircular"** (`/screendimension/semicircular`),
   ao lado da sala retangular. Uma tela só, curva: altura + comprimento medido ao
   longo da curva → vídeo de largura `comprimento × 1080 / altura` por 1080, a

@@ -363,7 +363,7 @@ const SDPreview3D = ({ res, initView }) => {
     const projs = r.projs || [];
     if (projs.length > 1) {
       projs.forEach((x, i) => {
-        const u0 = Math.max(0, x / r.Wpx), u1 = Math.min(1, (x + 1920) / r.Wpx);
+        const u0 = Math.max(0, x / r.Wpx), u1 = Math.min(1, (x + (r.pw || 1920)) / r.Wpx);
         strip(u0, u1, 0, H, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: i % 2 ? 0.1 : 0.05, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), 2);
         if (u0 > 0) poly([pt(u0, 0, 0.999), pt(u0, H, 0.999)], 0xffffff, 0.6);
         if (u1 < 1) poly([pt(u1, 0, 0.999), pt(u1, H, 0.999)], 0xffffff, 0.6);
@@ -578,14 +578,18 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     const Wpx = Math.round(arc * scale);
     const bPx = Math.round(1920 * blend / 100);
     const N = Wpx <= 1920 ? 1 : Math.ceil((Wpx - bPx) / (1920 - bPx));
-    const step = N > 1 ? (Wpx - 1920) / (N - 1) : 0;
-    const ov = N > 1 ? 1920 - step : 0;          // sobreposição real em cada junção (px)
-    const projs = Array.from({ length: N }, (_, i) => (N > 1 ? i * step : (Wpx - 1920) / 2));
+    // Cada projetor pega a mesma fatia da curva (pw). Sem blend elas encostam
+    // uma na outra; com blend, só a sobreposição pedida. O que sobra dos 1920px
+    // de cada projetor é cortado por igual nas duas bordas — altura sempre 1080.
+    const ov = N > 1 ? bPx : 0;                  // sobreposição em cada junção (px)
+    const pw = (Wpx + (N - 1) * ov) / N;         // largura usada por projetor
+    const cut = Math.max(0, (1920 - pw) / 2);    // corte em cada borda do projetor
+    const projs = Array.from({ length: N }, (_, i) => i * (pw - ov));
     const theta = angDeg * Math.PI / 180;
     const radiusM = arc / theta;
     const chordM = angDeg >= 360 ? 0 : 2 * radiusM * Math.sin(theta / 2);
     const depthM = radiusM * (1 - Math.cos(theta / 2));   // da abertura até o fundo da curva
-    return { scale, Wpx, N, ov, projs, theta, radiusM, chordM, depthM, projM: 1920 / scale };
+    return { scale, Wpx, N, ov, pw, cut, projs, theta, radiusM, chordM, depthM, projM: pw / scale };
   }, [a, arc, angDeg, blend]);
 
   const [diagW, setDiagW] = React.useState(680);
@@ -605,7 +609,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     hero: [
       { lbl: "Vídeo a produzir", val: `${sdFmt(R.Wpx)} × ${sdFmt(SD_MAX_H)}`, unit: "px", sub: `escala ${R.scale.toFixed(1)} px/m` },
       { lbl: "Proporção", val: sdRatio(R.Wpx, SD_MAX_H), unit: "", sub: "largura : altura" },
-      { lbl: "Projetores", val: String(R.N), unit: "× 1920×1080", sub: R.N > 1 ? "lado a lado, altura travada" : "um só cobre a tela" },
+      { lbl: "Projetores", val: String(R.N), unit: "× 1920×1080", sub: R.N > 1 ? `lado a lado, cada um ${sdFmt(R.pw)} × 1.080` : "um só cobre a tela" },
     ],
     inputs: [
       ["Altura da tela", `${sdM(a)} m`],
@@ -614,8 +618,9 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
       ["Sobreposição mínima", `${blend}%`],
     ],
     details: [
-      ["Área de cada projetor", `${sdM(R.projM)} × ${sdM(a)} m`, "1920 × 1080 px"],
-      ["Sobreposição por junção", R.N > 1 ? `${sdFmt(R.ov)} px` : "—", R.N > 1 ? `${sdM(R.ov / R.scale)} m` : "um projetor"],
+      ["Cada projetor usa", `${sdFmt(R.pw)} × 1.080 px`, `${sdM(R.projM)} × ${sdM(a)} m`],
+      ["Corte por projetor", `${sdFmt(R.cut)} px em cada borda`, "de 1920 px"],
+      ["Sobreposição por junção", R.N > 1 && R.ov > 0 ? `${sdFmt(R.ov)} px` : "nenhuma", R.N > 1 && R.ov > 0 ? `${sdM(R.ov / R.scale)} m` : "encostadas"],
       ["Raio da curva", `${sdM(R.radiusM)} m`, R.chordM > 0 ? `abertura ${sdM(R.chordM)} m` : "círculo fechado"],
       ["Área segura", `${sdSafeTxt(R.Wpx)} px`, `${sdM(arc * 0.8)} × ${sdM(a * 0.8)} m`],
       ["Fundo da sala", `${sdM(R.depthM)} m`, "da abertura ao fundo"],
@@ -624,7 +629,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     diagramTitle: "Mapa de projeção",
   };
 
-  const junctions = R.projs.slice(1).map((x, i) => ({ x0: x, x1: R.projs[i] + 1920 })).filter((j) => j.x1 > j.x0);
+  const junctions = R.projs.slice(1).map((x, i) => ({ x0: x, x1: R.projs[i] + R.pw })).filter((j) => j.x1 > j.x0);
 
   // vista de cima: arco em torno do centro, abertura para baixo
   const top = (() => {
@@ -659,21 +664,21 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
               <span className="sd-screen-lbl">Tela curva planificada</span>
               <div className="sd-safe"><span>área segura {sdSafeTxt(R.Wpx)}</span></div>
               {R.N > 1 && R.projs.map((x, i) => (
-                <div key={i} className={`sd-proj ${i % 2 ? "odd" : ""}`} style={{ left: `${x / R.Wpx * 100}%`, width: `${1920 / R.Wpx * 100}%` }}><span>P{i + 1}</span></div>
+                <div key={i} className={`sd-proj ${i % 2 ? "odd" : ""}`} style={{ left: `${x / R.Wpx * 100}%`, width: `${R.pw / R.Wpx * 100}%` }}><span>P{i + 1}</span></div>
               ))}
               {junctions.map((j, i) => (
                 <div key={"j" + i} className="sd-blend" style={{ left: `${j.x0 / R.Wpx * 100}%`, width: `${(j.x1 - j.x0) / R.Wpx * 100}%` }} />
               ))}
             </div>
             <div className="sd-res"><b>{sdFmt(R.Wpx)} × {sdFmt(SD_MAX_H)} px</b><span className="sd-res-r">{sdRatio(R.Wpx, SD_MAX_H)}</span>
-              <span className="sd-res2">{sdM(arc)} m × {sdM(a)} m · {R.N} projetor{R.N > 1 ? "es" : ""} 1920×1080 lado a lado</span></div>
+              <span className="sd-res2">{sdM(arc)} m × {sdM(a)} m · {R.N} projetor{R.N > 1 ? "es" : ""} lado a lado · cada um usa {sdFmt(R.pw)} × 1.080</span></div>
           </div>
 
           <div className="sd-topview">
             <svg viewBox={top.vb} style={{ width: Math.min(260, 140 * top.ratio), aspectRatio: top.ratio }}>
               <path d={top.path(0, 1)} fill="none" stroke="#5EC8F2" strokeWidth="0.05" strokeLinecap="round" />
               {R.N > 1 && R.projs.map((x, i) => (
-                <path key={i} d={top.path(Math.max(0, x / R.Wpx), Math.min(1, (x + 1920) / R.Wpx))} fill="none"
+                <path key={i} d={top.path(Math.max(0, x / R.Wpx), Math.min(1, (x + R.pw) / R.Wpx))} fill="none"
                       stroke={i % 2 ? "rgba(255,255,255,.55)" : "rgba(255,255,255,.3)"} strokeWidth="0.03" transform={`scale(${i % 2 ? 0.9 : 0.94})`} />
               ))}
               <circle cx="0" cy="0" r="0.035" fill="#fff" opacity=".6" />
@@ -686,15 +691,15 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
 
         <section className="sd-3dsection" ref={preview3dRef} data-html2canvas-ignore="true">
           <div className="sd-3dtitle">Preview 3D — faixa de cada projetor</div>
-          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, theta: R.theta, projs: R.projs, radiusM: R.radiusM }} />
+          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, theta: R.theta, projs: R.projs, pw: R.pw, radiusM: R.radiusM }} />
         </section>
       </div>
 
       <section className="sd-indicators">
         <div className="sd-ind"><div className="sd-ind-lbl">Vídeo a produzir</div><div className="sd-ind-val">{sdFmt(R.Wpx)}×{sdFmt(SD_MAX_H)}</div><div className="sd-ind-sub">proporção {sdRatio(R.Wpx, SD_MAX_H)}</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Projetores 1920×1080</div><div className="sd-ind-val">{R.N}</div><div className="sd-ind-sub">cada um cobre {sdM(R.projM)} × {sdM(a)} m</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Sobreposição por junção</div><div className="sd-ind-val">{R.N > 1 ? `${sdFmt(R.ov)} px` : "—"}</div><div className="sd-ind-sub">{R.N > 1 ? `${sdM(R.ov / R.scale)} m · ${Math.round(R.ov / 1920 * 100)}% do projetor` : "um projetor só"}</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Pixels projetados</div><div className="sd-ind-val">{sdFmt(R.N * 1920)}×{sdFmt(SD_MAX_H)}</div><div className="sd-ind-sub">{R.N} × 1920 · {sdFmt(Math.max(0, R.N * 1920 - R.Wpx))} px sobrepostos</div></div>
+        <div className="sd-ind"><div className="sd-ind-lbl">Projetores 1920×1080</div><div className="sd-ind-val">{R.N}</div><div className="sd-ind-sub">cada um usa {sdFmt(R.pw)} × 1.080 · {sdM(R.projM)} × {sdM(a)} m</div></div>
+        <div className="sd-ind"><div className="sd-ind-lbl">Corte por projetor</div><div className="sd-ind-val">{sdFmt(R.cut)} px</div><div className="sd-ind-sub">em cada borda · de 1920 sobram {sdFmt(R.pw)}</div></div>
+        <div className="sd-ind"><div className="sd-ind-lbl">Sobreposição por junção</div><div className="sd-ind-val">{R.N > 1 && R.ov > 0 ? `${sdFmt(R.ov)} px` : "nenhuma"}</div><div className="sd-ind-sub">{R.N > 1 && R.ov > 0 ? `${sdM(R.ov / R.scale)} m · blend pedido` : "telas encostadas, sem invadir"}</div></div>
         <div className="sd-ind sd-ind-safe"><div className="sd-ind-lbl">Área segura (margem 10%)</div><div className="sd-ind-val">{sdSafeTxt(R.Wpx).replace(/ /g, "")}</div><div className="sd-ind-sub">{sdM(arc * 0.8)} × {sdM(a * 0.8)} m · textos aqui dentro</div></div>
         <div className="sd-ind"><div className="sd-ind-lbl">Escala</div><div className="sd-ind-val">{R.scale.toFixed(1)}</div><div className="sd-ind-sub">px/m · raio {sdM(R.radiusM)} m</div></div>
       </section>
@@ -721,7 +726,7 @@ const SDPdfCurveDiagram = ({ R }) => {
   let sw = 540, sh = sw * SD_MAX_H / R.Wpx;
   if (sh > 92) { sh = 92; sw = sh * R.Wpx / SD_MAX_H; }
   const pct = (x) => `${x / R.Wpx * 100}%`;
-  const junctions = R.projs.slice(1).map((x, i) => ({ x0: x, x1: R.projs[i] + 1920 })).filter((j) => j.x1 > j.x0);
+  const junctions = R.projs.slice(1).map((x, i) => ({ x0: x, x1: R.projs[i] + R.pw })).filter((j) => j.x1 > j.x0);
   const th = R.theta, n = 72, pts = [];
   for (let i = 0; i <= n; i++) { const f = -th / 2 + th * i / n; pts.push([Math.sin(f), -Math.cos(f)]); }
   const xs = pts.map((p) => p[0]).concat(0), ys = pts.map((p) => p[1]).concat(0);
@@ -736,7 +741,7 @@ const SDPdfCurveDiagram = ({ R }) => {
       <div className="pd-striprow">
         <div className="pd-strip" style={{ width: sw, height: sh, background: ac }}>
           {R.N > 1 && R.projs.map((x, i) => (
-            <div key={i} className={`pd-band ${i % 2 ? "odd" : ""}`} style={{ left: pct(x), width: pct(1920) }}><b>P{i + 1}</b></div>
+            <div key={i} className={`pd-band ${i % 2 ? "odd" : ""}`} style={{ left: pct(x), width: pct(R.pw) }}><b>P{i + 1}</b></div>
           ))}
           {junctions.map((j, i) => (
             <svg key={"j" + i} className="pd-blend" style={{ left: pct(j.x0), width: pct(j.x1 - j.x0) }} preserveAspectRatio="none">
@@ -754,7 +759,7 @@ const SDPdfCurveDiagram = ({ R }) => {
           <line x1="0" y1="0" x2="0" y2="-1" stroke="#d3d0c8" strokeWidth="0.012" />
           <path d={arcD(0, 1)} fill="none" stroke={ac} strokeWidth="0.07" strokeLinecap="round" />
           {R.N > 1 && R.projs.map((x, i) => (
-            <path key={i} d={arcD(Math.max(0, x / R.Wpx), Math.min(1, (x + 1920) / R.Wpx), i % 2 ? 0.8 : 0.87)} fill="none" stroke={i % 2 ? "#111114" : "#8d8a83"} strokeWidth="0.035" strokeLinecap="round" />
+            <path key={i} d={arcD(Math.max(0, x / R.Wpx), Math.min(1, (x + R.pw) / R.Wpx), i % 2 ? 0.8 : 0.87)} fill="none" stroke={i % 2 ? "#111114" : "#8d8a83"} strokeWidth="0.035" strokeLinecap="round" />
           ))}
           <circle cx="0" cy="0" r="0.04" fill="#111114" />
         </svg>
