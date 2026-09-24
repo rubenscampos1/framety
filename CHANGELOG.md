@@ -5,6 +5,18 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **screendimension (semicircular): sombra vermelha do corte.** O que os
+  projetores cortam dos 1920px aparece em vermelho translúcido, tracejado, só
+  nas duas pontas da curva (no 3D, um pouco atrás da tela); entre projetores
+  não há marcação, as faixas encostam. Cada faixa usada mostra
+  "Pn · largura × 1.080". O mesmo vai para a tela planificada e para o mapa do
+  PDF, com legenda "corte dos projetores · X px em cada borda". Cada ponta
+  vermelha diz quanto falta: "−285 px" (a borda) e "1920 − 1.351 = 570"
+  (o total que o projetor deixa de usar).
+- **screendimension (semicircular): cartão "Proporção da timeline"** no lugar
+  de "Corte por projetor" (o corte já está nas pontas vermelhas). Mostra a
+  proporção e a timeline em px; se a largura sair ímpar, sugere a par mais
+  próxima (codecs de vídeo pedem dimensão par).
 - **screendimension (semicircular): projetores não invadem mais um ao outro.**
   Antes cada projetor ocupava os 1920px inteiros e a sobra virava sobreposição
   entre eles. Agora a curva é dividida em fatias iguais, uma por projetor,

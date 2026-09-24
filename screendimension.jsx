@@ -312,11 +312,11 @@ const SDPreview3D = ({ res, initView }) => {
     const pt = (u, y, k = 1) => { const f = -th / 2 + u * th; return [R * k * Math.sin(f), y, -R * k * Math.cos(f)]; };
     const segs = (u0, u1) => Math.max(2, Math.ceil(Math.max(24, th * 40) * (u1 - u0)));
 
-    const strip = (u0, u1, y0, y1, mat, order) => {
+    const strip = (u0, u1, y0, y1, mat, order, k = 1) => {
       const n = segs(u0, u1), arr = [];
       for (let i = 0; i < n; i++) {
         const a = u0 + (u1 - u0) * i / n, b = u0 + (u1 - u0) * (i + 1) / n;
-        const p00 = pt(a, y0), p10 = pt(b, y0), p11 = pt(b, y1), p01 = pt(a, y1);
+        const p00 = pt(a, y0, k), p10 = pt(b, y0, k), p11 = pt(b, y1, k), p01 = pt(a, y1, k);
         arr.push(...p00, ...p10, ...p11, ...p00, ...p11, ...p01);
       }
       const g = new THREE.BufferGeometry();
@@ -332,7 +332,7 @@ const SDPreview3D = ({ res, initView }) => {
       g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(arr), 3));
       grp.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: op })));
     };
-    const arcPts = (u0, u1, y) => { const n = segs(u0, u1), out = []; for (let i = 0; i <= n; i++) out.push(pt(u0 + (u1 - u0) * i / n, y)); return out; };
+    const arcPts = (u0, u1, y, k = 1) => { const n = segs(u0, u1), out = []; for (let i = 0; i <= n; i++) out.push(pt(u0 + (u1 - u0) * i / n, y, k)); return out; };
     const put = (txt, p, tone, sc) => { const s = makeLabel(THREE, txt, base, tone); if (sc) s.scale.multiplyScalar(sc); s.position.set(p[0], p[1], p[2]); grp.add(s); };
 
     // a tela
@@ -359,17 +359,36 @@ const SDPreview3D = ({ res, initView }) => {
     });
     put(`área segura ${sdSafeTxt(r.Wpx)}`, pt(0.5, H * (S1 - 0.08), 0.97), "rgba(255,181,71,0.85)", 0.75);
 
-    // projetores
+    // projetores: o corte dos 1920px aparece em vermelho só onde ele sobra de
+    // fato — nas duas pontas da curva, um pouco atrás da tela (raio maior). Entre
+    // projetores não há nada: as faixas encostam. Na frente, a faixa que cada
+    // projetor usa, com a resolução dela.
     const projs = r.projs || [];
-    if (projs.length > 1) {
-      projs.forEach((x, i) => {
-        const u0 = Math.max(0, x / r.Wpx), u1 = Math.min(1, (x + (r.pw || 1920)) / r.Wpx);
+    const pw = r.pw || 1920, cut = r.cut || 0;
+    if (cut > 0.5) {
+      const K = 1.018, cu = cut / r.Wpx;
+      [[-cu, 0], [1, 1 + cu]].forEach(([a, b]) => {
+        strip(a, b, 0, H, new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }), 1, K);
+        poly(arcPts(a, b, 0, K), 0xff4d4d, 0.75);
+        poly(arcPts(a, b, H, K), 0xff4d4d, 0.75);
+      });
+      poly([pt(-cu, 0, K), pt(-cu, H, K)], 0xff4d4d, 0.75);
+      poly([pt(1 + cu, 0, K), pt(1 + cu, H, K)], 0xff4d4d, 0.75);
+      // quanto falta de cada projetor: a borda cortada e a conta 1920 − usado
+      [-cu / 2, 1 + cu / 2].forEach((u) => {
+        put(`−${sdFmt(cut)} px`, pt(u, H * 0.56, K * 1.01), "rgba(255,77,77,0.9)", 0.62);
+        put(`1920 − ${sdFmt(pw)} = ${sdFmt(1920 - pw)} px`, pt(u, H * 0.42, K * 1.01), "rgba(255,77,77,0.6)", 0.45);
+      });
+    }
+    projs.forEach((x, i) => {
+      const u0 = Math.max(0, x / r.Wpx), u1 = Math.min(1, (x + pw) / r.Wpx);
+      if (projs.length > 1) {
         strip(u0, u1, 0, H, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: i % 2 ? 0.1 : 0.05, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), 2);
         if (u0 > 0) poly([pt(u0, 0, 0.999), pt(u0, H, 0.999)], 0xffffff, 0.6);
         if (u1 < 1) poly([pt(u1, 0, 0.999), pt(u1, H, 0.999)], 0xffffff, 0.6);
-        put(`P${i + 1}`, pt((u0 + u1) / 2, H / 2, 0.97), "rgba(255,255,255,0.4)", 0.85);
-      });
-    }
+      }
+      put(`P${i + 1} · ${sdFmt(Math.min(pw, r.Wpx))} × ${sdFmt(SD_MAX_H)}`, pt((u0 + u1) / 2, H / 2, 0.97), "rgba(255,255,255,0.45)", 0.8);
+    });
     put(`${sdFmt(r.Wpx)} × ${sdFmt(SD_MAX_H)}`, pt(0.5, H * 1.08, 1), "rgba(94,200,242,0.7)");
     put(`R ${String(Math.round((r.radiusM || 0) * 100) / 100).replace(".", ",")} m`, [0, 0.01, 0], "rgba(255,255,255,0.3)", 0.7);
 
@@ -599,7 +618,8 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     onR(); window.addEventListener("resize", onR);
     return () => window.removeEventListener("resize", onR);
   }, []);
-  const disp = Math.min(150 / SD_MAX_H, (Math.max(diagW, 280) - 40) / Math.max(R.Wpx, 1920));
+  // cabe a tela + o quadro vermelho que passa das pontas (o corte das bordas)
+  const disp = Math.min(150 / SD_MAX_H, (Math.max(diagW, 280) - 40) / Math.max(R.Wpx + 2 * R.cut, 1920));
   docRef.current = {
     mode: "curve", raw: { A, C, Ang, Bl },           // o que a ficha salva guarda
     resumo: `vídeo ${sdFmt(R.Wpx)} × ${sdFmt(SD_MAX_H)}  ·  ${R.N} projetor${R.N > 1 ? "es" : ""}`,
@@ -660,15 +680,23 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
 
           {/* A tela planificada = o vídeo a produzir, com a faixa de cada projetor */}
           <div className="sd-cell">
-            <div className="sd-flat" style={{ width: R.Wpx * disp, height: SD_MAX_H * disp }}>
+            <div className="sd-flatwrap" style={{ width: R.Wpx * disp, height: SD_MAX_H * disp }}>
+              {/* corte dos projetores: só sobra nas pontas da tela */}
+              {R.cut > 0.5 && [`${-R.cut / R.Wpx * 100}%`, "100%"].map((left, i) => (
+                <div key={"c" + i} className={`sd-frame ${i ? "r" : "l"}`} style={{ left, width: `${R.cut / R.Wpx * 100}%` }}>
+                  <span><b>−{sdFmt(R.cut)} px</b>1920 − {sdFmt(R.pw)} = {sdFmt(1920 - R.pw)}</span>
+                </div>
+              ))}
+              <div className="sd-flat" style={{ width: R.Wpx * disp, height: SD_MAX_H * disp }}>
               <span className="sd-screen-lbl">Tela curva planificada</span>
               <div className="sd-safe"><span>área segura {sdSafeTxt(R.Wpx)}</span></div>
-              {R.N > 1 && R.projs.map((x, i) => (
-                <div key={i} className={`sd-proj ${i % 2 ? "odd" : ""}`} style={{ left: `${x / R.Wpx * 100}%`, width: `${R.pw / R.Wpx * 100}%` }}><span>P{i + 1}</span></div>
+              {R.projs.map((x, i) => (
+                <div key={i} className={`sd-proj ${i % 2 ? "odd" : ""}`} style={{ left: `${x / R.Wpx * 100}%`, width: `${R.pw / R.Wpx * 100}%` }}><span>P{i + 1} · {sdFmt(R.pw)} × 1.080</span></div>
               ))}
               {junctions.map((j, i) => (
                 <div key={"j" + i} className="sd-blend" style={{ left: `${j.x0 / R.Wpx * 100}%`, width: `${(j.x1 - j.x0) / R.Wpx * 100}%` }} />
               ))}
+            </div>
             </div>
             <div className="sd-res"><b>{sdFmt(R.Wpx)} × {sdFmt(SD_MAX_H)} px</b><span className="sd-res-r">{sdRatio(R.Wpx, SD_MAX_H)}</span>
               <span className="sd-res2">{sdM(arc)} m × {sdM(a)} m · {R.N} projetor{R.N > 1 ? "es" : ""} lado a lado · cada um usa {sdFmt(R.pw)} × 1.080</span></div>
@@ -691,14 +719,14 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
 
         <section className="sd-3dsection" ref={preview3dRef} data-html2canvas-ignore="true">
           <div className="sd-3dtitle">Preview 3D — faixa de cada projetor</div>
-          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, theta: R.theta, projs: R.projs, pw: R.pw, radiusM: R.radiusM }} />
+          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM }} />
         </section>
       </div>
 
       <section className="sd-indicators">
         <div className="sd-ind"><div className="sd-ind-lbl">Vídeo a produzir</div><div className="sd-ind-val">{sdFmt(R.Wpx)}×{sdFmt(SD_MAX_H)}</div><div className="sd-ind-sub">proporção {sdRatio(R.Wpx, SD_MAX_H)}</div></div>
         <div className="sd-ind"><div className="sd-ind-lbl">Projetores 1920×1080</div><div className="sd-ind-val">{R.N}</div><div className="sd-ind-sub">cada um usa {sdFmt(R.pw)} × 1.080 · {sdM(R.projM)} × {sdM(a)} m</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Corte por projetor</div><div className="sd-ind-val">{sdFmt(R.cut)} px</div><div className="sd-ind-sub">em cada borda · de 1920 sobram {sdFmt(R.pw)}</div></div>
+        <div className="sd-ind"><div className="sd-ind-lbl">Proporção da timeline</div><div className="sd-ind-val">{sdRatio(R.Wpx, SD_MAX_H)}</div><div className="sd-ind-sub">timeline {sdFmt(R.Wpx)} × {sdFmt(SD_MAX_H)} px{R.Wpx % 2 ? ` · largura ímpar, use ${sdFmt(R.Wpx + 1)}` : ""}</div></div>
         <div className="sd-ind"><div className="sd-ind-lbl">Sobreposição por junção</div><div className="sd-ind-val">{R.N > 1 && R.ov > 0 ? `${sdFmt(R.ov)} px` : "nenhuma"}</div><div className="sd-ind-sub">{R.N > 1 && R.ov > 0 ? `${sdM(R.ov / R.scale)} m · blend pedido` : "telas encostadas, sem invadir"}</div></div>
         <div className="sd-ind sd-ind-safe"><div className="sd-ind-lbl">Área segura (margem 10%)</div><div className="sd-ind-val">{sdSafeTxt(R.Wpx).replace(/ /g, "")}</div><div className="sd-ind-sub">{sdM(arc * 0.8)} × {sdM(a * 0.8)} m · textos aqui dentro</div></div>
         <div className="sd-ind"><div className="sd-ind-lbl">Escala</div><div className="sd-ind-val">{R.scale.toFixed(1)}</div><div className="sd-ind-sub">px/m · raio {sdM(R.radiusM)} m</div></div>
@@ -723,8 +751,10 @@ const sdAccent = () => {
 /* Sala semicircular: a tela planificada com a faixa de cada projetor + vista de cima. */
 const SDPdfCurveDiagram = ({ R }) => {
   const ac = sdAccent();
-  let sw = 540, sh = sw * SD_MAX_H / R.Wpx;
-  if (sh > 92) { sh = 92; sw = sh * R.Wpx / SD_MAX_H; }
+  // cabe a tela + o quadro vermelho de 1920 que passa das pontas (o corte)
+  let sw = 520 * R.Wpx / (R.Wpx + 2 * R.cut), sh = sw * SD_MAX_H / R.Wpx;
+  if (sh > 78) { sh = 78; sw = sh * R.Wpx / SD_MAX_H; }
+  const cutW = R.cut * sw / R.Wpx;
   const pct = (x) => `${x / R.Wpx * 100}%`;
   const junctions = R.projs.slice(1).map((x, i) => ({ x0: x, x1: R.projs[i] + R.pw })).filter((j) => j.x1 > j.x0);
   const th = R.theta, n = 72, pts = [];
@@ -737,11 +767,17 @@ const SDPdfCurveDiagram = ({ R }) => {
   const chord = R.chordM > 0 ? pts[0].concat(pts[n]) : null;
   return (
     <div className="pd-dg">
-      <div className="pd-dimw" style={{ width: sw }}><span>{sdFmt(R.Wpx)} px  ·  curva planificada</span></div>
+      <div className="pd-dimw" style={{ width: sw, marginLeft: cutW, marginRight: 62 + cutW }}><span>{sdFmt(R.Wpx)} px  ·  curva planificada</span></div>
       <div className="pd-striprow">
+        <div className="pd-stripwrap" style={{ width: sw, height: sh, margin: `0 ${cutW}px` }}>
+        {R.cut > 0.5 && [pct(-R.cut), "100%"].map((left, i) => (
+          <div key={"c" + i} className={`pd-frame ${i ? "r" : "l"}`} style={{ left, width: pct(R.cut) }}>
+            <span><b>−{sdFmt(R.cut)} px</b>1920 − {sdFmt(R.pw)} = {sdFmt(1920 - R.pw)}</span>
+          </div>
+        ))}
         <div className="pd-strip" style={{ width: sw, height: sh, background: ac }}>
-          {R.N > 1 && R.projs.map((x, i) => (
-            <div key={i} className={`pd-band ${i % 2 ? "odd" : ""}`} style={{ left: pct(x), width: pct(R.pw) }}><b>P{i + 1}</b></div>
+          {R.projs.map((x, i) => (
+            <div key={i} className={`pd-band ${i % 2 ? "odd" : ""}`} style={{ left: pct(x), width: pct(R.pw) }}><b>P{i + 1}<em>{sdFmt(R.pw)} × 1.080</em></b></div>
           ))}
           {junctions.map((j, i) => (
             <svg key={"j" + i} className="pd-blend" style={{ left: pct(j.x0), width: pct(j.x1 - j.x0) }} preserveAspectRatio="none">
@@ -750,6 +786,7 @@ const SDPdfCurveDiagram = ({ R }) => {
             </svg>
           ))}
           <div className="pd-safe"><span>área segura {sdSafeTxt(R.Wpx)} px</span></div>
+        </div>
         </div>
         <div className="pd-dimh" style={{ height: sh }}><span>{sdFmt(SD_MAX_H)} px</span></div>
       </div>
@@ -767,6 +804,7 @@ const SDPdfCurveDiagram = ({ R }) => {
           <div className="pd-legend-t">Vista de cima</div>
           <div><i style={{ background: ac }} />tela curva  ·  {Math.round(R.theta * 180 / Math.PI)}°</div>
           {R.N > 1 && <div><i style={{ background: "#111114" }} />faixa de cada projetor</div>}
+          {R.cut > 0.5 && <div><i className="cut" />corte dos projetores  ·  {sdFmt(R.cut)} px em cada borda</div>}
           <div><i className="safe" />área segura  ·  {sdSafeTxt(R.Wpx)} px</div>
           {junctions.length > 0 && <div><i className="hatch" />sobreposição (blend)</div>}
           <div><i className="dot" />centro  ·  raio {sdM(R.radiusM)} m</div>
@@ -953,15 +991,23 @@ const SD_PDF_CSS = `
 .pd-dimw::before{ content:""; position:absolute; left:0; right:0; top:10px; border-top:1px solid #111114; }
 .pd-dimw span{ position:absolute; left:50%; top:3px; transform:translateX(-50%); background:#fff; padding:0 8px; font-family:'JetBrains Mono', monospace; font-size:10.5px; white-space:pre; }
 .pd-striprow{ display:flex; align-items:stretch; gap:10px; margin-top:4px; }
+.pd-stripwrap{ position:relative; }
 .pd-strip{ position:relative; overflow:hidden; border-radius:3px; }
-.pd-band{ position:absolute; top:0; bottom:0; background:rgba(255,255,255,.1); border-left:1px solid rgba(255,255,255,.85); border-right:1px solid rgba(255,255,255,.85); display:flex; align-items:flex-end; justify-content:center; padding-bottom:6px; }
+.pd-frame{ position:absolute; top:0; bottom:0; background:rgba(229,57,53,.16); border:1.5px dashed rgba(229,57,53,.9); }
+.pd-frame span{ position:absolute; top:calc(100% + 3px); white-space:nowrap; font-family:'JetBrains Mono', monospace; font-size:8.5px; line-height:1.3; color:#c62828; display:flex; flex-direction:column; }
+.pd-frame span b{ font-size:9.5px; font-weight:600; }
+.pd-frame.l span{ left:0; align-items:flex-start; }
+.pd-frame.r span{ right:0; align-items:flex-end; }
+.pd-legend i.cut{ height:10px; background:rgba(229,57,53,.25); border:1px dashed #e53935; }
+.pd-band{ position:absolute; top:0; bottom:0; background:rgba(255,255,255,.1); border-left:1px solid rgba(255,255,255,.85); border-right:1px solid rgba(255,255,255,.85); display:flex; align-items:flex-end; justify-content:center; }
 .pd-band.odd{ top:8%; bottom:8%; background:rgba(0,0,0,.12); }
-.pd-band b{ font-family:'JetBrains Mono', monospace; font-size:11px; color:#fff; }
+.pd-band b em{ display:block; font-style:normal; font-size:8.5px; font-weight:400; opacity:.9; }
+.pd-band b{ position:absolute; left:0; right:0; bottom:13%; text-align:center; line-height:1.2; font-family:'JetBrains Mono', monospace; font-size:10px; color:#fff; white-space:nowrap; }
 .pd-blend{ position:absolute; top:0; height:100%; }
 .pd-dimh{ position:relative; width:52px; border-top:1px solid #111114; border-bottom:1px solid #111114; }
 .pd-dimh::before{ content:""; position:absolute; top:0; bottom:0; left:6px; border-left:1px solid #111114; }
 .pd-dimh span{ position:absolute; left:12px; top:50%; transform:translateY(-50%); font-family:'JetBrains Mono', monospace; font-size:10.5px; white-space:nowrap; }
-.pd-dgfoot{ display:flex; align-items:center; gap:22px; margin-top:12px; }
+.pd-dgfoot{ display:flex; align-items:center; gap:22px; margin-top:26px; }
 .pd-legend{ display:flex; flex-direction:column; gap:3px; font-size:11.5px; color:#3c3b38; white-space:pre; }
 .pd-legend-t{ font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:#8d8a83; margin-bottom:2px; }
 .pd-legend i{ display:inline-block; width:18px; height:4px; border-radius:2px; margin-right:9px; vertical-align:middle; }
@@ -1319,9 +1365,16 @@ const SD_CSS = `
 .sd-curvein .sd-input-wrap{ width:100%; }
 .sd-curvein .sd-input-wrap input{ flex:1; width:auto; min-width:0; font-size:17px; padding:9px 8px 9px 12px; }
 .sd-flat{ position:relative; overflow:hidden; background:linear-gradient(160deg,#4576b8,#2f5990); border-radius:4px; box-shadow:0 5px 18px rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; min-width:40px; min-height:20px; margin-top:6px; }
-.sd-proj{ position:absolute; top:0; bottom:0; background:rgba(255,255,255,.05); border-left:1px solid rgba(255,255,255,.55); border-right:1px solid rgba(255,255,255,.55); display:flex; align-items:flex-end; justify-content:center; padding-bottom:4px; }
+.sd-flatwrap{ position:relative; margin:8px 0 30px; }
+.sd-flatwrap .sd-flat{ margin-top:0; width:100% !important; height:100% !important; }
+.sd-frame{ position:absolute; top:0; bottom:0; background:rgba(255,59,59,.18); border:1.5px dashed rgba(255,77,77,.85); box-sizing:border-box; }
+.sd-frame span{ position:absolute; top:calc(100% + 4px); white-space:nowrap; font-family:var(--font-mono,monospace); font-size:9px; line-height:1.35; color:#ff8a8a; display:flex; flex-direction:column; }
+.sd-frame span b{ font-size:10.5px; color:#ff6b6b; }
+.sd-frame.l span{ left:0; align-items:flex-start; }
+.sd-frame.r span{ right:0; align-items:flex-end; }
+.sd-proj{ position:absolute; top:0; bottom:0; background:rgba(255,255,255,.05); border-left:1px solid rgba(255,255,255,.55); border-right:1px solid rgba(255,255,255,.55); display:flex; align-items:flex-end; justify-content:center; }
 .sd-proj.odd{ background:rgba(255,255,255,.1); top:6%; bottom:6%; }
-.sd-proj span{ font-family:var(--font-mono,monospace); font-size:9.5px; font-weight:700; color:rgba(255,255,255,.8); }
+.sd-proj span{ position:absolute; left:0; right:0; bottom:13%; text-align:center; white-space:nowrap; font-family:var(--font-mono,monospace); font-size:9.5px; font-weight:700; color:rgba(255,255,255,.8); }
 .sd-blend{ position:absolute; top:0; bottom:0; background:repeating-linear-gradient(45deg, rgba(255,207,158,.28) 0 4px, transparent 4px 8px); pointer-events:none; }
 .sd-topview{ display:flex; flex-direction:column; align-items:center; gap:4px; }
 .sd-topview svg{ height:auto; max-height:150px; overflow:visible; }
