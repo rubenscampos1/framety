@@ -849,6 +849,8 @@ const SDPdfRectDiagram = ({ R }) => {
   );
 };
 
+const sdClip = (t, n) => { t = String(t || "").trim(); return t.length > n ? t.slice(0, n - 1).trimEnd() + "…" : t; };
+
 const SDReport = ({ doc, shot }) => {
   const date = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
   const bw = 468, bh = 234;
@@ -860,8 +862,8 @@ const SDReport = ({ doc, shot }) => {
       <header className="pd-head">
         <img className="pd-logo" src="/dual_logo_dark.svg" alt="" />
         <div className="pd-who">
-          <div><span className="pd-lbl">Cliente</span><b>{doc.cliente || "—"}</b></div>
-          <div><span className="pd-lbl">Projeto</span><b>{doc.projeto || "—"}</b></div>
+          <div><span className="pd-lbl">Cliente</span><b>{sdClip(doc.cliente, 28) || "—"}</b></div>
+          <div><span className="pd-lbl">Projeto</span><b>{sdClip(doc.projeto, 34) || "—"}</b></div>
         </div>
         <div className="pd-head-r"><b>screendimension</b><span>Ficha técnica  ·  {date}</span></div>
       </header>
@@ -965,7 +967,8 @@ const SD_PDF_CSS = `
 .pd-logo{ height:30px; width:auto; }
 .pd-who{ flex:1; display:flex; gap:34px; margin:0 34px; padding-left:34px; border-left:1px solid #dcd9d1; }
 .pd-who > div{ display:flex; flex-direction:column; gap:4px; min-width:0; }
-.pd-who b{ font-size:17px; font-weight:700; letter-spacing:-0.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:360px; }
+/* sem overflow:hidden: no html2canvas ele recorta a parte de baixo das letras */
+.pd-who b{ font-size:17px; line-height:1.35; padding-bottom:2px; font-weight:700; letter-spacing:-0.01em; white-space:nowrap; }
 .pd-head-r{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; font-family:'JetBrains Mono', monospace; }
 .pd-head-r b{ font-size:13px; font-weight:500; letter-spacing:.02em; }
 .pd-head-r span{ font-size:10.5px; color:#7c7a74; letter-spacing:.04em; }

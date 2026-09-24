@@ -5,6 +5,11 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **screendimension: Cliente e Projeto não saem mais cortados no PDF.** O
+  `overflow:hidden` do nome fazia o html2canvas recortar a parte de baixo das
+  letras. Agora a linha tem altura folgada, sem recorte, e nomes longos são
+  encurtados com "…" no próprio texto (28 caracteres no cliente, 34 no projeto).
+
 - **screendimension (semicircular): sombra vermelha do corte.** O que os
   projetores cortam dos 1920px aparece em vermelho translúcido, tracejado, só
   nas duas pontas da curva (no 3D, um pouco atrás da tela); entre projetores
