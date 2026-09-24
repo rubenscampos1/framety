@@ -22,6 +22,7 @@ const sdUrlFor = (mode, raw) => {
   Object.entries(SD_URL_KEYS).forEach(([k, name]) => { const v = sdCleanVal(raw[k]); if (v) q.set(name, v); });
   const vw = sdCleanVal(raw.Vw), vh = sdCleanVal(raw.Vh);
   if (vw && vh) q.set("video", `${vw}x${vh}`);
+  const sg = sdCleanVal(raw.Sg); if (sg) q.set("sangria", sg);
   const path = mode === "curve" ? "/screendimension/semicircular" : "/screendimension";
   const qs = q.toString();
   return path + (qs ? "?" + qs : "");
@@ -35,6 +36,7 @@ const sdReadUrl = () => {
     Object.entries(SD_URL_KEYS).forEach(([k, name]) => { const v = sdCleanVal(q.get(name)); if (v) out[k] = v; });
     const m = /^([0-9.,]+)x([0-9.,]+)$/i.exec(q.get("video") || "");
     if (m) { out.Vw = sdCleanVal(m[1]); out.Vh = sdCleanVal(m[2]); }
+    const sg = sdCleanVal(q.get("sangria")); if (sg) out.Sg = sg;
     return Object.keys(out).length ? out : null;
   } catch (_) { return null; }
 };
@@ -64,6 +66,38 @@ const sdFit = (aw, ah, vwRaw, vhRaw) => {
   return { vw, vh, sw, aw, ah, wider, diff, each, ok, exact, msg,
            a: (aw - sw) / 2 / aw, b: (aw + sw) / 2 / aw };   // posição do vídeo na área (0–1)
 };
+
+/* Margem extra de sangria: a área X% maior (X digitado, 10 por padrão), na mesma proporção, para gerar o
+   conteúdo com borda sobrando (5% de cada lado) e encaixar sem sustos na
+   montagem. Não muda nenhuma outra conta. */
+const SD_ORANGE = "#FF7A1A", SD_ORANGE_3D = 0xFF7A1A;
+const sdBleedPct = (v) => Math.min(100, Math.max(0.1, sdNum(v) || 10));   // % digitado (padrão 10)
+const sdBleed = (w, h, pct = 10) => {
+  const f = pct / 100;
+  const bw = Math.round(w * (1 + f)), bh = Math.round(h * (1 + f));
+  return { w, h, pct, f, bw, bh, ex: (bw - w) / 2, ey: (bh - h) / 2 };
+};
+const SDBleed = ({ on, setOn, pct, setPct, bleed, areaLbl, children }) => (
+  <div className={`sd-bleed ${on ? "on" : ""}`}>
+    <label className="sd-bleed-h">
+      <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
+      <b><i />Margem extra de sangria</b><span>+{sdPct(bleed.f)} na {areaLbl}, mesma proporção</span>
+    </label>
+    {on && <>
+      <div className="sd-bleed-in">
+        <span>Margem</span>
+        <span className="sd-input-wrap sd-input-b"><input type="number" min="0.1" max="100" step="1" inputMode="decimal" value={pct} placeholder="10" onChange={(e) => setPct(e.target.value)} /><b>%</b></span>
+        <em>a mais na {areaLbl}</em>
+      </div>
+      {children}
+      <div className="sd-bleed-r">
+        Produza o conteúdo em <b>{sdFmt(bleed.bw)} × {sdFmt(bleed.bh)} px</b> ({sdRatio(bleed.bw, bleed.bh)}) — na montagem,
+        sobram {sdFmt(bleed.ex)} px em cada lateral e {sdFmt(bleed.ey)} px em cima e embaixo, que ficam fora da tela.
+        {bleed.bw % 2 ? ` Largura ímpar: se o codec reclamar, use ${sdFmt(bleed.bw + 1)}.` : ""}
+      </div>
+    </>}
+  </div>
+);
 
 const SDVideoTest = ({ vw, vh, setVw, setVh, fit, areaLbl, children }) => (
   <div className="sd-vtest">
@@ -487,6 +521,14 @@ const SDPreview3D = ({ res, initView }) => {
       put(`P${i + 1} · ${sdFmt(Math.min(pw, r.Wpx))} × ${sdFmt(SD_MAX_H)}`, pt((u0 + u1) / 2, H / 2, 0.97), "rgba(255,255,255,0.45)", 0.8);
     });
     // vídeo testado: onde ele cai na curva, em roxo, um pouco à frente da tela
+    if (r.bleed) {
+      const e = r.bleed / 2, K = 1.03, y0 = -H * e, y1 = H * (1 + e), dash = (A, n) => { for (let i = 0; i < n; i += 2) poly([A(i / n), A((i + 1) / n)], SD_ORANGE_3D, 0.95); };
+      dash((f) => pt(-e + (1 + 2 * e) * f, y0, K), 48);
+      dash((f) => pt(-e + (1 + 2 * e) * f, y1, K), 48);
+      dash((f) => pt(-e, y0 + (y1 - y0) * f, K), 12);
+      dash((f) => pt(1 + e, y0 + (y1 - y0) * f, K), 12);
+      put(`sangria ${sdFmt(Math.round(r.Wpx * (1 + r.bleed)))} × ${sdFmt(Math.round(SD_MAX_H * (1 + r.bleed)))}`, pt(0.5, y0 - H * 0.08, K), "rgba(255,122,26,0.9)", 0.6);
+    }
     if (r.fit) {
       const { a, b } = r.fit, K = 0.985, col = r.fit.ok ? SD_PURPLE_3D : 0xff4d4d;
       strip(a, b, 0, H, new THREE.MeshBasicMaterial({ color: SD_PURPLE_3D, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }), 3, K);
@@ -557,6 +599,25 @@ const SDTimelineFit = ({ R, fit }) => {
   );
 };
 
+const SDTimelineBleed = ({ R, f }) => {
+  const TW = R.timelineW, TH = R.timelineH, k = Math.min(310 / (TW * (1 + f)), 136 / (TH * (1 + f)));
+  const fx = (TW - R.frontTotalW) / 2, fW = Math.max(R.fBase, R.fTop);
+  const parts = [
+    ["E", fx, 0, R.Ws, R.H], ["Central", fx + R.Ws, 0, R.Wc, R.H], ["D", fx + R.Ws + R.Wc, 0, R.Ws, R.H],
+    ["Chão", fx + R.Ws + (R.Wc - fW) / 2, R.H, fW, R.fDepth],
+  ];
+  return (
+    <div className="sd-tlfit" style={{ width: TW * k * (1 + f), height: TH * k * (1 + f) }}>
+      <div className="sd-tl" style={{ left: TW * k * f / 2, top: TH * k * f / 2, width: TW * k, height: TH * k }}>
+        {parts.map(([n, x, y, w, h]) => (
+          <div key={n} className={`sd-tl-p ${n === "Chão" ? "f" : n === "Central" ? "c" : ""}`} style={{ left: x * k, top: y * k, width: w * k, height: h * k }}><span>{n}</span></div>
+        ))}
+      </div>
+      <div className="sd-bbox" style={{ left: 0, top: 0, right: 0, bottom: 0 }} />
+    </div>
+  );
+};
+
 /* ─────────────────────── Sala retangular (3 paredes + chão) ──────────────────── */
 const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const [A, setA] = React.useState(initial.A ?? "3");        // altura / pé-direito (m) — escala (já vem preenchida)
@@ -566,7 +627,10 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const [fDepM,  setFDepM]  = React.useState(initial.fDepM ?? "");  // chão: profundidade própria (m)
   const [Vw, setVw] = React.useState(initial.Vw ?? "");     // vídeo a testar (px)
   const [Vh, setVh] = React.useState(initial.Vh ?? "");
-  React.useEffect(() => sdSyncUrl("rect", { A, L, P, fBaseM, fDepM, Vw, Vh }), [A, L, P, fBaseM, fDepM, Vw, Vh]);
+  const [Sg, setSg] = React.useState(!!initial.Sg);            // margem extra de sangria (liga/desliga)
+  const [SgP, setSgP] = React.useState(initial.Sg || "10");    // quantos % a mais
+  const sgRaw = Sg ? String(sdBleedPct(SgP)) : "";
+  React.useEffect(() => sdSyncUrl("rect", { A, L, P, fBaseM, fDepM, Vw, Vh, Sg: sgRaw }), [A, L, P, fBaseM, fDepM, Vw, Vh, sgRaw]);
   // topo do chão = largura da tela central (sempre travados) → usa L
   const a = sdNum(A) || 3;                      // altura sempre tem valor (padrão 3) — nunca congela
   const ready = !!sdNum(A);                     // só pra saber se o usuário já digitou
@@ -597,8 +661,9 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const nProj = projCount(R.Wc, R.H) + projCount(R.Ws, R.H) * 2 + projCount(Math.max(R.fBase, R.fTop), R.fDepth);
   const typed = (v, res, hint) => (sdNum(v) ? `${sdM(res)} m` : `${sdM(res)} m  ·  ${hint}`);
   const fit = sdFit(R.timelineW, R.timelineH, Vw, Vh);
+  const bleed = sdBleed(R.timelineW, R.timelineH, sdBleedPct(SgP));
   docRef.current = {
-    mode: "rect", raw: { A, L, P, fBaseM, fDepM, Vw, Vh },   // o que a ficha salva guarda
+    mode: "rect", raw: { A, L, P, fBaseM, fDepM, Vw, Vh, Sg: sgRaw },   // o que a ficha salva guarda
     resumo: `timeline ${sdFmt(R.timelineW)} × ${sdFmt(R.timelineH)}  ·  ${nProj} projetores`,
     name: `sala-imersiva${ready ? `-alt${Math.round(a)}m` : ""}`,
     title: "Sala retangular",
@@ -624,6 +689,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
       ["Área segura · laterais", `${sdSafeTxt(R.Ws, R.H)} px`, "margem de 10%"],
       ["Escala", `${R.scale.toFixed(1)} px/m`, "altura → 1080 px"],
       ...(fit ? [["Vídeo testado", `${sdFmt(fit.vw)} × ${sdFmt(fit.vh)} px`, fit.ok ? "compatível" : "não compatível"]] : []),
+      ...(Sg ? [[`Sangria (+${sdPct(bleed.f)})`, `${sdFmt(bleed.bw)} × ${sdFmt(bleed.bh)} px`, "timeline com borda extra"]] : []),
     ],
     diagram: <SDPdfRectDiagram R={R} />,
     diagramTitle: "Mapa das telas planificadas",
@@ -686,6 +752,9 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
             <SDVideoTest vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} fit={fit} areaLbl={`timeline de ${sdFmt(R.timelineW)} × ${sdFmt(R.timelineH)} px`}>
               {fit && <SDTimelineFit R={R} fit={fit} />}
             </SDVideoTest>
+            <SDBleed on={Sg} setOn={setSg} pct={SgP} setPct={setSgP} bleed={bleed} areaLbl="timeline">
+              <SDTimelineBleed R={R} f={bleed.f} />
+            </SDBleed>
             {ready && (R.Wc > 1920 || R.Ws > 1920) && <div className="sd-note warn">Alguma parede passou de 1920px — precisará de mais de um projetor por parede.</div>}
           </section>
 
@@ -725,7 +794,10 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
   const [Bl, setBl]   = React.useState(initial.Bl ?? "0");     // sobreposição mínima entre projetores (%)
   const [Vw, setVw]   = React.useState(initial.Vw ?? "");      // vídeo a testar (px)
   const [Vh, setVh]   = React.useState(initial.Vh ?? "");
-  React.useEffect(() => sdSyncUrl("curve", { A, C, Ang, Bl, Vw, Vh }), [A, C, Ang, Bl, Vw, Vh]);
+  const [Sg, setSg]   = React.useState(!!initial.Sg);           // margem extra de sangria (liga/desliga)
+  const [SgP, setSgP] = React.useState(initial.Sg || "10");     // quantos % a mais
+  const sgRaw = Sg ? String(sdBleedPct(SgP)) : "";
+  React.useEffect(() => sdSyncUrl("curve", { A, C, Ang, Bl, Vw, Vh, Sg: sgRaw }), [A, C, Ang, Bl, Vw, Vh, sgRaw]);
 
   const a = sdNum(A) || 3;
   const ready = !!sdNum(A) && !!sdNum(C);
@@ -752,6 +824,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     return { scale, Wpx, N, ov, pw, cut, projs, theta, radiusM, chordM, depthM, projM: pw / scale };
   }, [a, arc, angDeg, blend]);
   const fit = sdFit(R.Wpx, SD_MAX_H, Vw, Vh);   // vídeo testado contra a tela inteira
+  const bleed = sdBleed(R.Wpx, SD_MAX_H, sdBleedPct(SgP));
 
   const [diagW, setDiagW] = React.useState(680);
   const diagRef = React.useRef(null);
@@ -763,7 +836,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
   // cabe a tela + o quadro vermelho que passa das pontas (o corte das bordas)
   const disp = Math.min(150 / SD_MAX_H, (Math.max(diagW, 280) - 40) / Math.max(R.Wpx + 2 * R.cut, fit ? fit.sw : 0, 1920));
   docRef.current = {
-    mode: "curve", raw: { A, C, Ang, Bl, Vw, Vh },   // o que a ficha salva guarda
+    mode: "curve", raw: { A, C, Ang, Bl, Vw, Vh, Sg: sgRaw },   // o que a ficha salva guarda
     resumo: `vídeo ${sdFmt(R.Wpx)} × ${sdFmt(SD_MAX_H)}  ·  ${R.N} projetor${R.N > 1 ? "es" : ""}`,
     name: `sala-semicircular${ready ? `-${sdM(arc).replace(",", "_")}x${sdM(a).replace(",", "_")}m` : ""}`,
     title: "Sala semicircular",
@@ -787,6 +860,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
       ["Área segura", `${sdSafeTxt(R.Wpx)} px`, `${sdM(arc * 0.8)} × ${sdM(a * 0.8)} m`],
       ["Fundo da sala", `${sdM(R.depthM)} m`, "da abertura ao fundo"],
       ...(fit ? [["Vídeo testado", `${sdFmt(fit.vw)} × ${sdFmt(fit.vh)} px`, fit.ok ? "compatível" : "não compatível"]] : []),
+      ...(Sg ? [[`Sangria (+${sdPct(bleed.f)})`, `${sdFmt(bleed.bw)} × ${sdFmt(bleed.bh)} px`, "conteúdo com borda extra"]] : []),
     ],
     diagram: <SDPdfCurveDiagram R={R} fit={fit} />,
     diagramTitle: "Mapa de projeção",
@@ -840,6 +914,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
                 <div key={"j" + i} className="sd-blend" style={{ left: `${j.x0 / R.Wpx * 100}%`, width: `${(j.x1 - j.x0) / R.Wpx * 100}%` }} />
               ))}
             </div>
+              {Sg && <div className="sd-bbox" style={{ left: `${-bleed.f * 50}%`, right: `${-bleed.f * 50}%`, top: `${-bleed.f * 50}%`, bottom: `${-bleed.f * 50}%` }}><span>sangria {sdFmt(bleed.bw)} × {sdFmt(bleed.bh)}</span></div>}
               {fit && <div className={`sd-vbox ${fit.ok ? "" : "bad"}`} style={{ left: `${fit.a * 100}%`, width: `${(fit.b - fit.a) * 100}%` }}><span>vídeo {sdFmt(fit.vw)} × {sdFmt(fit.vh)}</span></div>}
             </div>
             <div className="sd-res"><b>{sdFmt(R.Wpx)} × {sdFmt(SD_MAX_H)} px</b><span className="sd-res-r">{sdRatio(R.Wpx, SD_MAX_H)}</span>
@@ -847,6 +922,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
           </div>
 
           <SDVideoTest vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} fit={fit} areaLbl={`tela de ${sdFmt(R.Wpx)} × ${sdFmt(SD_MAX_H)} px`} />
+          <SDBleed on={Sg} setOn={setSg} pct={SgP} setPct={setSgP} bleed={bleed} areaLbl="tela" />
 
           <div className="sd-topview">
             <svg viewBox={top.vb} style={{ width: Math.min(260, 140 * top.ratio), aspectRatio: top.ratio }}>
@@ -865,7 +941,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
 
         <section className="sd-3dsection" ref={preview3dRef} data-html2canvas-ignore="true">
           <div className="sd-3dtitle">Preview 3D — faixa de cada projetor</div>
-          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM, fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok } : null }} />
+          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM, bleed: Sg ? bleed.f : 0, fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok } : null }} />
         </section>
       </div>
 
@@ -1536,6 +1612,24 @@ const SD_CSS = `
 .sd-vbox.bad{ border-color:#ff5a5a; background:rgba(255,90,90,.14); }
 .sd-vbox span{ position:absolute; top:3px; left:50%; transform:translateX(-50%); white-space:nowrap; font-family:var(--font-mono,monospace); font-size:9.5px; font-weight:700; color:#fff; background:#A855F7; padding:1px 6px; border-radius:4px; }
 .sd-vbox.bad span{ background:#e5484d; }
+.sd-bbox{ position:absolute; border:2px dashed #FF7A1A; background:rgba(255,122,26,.07); border-radius:4px; pointer-events:none; box-sizing:border-box; z-index:2; }
+.sd-bbox span{ position:absolute; bottom:-17px; left:50%; transform:translateX(-50%); white-space:nowrap; font-family:var(--font-mono,monospace); font-size:9.5px; font-weight:700; color:#fff; background:#FF7A1A; padding:1px 6px; border-radius:4px; }
+.sd-bleed{ width:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; gap:10px; padding:12px; border-radius:12px;
+  background:rgba(255,122,26,.05); border:1px solid rgba(255,122,26,.35); }
+.sd-bleed.on{ background:rgba(255,122,26,.08); border-color:rgba(255,122,26,.6); }
+.sd-bleed-h{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center; cursor:pointer; }
+.sd-bleed-h input{ width:17px; height:17px; accent-color:#FF7A1A; cursor:pointer; margin:0; }
+.sd-bleed-h b{ font-size:13px; color:#f0f0f3; display:flex; align-items:center; gap:7px; }
+.sd-bleed-h b i{ width:12px; height:12px; border-radius:3px; border:2px dashed #FF7A1A; }
+.sd-bleed-h span{ font-size:11px; color:#9a9aa3; }
+.sd-bleed-in{ display:flex; align-items:center; gap:8px; font-size:12px; color:#d6d6db; }
+.sd-bleed-in em{ font-style:normal; color:#9a9aa3; font-size:11px; }
+.sd-input-b{ border-color:rgba(255,122,26,.6) !important; box-shadow:0 0 0 3px rgba(255,122,26,.1) !important; }
+.sd-input-b:focus-within{ border-color:#FF7A1A !important; box-shadow:0 0 0 4px rgba(255,122,26,.28) !important; }
+.sd-input-b input{ width:56px; }
+.sd-input-b b{ color:#ffa25e !important; }
+.sd-bleed-r{ max-width:560px; font-size:12px; line-height:1.5; text-align:center; color:#ffd9bd; background:rgba(255,122,26,.12); border:1px solid rgba(255,122,26,.45); border-radius:8px; padding:8px 12px; }
+.sd-bleed-r b{ color:#fff; }
 .sd-vtest{ width:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; gap:10px; padding:14px 12px 12px; border-radius:12px; position:relative; margin-top:8px;
   background:rgba(168,85,247,.07); border:1px solid rgba(168,85,247,.4); }
 .sd-vtest-h{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; justify-content:center; }

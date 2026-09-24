@@ -5,6 +5,17 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **screendimension: "Margem extra de sangria"** (laranja, abaixo do "Testar
+  um vídeo"). Ligada, abre um campo de porcentagem (10% por padrão) e calcula
+  a área essa porcentagem maior, na mesma proporção (tela na
+  semicircular, timeline na retangular) para produzir o conteúdo com borda
+  sobrando — ex. 2.701 × 1.080 → 2.971 × 1.188, com 135 px em cada lateral e
+  54 px em cima e embaixo fora da tela. Contorno laranja tracejado na tela
+  planificada e no 3D da semicircular, e numa miniatura da timeline na
+  retangular. A porcentagem vai no link (`sangria=15`), na ficha salva e na
+  linha "Sangria (+15%)" do PDF.
+  É só informação extra: nenhum outro número ou desenho muda.
+
 - **screendimension: link compartilhável.** As medidas digitadas vivem na
   URL (`/screendimension/semicircular?altura=3.67&curva=9.18&angulo=180&blend=0&video=2560x1080`,
   e na retangular `altura`, `largura`, `profundidade`, `chao_base`,
