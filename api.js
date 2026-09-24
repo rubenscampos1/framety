@@ -130,6 +130,12 @@
     lookupOsWith:  (token, sky) => fetch('/api/os/lookup?sky=' + encodeURIComponent(sky), { headers: { 'x-auth-token': token } })
       .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw d; return d; }),
 
+    // Screendimension — fichas técnicas salvas
+    getScreendims:   ()      => req('GET',    '/api/screendims'),
+    addScreendim:    (data)  => req('POST',   '/api/screendims', data),
+    updateScreendim: (id, d) => req('PUT',    `/api/screendims/${id}`, d),
+    deleteScreendim: (id)    => req('DELETE', `/api/screendims/${id}`),
+
     // Storyboards — admin
     getStoryboards:   ()      => req('GET',    '/api/storyboards'),
     addStoryboard:    (data)  => req('POST',   '/api/storyboards', data),

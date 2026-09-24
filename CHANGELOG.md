@@ -5,6 +5,39 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **screendimension: aba "Sala semicircular"** (`/screendimension/semicircular`),
+  ao lado da sala retangular. Uma tela só, curva: altura + comprimento medido ao
+  longo da curva → vídeo de largura `comprimento × 1080 / altura` por 1080, a
+  proporção e quantos projetores 1920×1080 cobrem o arco (altura sempre travada
+  em 1080), com a sobreposição que sobra em cada junção. O ângulo do arco e a
+  sobreposição mínima de blend são opcionais; o ângulo só entra no raio, na vista
+  de cima e no 3D.
+- **screendimension: fichas salvas.** "Exportar PDF" abre uma caixa com
+  Cliente e Projeto, que vão para o topo da ficha. Com login do console a ficha
+  fica salva no site (`db.screendims`, rotas `/api/screendims`, só com token);
+  "Fichas salvas" lista todas, com busca, e deixa abrir para editar (a próxima
+  exportação atualiza a mesma), baixar o PDF de novo ou apagar. O PDF não é
+  guardado: guarda-se as medidas digitadas e o ângulo do 3D, e a ficha é
+  remontada na hora. Sem login o PDF só é baixado.
+- **screendimension: campos de medida em destaque** (borda e halo na cor de
+  destaque, selo "preencha as medidas", campos da semicircular numa grade de 4
+  colunas iguais) e o bloco da página centralizado na tela, também na vertical.
+- **screendimension: margem de proteção** nas duas abas — retângulo tracejado
+  âmbar a 10% de cada borda (laterais, topo e base) de cada parede e da tela
+  curva, na tela, no 3D e no PDF. A resolução da área segura (80% × 80%, ex.
+  2.161 × 864 numa tela de 2.701 × 1.080) fica pinada no 3D e aparece nos
+  indicadores e no "Resultado" do PDF. Não muda nenhuma outra conta.
+- **screendimension: altura de cada projeção do chão no 3D.** Quando o chão
+  precisa de mais de um projetor na profundidade, cada faixa ganha a etiqueta
+  `alt …` na borda esquerda. O P1 (junto à entrada) é sempre um 1920×1080
+  inteiro; só as faixas de trás, rumo à parede frontal, são cortadas com o que
+  sobra (chão de 1.920 → 1.080 + 840). A divisão aparece também no indicador
+  do chão e no PDF.
+- **screendimension: PDF virou ficha técnica.** Antes era um print da interface
+  escura; agora é uma folha clara em formato A4 deitado, com logo, os três
+  números principais em destaque, o mapa das telas desenhado (projetores, blend,
+  margem, vista de cima), foto do 3D enquadrada e as tabelas de medidas e
+  resultado. Montada num palco 1:1 fora da página, como no storyboard.
 - **Capas tiradas do próprio player do YouTube, por captura de tela.** "Gerar 8
   capas do player" abre o vídeo em tela cheia, roda, e o navegador fotografa
   cada momento — oito ao longo do vídeo, mais um slider para qualquer segundo.

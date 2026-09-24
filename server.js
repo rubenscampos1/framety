@@ -169,6 +169,7 @@ const SEED = {
     { slug: 'rodolfo', target: 'https://www.google.com.br', category: 'Clientes', clicks: 3, createdAt: '2026-07-06T22:01:58.018Z', lastAccessedAt: '2026-07-06T22:03:46.309Z' },
   ],
   storyboards: [],
+  screendims: [],
 };
 
 async function loadDB() {
@@ -425,6 +426,7 @@ app.use((req, res, next) => {
     else if (/^\/api\/(videos|categories|clients|upload|ai-section|tutorial|reel|partners|site-content|theme|novidades)/.test(p)) domain = 'content';
     else if (/^\/api\/(locucoes|producoes\/status)/.test(p)) domain = 'locucoes';
     else if (/^\/api\/redirects/.test(p)) domain = 'redirects';
+    else if (/^\/api\/screendims/.test(p)) domain = 'screendims';
     if (domain) broadcast(domain);
   });
   next();
@@ -1696,6 +1698,66 @@ function sbPublic(sb) {
 
 const sbFind = (id) => db.storyboards.find(s => s.id === id);
 
+// ── Screendimension: fichas técnicas salvas ──────────────────────────────────
+// O PDF não é guardado: guarda-se o que o gera (medidas digitadas + ângulo do 3D),
+// e o site remonta a ficha para baixar de novo ou editar. Só para quem está logado
+// no console — as fichas levam nome de cliente.
+const SD_MODES = ['rect', 'curve'];
+const SD_INPUT_KEYS = ['A', 'L', 'P', 'fBaseM', 'fDepM', 'C', 'Ang', 'Bl'];
+function sdClean(b, prev = {}) {
+  const inputs = {};
+  const src = b.inputs && typeof b.inputs === 'object' ? b.inputs : (prev.inputs || {});
+  SD_INPUT_KEYS.forEach(k => { if (src[k] != null) inputs[k] = trim(String(src[k]), 20); });
+  const num = (v) => (typeof v === 'number' && isFinite(v) ? v : undefined);
+  const view = b.view && typeof b.view === 'object'
+    ? { theta: num(b.view.theta), phi: num(b.view.phi), dist: num(b.view.dist) }
+    : prev.view || null;
+  return {
+    cliente: typeof b.cliente === 'string' ? trim(b.cliente, 120) : (prev.cliente || ''),
+    projeto: typeof b.projeto === 'string' ? trim(b.projeto, 120) : (prev.projeto || ''),
+    mode: SD_MODES.includes(b.mode) ? b.mode : (prev.mode || 'rect'),
+    inputs, view,
+    resumo: typeof b.resumo === 'string' ? trim(b.resumo, 200) : (prev.resumo || ''),
+  };
+}
+app.get('/api/screendims', requireAuth, (req, res) => res.json(db.screendims));
+app.post('/api/screendims', requireAuth, async (req, res) => {
+  const d = { id: sbId('sd_'), ...sdClean(req.body || {}), createdAt: sbNow(), updatedAt: sbNow() };
+  db.screendims.unshift(d);
+  try { await saveDB(db); }
+  catch (e) {
+    db.screendims = db.screendims.filter(x => x.id !== d.id);
+    console.error('[sd create]', e);
+    return res.status(500).json({ error: 'Não foi possível salvar a ficha.' });
+  }
+  res.json(d);
+});
+app.put('/api/screendims/:id', requireAuth, async (req, res) => {
+  const d = db.screendims.find(x => x.id === req.params.id);
+  if (!d) return res.status(404).json({ error: 'Ficha não encontrada.' });
+  const antes = JSON.stringify(d);
+  Object.assign(d, sdClean(req.body || {}, d), { updatedAt: sbNow() });
+  try { await saveDB(db); }
+  catch (e) {
+    Object.assign(d, JSON.parse(antes));
+    console.error('[sd save]', e);
+    return res.status(500).json({ error: 'Não foi possível gravar. Nada foi alterado — tente de novo.' });
+  }
+  res.json(d);
+});
+app.delete('/api/screendims/:id', requireAuth, async (req, res) => {
+  const antes = db.screendims;
+  db.screendims = db.screendims.filter(x => x.id !== req.params.id);
+  if (db.screendims.length === antes.length) return res.status(404).json({ error: 'Ficha não encontrada.' });
+  try { await saveDB(db); }
+  catch (e) {
+    db.screendims = antes;
+    console.error('[sd delete]', e);
+    return res.status(500).json({ error: 'Não foi possível apagar.' });
+  }
+  res.status(204).end();
+});
+
 app.get('/api/storyboards', requireAuth, (req, res) => {
   res.json(db.storyboards);
 });
@@ -2088,6 +2150,7 @@ setInterval(() => {
   if (!db.locucoesCad) { db.locucoesCad = JSON.parse(JSON.stringify(SEED.locucoesCad)); _migrated = true; }
   if (!db.linkRedirects) { db.linkRedirects = JSON.parse(JSON.stringify(SEED.linkRedirects)); _migrated = true; }
   if (!db.storyboards) { db.storyboards = []; _migrated = true; }
+  if (!db.screendims)  { db.screendims  = []; _migrated = true; }
   // Chaves novas: o banco gravado não as tem, e loadDB devolve o que está
   // gravado — sem estas linhas elas só nasceriam na primeira gravação pelo
   // console. Cada uma só preenche quando falta, então nada existente é tocado.
