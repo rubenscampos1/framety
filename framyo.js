@@ -618,6 +618,71 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     });
   }));
 
+  // ── busca, player, versões e comentários ────────────────────────────────────
+  // Busca no projeto inteiro (subpastas, vídeos e pilhas). A busca do Frame.io
+  // é da conta toda; o filtro pelo projeto é feito aqui.
+  r.get('/busca', autenticar, envolve(async (req, res) => {
+    const conta = fio.conta();
+    const q = limpaTexto(req.query.q, 200);
+    const projeto = String(req.query.projeto_id || '');
+    if (q.length < 2) return res.json({ itens: [] });
+    const achados = [];
+    let proximo = `/accounts/${conta}/search?page_size=100`;
+    for (let i = 0; proximo && i < 5 && achados.length < 200; i++) {
+      const j = await fio.api('POST', proximo, { query: q, engine: 'lexical',
+        filters: { projects: false, folders: true, files_and_version_stacks: true } });
+      for (const x of j.data || []) {
+        const a = x.result;
+        if (a && (!projeto || a.project_id === projeto)) achados.push(a);
+      }
+      proximo = j.links && j.links.next ? j.links.next.replace(/^\/v4/, '') : null;
+    }
+    res.json({ itens: achados.map(item) });
+  }));
+
+  // Link para tocar (a versão leve do Frame.io, sem baixar o original) e o
+  // que se sabe do quadro por segundo (para levar o vídeo até um comentário).
+  r.get('/midia/:id', autenticar, envolve(async (req, res) => {
+    const conta = fio.conta();
+    const a = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(req.params.id)}` +
+      '?include=metadata,media_links.efficient,media_links.high_quality,media_links.video_h264_180,media_links.original')).data;
+    const ml = a.media_links || {};
+    const link = (m) => m && (m.url || m.inline_url || m.download_url);
+    const meta = {};
+    for (const m of a.metadata || []) meta[m.field_definition_name] = m.value;
+    res.json({
+      arquivo: item(a), metadados: meta,
+      video: link(ml.efficient) || link(ml.high_quality) || link(ml.video_h264_180) || null,
+      original: link(ml.original) || null,
+    });
+  }));
+
+  // Versões de uma pilha, da mais antiga (v1) para a mais nova.
+  r.get('/versoes/:id', autenticar, envolve(async (req, res) => {
+    const conta = fio.conta();
+    const lista = await fio.tudo(`/accounts/${conta}/version_stacks/${encodeURIComponent(req.params.id)}/children?include=media_links.thumbnail,creator`);
+    const versoes = lista.filter((x) => x.type === 'file')
+      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+      .map((x, i) => Object.assign(item(x), { numero: i + 1, criado_em: x.created_at,
+                                              criador: x.creator ? x.creator.name || x.creator.email : null }));
+    res.json({ versoes });
+  }));
+
+  // Todos os comentários de um vídeo (os antigos também), na ordem do vídeo.
+  r.get('/comentarios/:id', autenticar, envolve(async (req, res) => {
+    const conta = fio.conta();
+    const lista = await fio.tudo(`/accounts/${conta}/files/${encodeURIComponent(req.params.id)}/comments?include=owner&timestamp_as_timecode=false`);
+    const comentarios = lista.map((c) => ({
+      id: c.id, texto: c.text || '', criado_em: c.created_at,
+      autor: (c.owner && (c.owner.name || c.owner.email)) || 'Alguém',
+      avatar: c.owner && c.owner.avatar_url || null,
+      quadro: typeof c.timestamp === 'number' ? c.timestamp : null,
+      duracao: c.duration || null, concluido: !!c.completed_at,
+      anotacao: !!c.annotation,
+    })).sort((a, b) => (a.quadro ?? 1e12) - (b.quadro ?? 1e12) || String(a.criado_em).localeCompare(String(b.criado_em)));
+    res.json({ comentarios });
+  }));
+
   // ── envio de versões ────────────────────────────────────────────────────────
   // 1) o programa pede as URLs; 2) sobe as partes direto para o Frame.io;
   // 3) avisa que terminou, e aqui o arquivo vira nova versão (se for o caso).
