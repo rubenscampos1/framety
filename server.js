@@ -402,6 +402,16 @@ app.use(compression({
   },
 }));
 
+// ── Framyo (programa do Frame.io) ─────────────────────────────────────────────
+// Tudo em framyo.js: rotas só em /api/framyo, tabela própria (framyo_store) e
+// seu próprio leitor de JSON — por isso entra antes do express.json do site.
+// Do Framety ele só usa a conexão do banco e a senha do console (para criar o
+// primeiro admin do Framyo).
+app.use('/api/framyo', require('./framyo').roteador({
+  pool, dir: DIR,
+  senhaDoConsoleConfere: (s) => !!(db && db.settings) && verifyPassword(s, db.settings.admin_pass),
+}));
+
 // O console grava o deck inteiro num PUT só (páginas, textos e o histórico de
 // versões de cada cena). Um storyboard longo passa folgado dos 100kb que o
 // express assume por padrão, e o pedido morreria com 413 no meio do trabalho.

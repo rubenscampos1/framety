@@ -2,6 +2,8 @@ node_modules/
 uploads/
 framety-db.json
 framety-db.json.tmp
+framyo-db.json
+framyo-db.json.tmp
 _restore_*/
 _backups/
 .env
