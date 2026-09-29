@@ -379,6 +379,19 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   r.put('/frameio/segredo', autenticar, soAdmin, envolve(async (req, res) => {
     const s = limpaTexto((req.body || {}).client_secret, 300);
     if (s.length < 10 || /s/.test(s)) throw falha(400, 'Esse Client Secret não parece válido. Copie de novo do Adobe Developer Console.');
+    if (s.toLowerCase() === CLIENT_ID.toLowerCase()) {
+      throw falha(400, 'Isso é o Client ID, não o Client Secret. No Adobe Developer Console, clique em “Retrieve client secret” e copie o que aparecer.');
+    }
+    // Confere com a Adobe antes de guardar: com um código de login falso, um
+    // secret errado volta "invalid_client"; o certo passa dessa checagem.
+    const r = await fetch(`${IMS}/token/v3`, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'authorization_code', client_id: CLIENT_ID, client_secret: s, code: 'framyo-conferencia' }),
+    }).then((x) => x.json()).catch(() => null);
+    if (r && r.error === 'invalid_client') {
+      throw falha(400, 'A Adobe recusou este Client Secret. Confira se ele é do projeto do Framyo (Client ID ' + CLIENT_ID.slice(0, 6) +
+        '…) e se foi copiado inteiro' + (s.startsWith('p8e-') ? '.' : ' — os da Adobe costumam começar com “p8e-”.'));
+    }
     D().client_secret = s;
     await loja.salvar();
     res.json({ ok: true, segredo_cadastrado: true });
@@ -413,7 +426,10 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     } catch (e) {
       console.error('[framyo] callback:', e.message);
       await loja.salvar();
-      res.status(502).send(pagina('Não foi possível conectar', e.message));
+      const msg = /client_secret/i.test(e.message)
+        ? 'A Adobe recusou o Client Secret cadastrado. No Framyo, abra Admin > Frame.io e troque pelo Client Secret certo.'
+        : e.message;
+      res.status(502).send(pagina('Não foi possível conectar', msg));
     }
   }));
 
