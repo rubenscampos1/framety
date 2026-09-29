@@ -111,7 +111,9 @@ function criarLoja({ pool, arquivo }) {
 
 // ── Frame.io ──────────────────────────────────────────────────────────────────
 function criarFrameio(loja) {
-  const segredo = () => process.env.FRAMEIO_CLIENT_SECRET || '';
+  // Client Secret da Adobe: a variável do Render vale primeiro; sem ela, o que
+  // o admin cadastrou pelo Framyo (Admin > Frame.io). Nunca sai do servidor.
+  const segredo = () => process.env.FRAMEIO_CLIENT_SECRET || loja.dados.client_secret || '';
 
   async function trocarToken(parametros) {
     const corpo = new URLSearchParams(Object.assign({ client_id: CLIENT_ID, client_secret: segredo() }, parametros));
@@ -276,6 +278,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   r.get('/eu', autenticar, (req, res) => {
     res.json({ usuario: usuarioPublico(req.usuario), config: D().config, seq: D().seq,
                frameio_conectado: !!(D().frameio && D().frameio.refresh_token),
+               segredo_cadastrado: !!(process.env.FRAMEIO_CLIENT_SECRET || D().client_secret),
                frameio_conta: D().frameio ? D().frameio.conta_nome || null : null });
   });
 
@@ -360,7 +363,9 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
 
   // ── conectar a conta Frame.io (admin) ───────────────────────────────────────
   r.post('/frameio/iniciar', autenticar, soAdmin, envolve(async (req, res) => {
-    if (!process.env.FRAMEIO_CLIENT_SECRET) throw falha(500, 'Falta a variável FRAMEIO_CLIENT_SECRET no servidor.');
+    if (!process.env.FRAMEIO_CLIENT_SECRET && !D().client_secret) {
+      throw falha(409, 'Cadastre primeiro o Client Secret da Adobe (Admin > Frame.io).');
+    }
     const estado = crypto.randomBytes(24).toString('hex');
     const limite = Date.now() - 15 * 60000;
     for (const [k, v] of Object.entries(D().oauth_estados)) if (Date.parse(v.criado_em) < limite) delete D().oauth_estados[k];
@@ -369,6 +374,14 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const q = new URLSearchParams({ client_id: CLIENT_ID, redirect_uri: RETORNO, scope: ESCOPOS,
                                     response_type: 'code', state: estado });
     res.json({ url: `${IMS}/authorize/v2?${q}` });
+  }));
+
+  r.put('/frameio/segredo', autenticar, soAdmin, envolve(async (req, res) => {
+    const s = limpaTexto((req.body || {}).client_secret, 300);
+    if (s.length < 10 || /s/.test(s)) throw falha(400, 'Esse Client Secret não parece válido. Copie de novo do Adobe Developer Console.');
+    D().client_secret = s;
+    await loja.salvar();
+    res.json({ ok: true, segredo_cadastrado: true });
   }));
 
   function pagina(titulo, texto) {
