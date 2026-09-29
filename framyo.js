@@ -66,6 +66,7 @@ const VAZIO = () => ({
   config: { notificacoes: 'todos' },   // 'todos' | 'atribuidos'
   frameio: null,               // { access_token, refresh_token, expira_em, conta_id, conta_nome, webhooks: [] }
   oauth_estados: {},           // state -> { criado_em } (login em andamento)
+  responsaveis: {},            // id do vídeo ou da pilha de versões -> id do usuário
   eventos: [],
   seq: 0,
 });
@@ -212,6 +213,16 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   });
   const falha = (status, msg) => Object.assign(new Error(msg), { status });
 
+  // Responsável por um vídeo: um dos usuários ativos do Framyo.
+  const pessoa = (uid) => {
+    const u = uid && D().usuarios.find((x) => x.id === uid && x.ativo !== false);
+    return u ? { id: u.id, nome: u.nome, usuario: u.usuario } : null;
+  };
+  const responsavelDe = (...ids) => {
+    for (const id of ids) { const p = id && pessoa(D().responsaveis[id]); if (p) return p; }
+    return null;
+  };
+
   // ── sessão ──────────────────────────────────────────────────────────────────
   function autenticar(req, res, next) {
     const t = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -302,6 +313,25 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   }
   const admins = () => D().usuarios.filter((x) => x.admin && x.ativo !== false);
 
+  // Todos os usuários ativos (sem senha nem papel) — para escolher o responsável.
+  r.get('/pessoas', autenticar, (req, res) => {
+    res.json({ pessoas: D().usuarios.filter((x) => x.ativo !== false).map((x) => pessoa(x.id)) });
+  });
+
+  r.put('/responsaveis/:id', autenticar, envolve(async (req, res) => {
+    const alvo = limpaTexto(req.params.id, 80);
+    const uid = (req.body || {}).usuario_id;
+    if (!alvo) throw falha(400, 'Vídeo inválido.');
+    if (uid) {
+      if (!pessoa(uid)) throw falha(404, 'Esse usuário não existe ou está desativado.');
+      D().responsaveis[alvo] = uid;
+    } else {
+      delete D().responsaveis[alvo];
+    }
+    await loja.salvar();
+    res.json({ responsavel: pessoa(uid) });
+  }));
+
   r.get('/usuarios', autenticar, soAdmin, (req, res) => res.json({ usuarios: D().usuarios.map(usuarioPublico) }));
 
   r.post('/usuarios', autenticar, soAdmin, envolve(async (req, res) => {
@@ -346,6 +376,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     if (!u) throw falha(404, 'Usuário não encontrado.');
     if (u.admin && admins().length <= 1) throw falha(400, 'Precisa sobrar pelo menos um administrador ativo.');
     D().usuarios = D().usuarios.filter((x) => x.id !== u.id);
+    for (const [k, v] of Object.entries(D().responsaveis || {})) if (v === u.id) delete D().responsaveis[k];
     for (const [k, s] of Object.entries(D().sessoes)) if (s.usuario_id === u.id) delete D().sessoes[k];
     await loja.salvar();
     res.json({ ok: true });
@@ -497,6 +528,8 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     if (vistos.size > 5000) vistos.clear();
     const c = (await fio.api('GET', `/accounts/${conta}/comments/${id}?include=owner`)).data;
     const arq = (await fio.api('GET', `/accounts/${conta}/files/${c.file_id}?include=project`)).data;
+    // O responsável pode estar no arquivo ou na pilha de versões em que ele está.
+    const resp = responsavelDe(arq.id, arq.parent_id);
     D().seq += 1;
     D().eventos.push({
       seq: D().seq, tipo: 'comentario', comentario_id: id, criado_em: c.created_at || agora(),
@@ -504,19 +537,22 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       arquivo_id: arq.id, arquivo_nome: arq.name, view_url: arq.view_url,
       projeto_id: arq.project_id, projeto_nome: (arq.project && arq.project.name) || '',
       timestamp: c.timestamp == null ? null : c.timestamp,
+      responsavel_id: resp ? resp.id : null, responsavel: resp ? resp.usuario : null,
     });
     if (D().eventos.length > MAX_EVENTOS) D().eventos.splice(0, D().eventos.length - MAX_EVENTOS);
     await loja.salvar();
   }
 
   // O programa pergunta a cada 5 s: "o que chegou depois do nº X?".
-  // No modo "atribuidos", cada um só vê os comentários dos seus projetos.
+  // No modo "atribuidos", cada um recebe os comentários dos vídeos de que é
+  // responsável; nos vídeos sem responsável, os dos projetos atribuídos a ele.
   r.get('/eventos', autenticar, (req, res) => {
     const desde = Number(req.query.desde) || 0;
     const u = req.usuario;
     const filtra = D().config.notificacoes === 'atribuidos';
     const meus = new Set(u.projetos || []);
-    const eventos = D().eventos.filter((e) => e.seq > desde && (!filtra || meus.has(e.projeto_id))).slice(-100);
+    const meu = (e) => (e.responsavel_id ? e.responsavel_id === u.id : meus.has(e.projeto_id));
+    const eventos = D().eventos.filter((e) => e.seq > desde && (!filtra || meu(e))).slice(-100);
     res.json({ seq: D().seq, modo: D().config.notificacoes, eventos });
   });
 
@@ -550,6 +586,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     atualizado_em: x.updated_at, tamanho: x.file_size, media_type: x.media_type, status: x.status,
     versao_atual: x.head_version ? { id: x.head_version.id, nome: x.head_version.name } : undefined,
     miniatura: miniatura(x) || miniatura(x.head_version),
+    responsavel: responsavelDe(x.id),
   });
 
   r.get('/pastas/:id', autenticar, envolve(async (req, res) => {
@@ -576,6 +613,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     for (const m of a.metadata || []) meta[m.field_definition_name] = m.value;
     res.json({
       arquivo: item(a), pilha_id: pilha ? pilha.id : null, versoes, metadados: meta,
+      responsavel: responsavelDe(pilha ? pilha.id : a.id),
       original: a.media_links && a.media_links.original ? a.media_links.original.download_url : null,
     });
   }));
@@ -617,6 +655,12 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
         const p = await fio.api('POST', `/accounts/${conta}/folders/${orig.parent_id}/version_stacks`,
                                 { data: { file_ids: [base, novo] } });
         resultado.pilha_id = p.data && p.data.id;
+        // O vídeo virou pilha de versões: o responsável vai junto.
+        if (resultado.pilha_id && D().responsaveis[base]) {
+          D().responsaveis[resultado.pilha_id] = D().responsaveis[base];
+          delete D().responsaveis[base];
+          await loja.salvar();
+        }
       }
     }
     const a = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(novo)}`)).data;
