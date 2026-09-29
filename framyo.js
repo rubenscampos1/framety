@@ -519,6 +519,9 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     }
   });
 
+  // Quem comenta por link de revisão (cliente sem conta) vem sem dono.
+  const autorDe = (c) => (c.owner && (c.owner.name || c.owner.email)) || (c.owner ? 'Usuário do Frame.io' : 'Revisor externo');
+
   const vistos = new Set();                    // o Frame.io pode repetir um aviso
   async function registrarComentario(b) {
     const conta = (b.account && b.account.id) || fio.conta();
@@ -533,7 +536,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     D().seq += 1;
     D().eventos.push({
       seq: D().seq, tipo: 'comentario', comentario_id: id, criado_em: c.created_at || agora(),
-      texto: c.text || '', autor: (c.owner && (c.owner.name || c.owner.email)) || 'Alguém',
+      texto: c.text || '', autor: autorDe(c),
       arquivo_id: arq.id, arquivo_nome: arq.name, view_url: arq.view_url,
       projeto_id: arq.project_id, projeto_nome: (arq.project && arq.project.name) || '',
       timestamp: c.timestamp == null ? null : c.timestamp,
@@ -668,17 +671,19 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     res.json({ versoes });
   }));
 
-  // Todos os comentários de um vídeo (os antigos também), na ordem do vídeo.
+  // Todos os comentários de um vídeo (os antigos também), na ordem do vídeo,
+  // com as respostas de cada um.
   r.get('/comentarios/:id', autenticar, envolve(async (req, res) => {
     const conta = fio.conta();
-    const lista = await fio.tudo(`/accounts/${conta}/files/${encodeURIComponent(req.params.id)}/comments?include=owner&timestamp_as_timecode=false`);
+    const lista = await fio.tudo(`/accounts/${conta}/files/${encodeURIComponent(req.params.id)}/comments?include=owner,replies&timestamp_as_timecode=false`);
     const comentarios = lista.map((c) => ({
       id: c.id, texto: c.text || '', criado_em: c.created_at,
-      autor: (c.owner && (c.owner.name || c.owner.email)) || 'Alguém',
+      autor: autorDe(c),
       avatar: c.owner && c.owner.avatar_url || null,
       quadro: typeof c.timestamp === 'number' ? c.timestamp : null,
       duracao: c.duration || null, concluido: !!c.completed_at,
       anotacao: !!c.annotation,
+      respostas: (c.replies || []).map((x) => ({ id: x.id, texto: x.text || '', autor: autorDe(x), criado_em: x.created_at })),
     })).sort((a, b) => (a.quadro ?? 1e12) - (b.quadro ?? 1e12) || String(a.criado_em).localeCompare(String(b.criado_em)));
     res.json({ comentarios });
   }));
