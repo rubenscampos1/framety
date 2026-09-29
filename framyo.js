@@ -510,15 +510,22 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     res.json({ projetos: await projetosVisiveis(req.usuario) });
   }));
 
+  // Miniatura (URL assinada, vence em algumas horas): do arquivo ou, numa
+  // pilha de versões, da versão mais recente.
+  const miniatura = (x) => {
+    const t = x && x.media_links && x.media_links.thumbnail;
+    return t ? t.url || t.download_url || t.inline_url || null : null;
+  };
   const item = (x) => ({
     id: x.id, tipo: x.type, nome: x.name, pai: x.parent_id, projeto_id: x.project_id, view_url: x.view_url,
     atualizado_em: x.updated_at, tamanho: x.file_size, media_type: x.media_type, status: x.status,
     versao_atual: x.head_version ? { id: x.head_version.id, nome: x.head_version.name } : undefined,
+    miniatura: miniatura(x) || miniatura(x.head_version),
   });
 
   r.get('/pastas/:id', autenticar, envolve(async (req, res) => {
     const conta = fio.conta();
-    const itens = await fio.tudo(`/accounts/${conta}/folders/${encodeURIComponent(req.params.id)}/children`);
+    const itens = await fio.tudo(`/accounts/${conta}/folders/${encodeURIComponent(req.params.id)}/children?include=media_links.thumbnail`);
     res.json({ itens: itens.map(item) });
   }));
 
