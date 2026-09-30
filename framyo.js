@@ -31,6 +31,7 @@ const URL_PUBLICA = (process.env.FRAMYO_URL_PUBLICA || 'https://www.framety.com.
 const RETORNO = `${URL_PUBLICA}/api/framyo/frameio/callback`;
 const EVENTOS_WEBHOOK = ['comment.created'];
 const MAX_EVENTOS = 3000;             // o feed guarda os últimos N comentários
+const ESPERA_NOME_MS = Number(process.env.FRAMYO_TESTE_ESPERA_NOME_MS) || 4000;   // nova tentativa do nome do revisor
 const SESSAO_DIAS = 90;
 
 // ── utilidades ────────────────────────────────────────────────────────────────
@@ -533,6 +534,12 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const arq = (await fio.api('GET', `/accounts/${conta}/files/${c.file_id}?include=project`)).data;
     // O responsável pode estar no arquivo ou na pilha de versões em que ele está.
     const resp = responsavelDe(arq.id, arq.parent_id);
+    // Cliente pelo link de revisão: o nome vem da atividade do link, que às
+    // vezes aparece um instante depois do aviso.
+    for (let i = 0; i < 2 && !c.owner && !c._nome; i++) {
+      if (i) await new Promise((ok) => setTimeout(ok, ESPERA_NOME_MS));
+      await nomearRevisores(conta, arq.id, [c], true).catch(() => {});
+    }
     D().seq += 1;
     D().eventos.push({
       seq: D().seq, tipo: 'comentario', comentario_id: id, criado_em: c.created_at || agora(),
@@ -707,30 +714,40 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // Quem comenta por link de revisão (cliente sem conta) vem sem "owner" no
   // comentário. O nome está na atividade do link ("comment_created", com nome
   // e e-mail), sem dizer qual comentário: cruza pelo vídeo e pelo horário.
-  const cacheAtividade = new Map();              // projeto -> { em, lista }
-  async function atividadeDeComentarios(conta, projeto) {
-    const c = cacheAtividade.get(projeto);
-    if (c && Date.now() - c.em < 3 * 60000) return c.lista;
-    const lista = [];
-    const shares = await fio.tudo(`/accounts/${conta}/projects/${projeto}/shares`).catch(() => []);
-    for (const sh of shares.slice(0, 40)) {
-      const at = await fio.tudo(`/accounts/${conta}/shares/${sh.id}/activities?include=user`).catch(() => []);
-      for (const a of at) {
-        if (a.type === 'comment_created' && a.user && (a.user.name || a.user.email)) {
-          lista.push({ asset: a.asset_id, em: Date.parse(a.inserted_at), nome: a.user.name || a.user.email });
-        }
-      }
+  // Um projeto pode ter dezenas de links: lê primeiro os vistos por último e
+  // pula os que ninguém abriu desde antes do comentário.
+  const cacheLinks = new Map();                  // projeto -> { em, lista }
+  const cacheAtividade = new Map();              // link -> { em, lista }
+  async function atividadeDeComentarios(conta, projeto, desde, fresco) {
+    let s = cacheLinks.get(projeto);
+    if (!s || fresco || Date.now() - s.em > 3 * 60000) {
+      s = { em: Date.now(), lista: await fio.tudo(`/accounts/${conta}/projects/${projeto}/shares`).catch(() => []) };
+      cacheLinks.set(projeto, s);
     }
-    cacheAtividade.set(projeto, { em: Date.now(), lista });
+    const visto = (sh) => Date.parse(sh.last_viewed_at || '') || 0;
+    const links = s.lista.filter((sh) => !visto(sh) || visto(sh) >= desde - 60000)
+      .sort((a, b) => visto(b) - visto(a)).slice(0, 40);
+    const lista = [];
+    for (const sh of links) {
+      let c = cacheAtividade.get(sh.id);
+      if (!c || fresco || Date.now() - c.em > 3 * 60000) {
+        const at = await fio.tudo(`/accounts/${conta}/shares/${sh.id}/activities?include=user`).catch(() => []);
+        c = { em: Date.now(), lista: at.filter((a) => a.type === 'comment_created' && a.user && (a.user.name || a.user.email))
+          .map((a) => ({ asset: a.asset_id, em: Date.parse(a.inserted_at), nome: a.user.name || a.user.email })) };
+        cacheAtividade.set(sh.id, c);
+      }
+      lista.push(...c.lista);
+    }
     return lista;
   }
-  async function nomearRevisores(conta, arquivo, comentarios) {
+  async function nomearRevisores(conta, arquivo, comentarios, fresco) {
     const sem = comentarios.filter((c) => !c.owner);
     if (!sem.length) return;
     let a;
     try { a = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(arquivo)}`)).data; } catch { return; }
     const alvos = new Set([a.id, a.parent_id]);
-    const atividade = (await atividadeDeComentarios(conta, a.project_id)).filter((x) => alvos.has(x.asset));
+    const desde = Math.min(...sem.map((c) => Date.parse(c.created_at) || Date.now()));
+    const atividade = (await atividadeDeComentarios(conta, a.project_id, desde, fresco)).filter((x) => alvos.has(x.asset));
     const usados = new Set();
     for (const c of sem) {
       const t = Date.parse(c.created_at);
@@ -742,28 +759,6 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       if (melhor) { usados.add(melhor.i); c._nome = melhor.nome; }
     }
   }
-
-  // TEMPORÁRIO (diagnóstico dos nomes de revisor): só admin, só leitura.
-  r.get('/diagnostico/nomes/:id', autenticar, soAdmin, envolve(async (req, res) => {
-    const conta = fio.conta();
-    const a = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(req.params.id)}`)).data;
-    const com = await fio.tudo(`/accounts/${conta}/files/${encodeURIComponent(req.params.id)}/comments?include=owner`);
-    const shares = await fio.tudo(`/accounts/${conta}/projects/${a.project_id}/shares`).catch((e) => ({ erro: e.message }));
-    const saida = { arquivo: { id: a.id, pai: a.parent_id, projeto: a.project_id },
-      comentarios: com.map((c) => ({ em: c.created_at, dono: !!c.owner, owner_id: c.owner_id || null, chaves: Object.keys(c) })),
-      shares: Array.isArray(shares) ? shares.length : shares, atividades: [] };
-    if (Array.isArray(shares)) {
-      for (const sh of shares.slice(0, 80)) {
-        const at = await fio.tudo(`/accounts/${conta}/shares/${sh.id}/activities?include=user`).catch((e) => [{ erro: e.message }]);
-        const tipos = {};
-        for (const x of at) tipos[x.type || 'erro'] = (tipos[x.type || 'erro'] || 0) + 1;
-        const cc = at.filter((x) => x.type === 'comment_created').slice(0, 6)
-          .map((x) => ({ asset: x.asset_id, em: x.inserted_at, user: x.user ? { nome: x.user.name, email: !!x.user.email } : null, user_id: x.user_id }));
-        saida.atividades.push({ share: sh.id, nome: sh.name, criado: sh.created_at, tipos, cc, erro: at[0] && at[0].erro });
-      }
-    }
-    res.json(saida);
-  }));
 
   // Todos os comentários de um vídeo (os antigos também), na ordem do vídeo,
   // com as respostas de cada um.
