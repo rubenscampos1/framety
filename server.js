@@ -10,6 +10,9 @@ const { Pool } = require('pg');
 const sheets = require('./sheets');
 
 const app = express();
+// No Render o pedido chega por um proxy: sem isto, req.ip é o IP do proxy e os
+// limites de tentativas valem para todo mundo junto (e não para quem erra).
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const DIR = __dirname;
 // Uploads live on a persistent disk in production (Render disk mounted at

@@ -273,7 +273,8 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // ── sessão ──────────────────────────────────────────────────────────────────
   function autenticar(req, res, next) {
     const t = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-    const s = t && D().sessoes[hashToken(t)];
+    let s = t && D().sessoes[hashToken(t)];
+    if (s && Date.parse(s.criado_em) < Date.now() - SESSAO_DIAS * 864e5) { delete D().sessoes[hashToken(t)]; s = null; }   // vencida
     const u = s && D().usuarios.find((x) => x.id === s.usuario_id && x.ativo !== false);
     if (!u) return res.status(401).json({ erro: 'Sessão expirada. Entre de novo.' });
     req.usuario = u;
@@ -299,13 +300,15 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   }
 
   const tentativas = new Map();
+  // Até 10 tentativas erradas por IP a cada 15 min (as certas não contam).
   function limiteDeLogin(ip) {
     const t = Date.now();
     const lista = (tentativas.get(ip) || []).filter((x) => t - x < 15 * 60000);
-    lista.push(t);
     tentativas.set(ip, lista);
-    return lista.length <= 10;
+    if (tentativas.size > 10000) tentativas.clear();
+    return lista.length < 10;
   }
+  const errou = (ip) => (tentativas.get(ip) || tentativas.set(ip, []).get(ip)).push(Date.now());
 
   r.get('/estado', (req, res) => {
     res.json({ ok: true, precisa_configurar: D().usuarios.length === 0,
@@ -317,7 +320,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   r.post('/configurar', envolve(async (req, res) => {
     if (D().usuarios.length) throw falha(409, 'O Framyo já foi configurado.');
     if (!limiteDeLogin(req.ip)) throw falha(429, 'Muitas tentativas. Espere 15 minutos.');
-    if (!senhaDoConsoleConfere(String((req.body || {}).senha_framety || ''))) throw falha(403, 'Senha do console do Framety incorreta.');
+    if (!senhaDoConsoleConfere(String((req.body || {}).senha_framety || ''))) { errou(req.ip); throw falha(403, 'Senha do console do Framety incorreta.'); }
     const u = novoUsuario(req.body || {}, true);
     D().usuarios.push(u);
     const token = abrirSessao(u);
@@ -329,7 +332,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     if (!limiteDeLogin(req.ip)) throw falha(429, 'Muitas tentativas. Espere 15 minutos.');
     const apelido = limpaApelido((req.body || {}).usuario);
     const u = D().usuarios.find((x) => x.usuario === apelido);
-    if (!u || u.ativo === false || !confereSenha((req.body || {}).senha || '', u.senha)) throw falha(401, 'Usuário ou senha incorretos.');
+    if (!u || u.ativo === false || !confereSenha((req.body || {}).senha || '', u.senha)) { errou(req.ip); throw falha(401, 'Usuário ou senha incorretos.'); }
     const token = abrirSessao(u);
     await loja.salvar();
     res.json({ token, usuario: usuarioPublico(u), config: D().config });
