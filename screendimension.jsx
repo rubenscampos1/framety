@@ -574,7 +574,8 @@ const SDIn = ({ value, onChange, placeholder }) => (
 );
 
 /* Timeline da sala retangular em miniatura: as três paredes em cima, o chão
-   centrado embaixo da central, e o vídeo testado por cima em roxo. */
+   centrado embaixo da central, e o vídeo testado por cima em roxo — só na
+   faixa das paredes (o chão fica de fora do teste). */
 const SDTimelineFit = ({ R, fit }) => {
   const TW = R.timelineW, TH = R.timelineH;
   const box = Math.max(TW, fit.sw);
@@ -593,7 +594,7 @@ const SDTimelineFit = ({ R, fit }) => {
           <div key={n} className={`sd-tl-p ${n === "Chão" ? "f" : n === "Central" ? "c" : ""}`} style={{ left: x * k, top: y * k, width: w * k, height: h * k }}><span>{n}</span></div>
         ))}
       </div>
-      <div className={`sd-vbox ${fit.ok ? "" : "bad"}`} style={{ left: (box - fit.sw) / 2 * k, width: fit.sw * k, top: 0, bottom: 0 }}><span>vídeo {sdFmt(fit.vw)} × {sdFmt(fit.vh)}</span></div>
+      <div className={`sd-vbox ${fit.ok ? "" : "bad"}`} style={{ left: (box - fit.sw) / 2 * k, width: fit.sw * k, top: 0, bottom: "auto", height: R.H * k }}><span>vídeo {sdFmt(fit.vw)} × {sdFmt(fit.vh)}</span></div>
     </div>
   );
 };
@@ -662,7 +663,8 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const projCount = (w, h) => Math.max(1, Math.ceil(w / 1920)) * Math.max(1, Math.ceil(h / 1080));
   const nProj = projCount(R.Wc, R.H) + projCount(R.Ws, R.H) * 2 + projCount(Math.max(R.fBase, R.fTop), R.fDepth);
   const typed = (v, res, hint) => (sdNum(v) ? `${sdM(res)} m` : `${sdM(res)} m  ·  ${hint}`);
-  const fit = sdFit(R.timelineW, R.timelineH, Vw, Vh);
+  // o vídeo testado vai só nas três telas frontais (o chão tem conteúdo próprio)
+  const fit = sdFit(R.frontTotalW, R.H, Vw, Vh);
   const bleed = sdBleed(R.timelineW, R.timelineH, sdBleedPct(SgP));
   docRef.current = {
     mode: "rect", raw: { A, L, P, fBaseM, fDepM, Vw, Vh, Sg: sgRaw },   // o que a ficha salva guarda
@@ -751,7 +753,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
                 <span className="sd-res2">base {sdFmt(R.fBase)} · topo {sdFmt(R.fTop)}</span></div>
             </div>
             <div className="sd-safekey"><i />margem de proteção · 10% de cada borda — concentre textos e conteúdo dentro do tracejado</div>
-            <SDVideoTest vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} fit={fit} areaLbl={`timeline de ${sdFmt(R.timelineW)} × ${sdFmt(R.timelineH)} px`}>
+            <SDVideoTest vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} fit={fit} areaLbl={`projeção frontal de ${sdFmt(R.frontTotalW)} × ${sdFmt(R.H)} px (sem o chão)`}>
               {fit && <SDTimelineFit R={R} fit={fit} />}
             </SDVideoTest>
             <SDBleed on={Sg} setOn={setSg} pct={SgP} setPct={setSgP} bleed={bleed} areaLbl="timeline">
