@@ -1077,6 +1077,88 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     res.json(resultado);
   }));
 
+  // ── atualização do programa ─────────────────────────────────────────────────
+  // O admin publica o instalador novo pelo Framyo (Admin › Atualizações): ele
+  // vai em partes de até 8 MB (o Cloudinary limita arquivos "raw" a 10 MB no
+  // plano grátis) para o Cloudinary, e o servidor guarda o manifesto: versão,
+  // tamanho, SHA-256 e as URLs das partes. Os programas perguntam aqui se há
+  // versão nova, baixam as partes, juntam, conferem o SHA-256 e instalam por
+  // cima. Só a última versão fica na nuvem: ao publicar, a anterior é apagada.
+  const PARTE_MAX = 9 * 1024 * 1024;
+  const versaoValida = (v) => /^\d{1,3}(\.\d{1,3}){1,3}$/.test(String(v || ''));
+  const partesLocais = new Map();                // só testes (sem Cloudinary): versão -> [Buffer]
+  const nuvem = () => (process.env.CLOUDINARY_URL ? require('cloudinary').v2 : null);
+  const pastaNuvem = (v) => `framyo/atualizacoes/${v}`;
+
+  r.get('/atualizacao', autenticar, (req, res) => {
+    const a = D().atualizacao;
+    res.json(a ? { versao: a.versao, nome: a.nome, tamanho: a.tamanho, sha256: a.sha256, notas: a.notas || '',
+                   publicado_em: a.publicado_em, partes: a.partes.map((p) => ({ url: p.url, tamanho: p.tamanho })) } : { versao: null });
+  });
+
+  r.post('/atualizacao/partes/:versao/:n', autenticar, soAdmin, express.raw({ type: 'application/octet-stream', limit: PARTE_MAX + 1024 }),
+    envolve(async (req, res) => {
+      const { versao } = req.params, n = Number(req.params.n);
+      if (!versaoValida(versao) || !Number.isInteger(n) || n < 0 || n > 60) throw falha(400, 'Versão ou parte inválida.');
+      const dados = req.body;
+      if (!Buffer.isBuffer(dados) || !dados.length) throw falha(400, 'Parte vazia.');
+      if (dados.length > PARTE_MAX) throw falha(413, 'Parte grande demais (máx. 9 MB).');
+      const c = nuvem();
+      let url;
+      if (c) {
+        const r2 = await new Promise((ok, erro) => {
+          c.uploader.upload_stream({ resource_type: 'raw', public_id: `${pastaNuvem(versao)}/parte-${String(n).padStart(2, '0')}.bin`,
+                                     overwrite: true, invalidate: true }, (e, x) => (e ? erro(e) : ok(x))).end(dados);
+        }).catch((e) => { throw falha(502, 'O Cloudinary recusou a parte: ' + e.message); });
+        url = r2.secure_url;
+      } else {
+        const lista = partesLocais.get(versao) || [];
+        lista[n] = dados;
+        partesLocais.set(versao, lista);
+        url = `${URL_PUBLICA}/api/framyo/atualizacao/local/${versao}/${n}`;
+      }
+      const pend = D().atualizacao_envio && D().atualizacao_envio.versao === versao ? D().atualizacao_envio : { versao, partes: [] };
+      pend.partes[n] = { url, tamanho: dados.length, sha256: crypto.createHash('sha256').update(dados).digest('hex') };
+      D().atualizacao_envio = pend;
+      await loja.salvar();
+      res.json({ ok: true, n, url });
+    }));
+
+  // só nos testes (sem Cloudinary): serve a parte guardada na memória
+  r.get('/atualizacao/local/:versao/:n', (req, res) => {
+    if (process.env.CLOUDINARY_URL) return res.status(404).json({ erro: 'Rota do Framyo não existe.' });
+    const p = (partesLocais.get(req.params.versao) || [])[Number(req.params.n)];
+    if (!p) return res.status(404).json({ erro: 'Parte não existe.' });
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.end(p);
+  });
+
+  r.post('/atualizacao/publicar', autenticar, soAdmin, envolve(async (req, res) => {
+    const b = req.body || {};
+    const versao = String(b.versao || '');
+    if (!versaoValida(versao)) throw falha(400, 'Versão inválida (ex.: 1.5.0).');
+    const pend = D().atualizacao_envio;
+    if (!pend || pend.versao !== versao) throw falha(409, 'Envie as partes do instalador antes de publicar.');
+    const qtd = Number(b.partes);
+    const partes = pend.partes.slice(0, qtd);
+    if (!qtd || partes.length !== qtd || partes.some((p) => !p)) throw falha(409, 'Faltam partes do instalador. Envie de novo.');
+    const tamanho = partes.reduce((s, p) => s + p.tamanho, 0);
+    if (Number(b.tamanho) !== tamanho) throw falha(409, `O tamanho não bate (${tamanho} x ${b.tamanho}). Envie de novo.`);
+    if (!/^[0-9a-f]{64}$/.test(String(b.sha256 || ''))) throw falha(400, 'SHA-256 inválido.');
+    const anterior = D().atualizacao;
+    D().atualizacao = { versao, nome: limpaTexto(b.nome, 120) || `Framyo Setup ${versao}.exe`, tamanho, sha256: b.sha256,
+                        notas: limpaTexto(b.notas, 2000), partes, publicado_em: agora(), por: req.usuario.id };
+    delete D().atualizacao_envio;
+    await loja.salvar();
+    // só a última versão fica na nuvem
+    const c = nuvem();
+    if (c && anterior && anterior.versao !== versao) {
+      await c.api.delete_resources_by_prefix(pastaNuvem(anterior.versao) + '/', { resource_type: 'raw' })
+        .catch((e) => console.error('[framyo] apagar versão antiga:', e.message));
+    }
+    res.json({ ok: true, versao, tamanho, partes: qtd });
+  }));
+
   // ── calendário de posts (Google Drive) ──────────────────────────────────────
   montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica: URL_PUBLICA });
 
