@@ -569,10 +569,13 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const arq = (await fio.api('GET', `/accounts/${conta}/files/${c.file_id}?include=project`)).data;
     // O responsável pode estar no arquivo ou na pilha de versões em que ele está.
     const resp = responsavelDe(arq.id, arq.parent_id);
-    // Cliente pelo link de revisão: o nome vem da atividade do link, que às
-    // vezes aparece um instante depois do aviso.
-    for (let i = 0; i < 2 && !c.owner && !c._nome; i++) {
-      if (i) await new Promise((ok) => setTimeout(ok, ESPERA_NOME_MS));
+    // Cliente pelo link de revisão: o nome vem da atividade do link, que o
+    // Frame.io registra alguns segundos (às vezes dezenas) depois do aviso. O
+    // aviso na área de trabalho não muda depois de mostrado, então espera o
+    // nome por até ~40 s (sai na hora em que o nome aparece).
+    const esperas = [0, 1, 2, 3, 4].map((n) => n * ESPERA_NOME_MS);          // 0, 4, 8, 12, 16 s
+    for (let i = 0; i < esperas.length && !c.owner && !c._nome; i++) {
+      if (esperas[i]) await new Promise((ok) => setTimeout(ok, esperas[i]));
       await nomearRevisores(conta, arq.id, [c], true).catch(() => {});
     }
     D().seq += 1;
@@ -605,15 +608,19 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // Avisos guardados antes de o nome do revisor por link funcionar: tenta uma
   // vez para cada um (poucos por consulta, para não atrasar a resposta).
   async function nomearEventosAntigos(eventos) {
-    const sem = eventos.filter((e) => e.autor === 'Revisor externo' && !e.nome_tentado).slice(-5);
+    // até 3 tentativas por aviso, com 30 s entre elas, lendo a atividade na hora
+    const tentar = (e) => e.autor === 'Revisor externo' && (e.nome_tentativas || (e.nome_tentado ? 1 : 0)) < 3
+      && (!e.nome_tentado_em || Date.now() - e.nome_tentado_em > 30000);
+    const sem = eventos.filter(tentar).slice(-5);
     if (!sem.length) return;
     for (const e of sem) {
-      e.nome_tentado = true;
+      e.nome_tentativas = (e.nome_tentativas || (e.nome_tentado ? 1 : 0)) + 1;
+      e.nome_tentado_em = Date.now();
       const c = { created_at: e.criado_em, owner: null };
-      await nomearRevisores(fio.conta(), e.arquivo_id, [c]).catch(() => {});
+      await nomearRevisores(fio.conta(), e.arquivo_id, [c], true).catch(() => {});
       if (c._nome) e.autor = c._nome;
     }
-    await loja.salvar();
+    await loja.salvar().catch(() => {});
   }
 
   // ── navegação (projetos, pastas, arquivos) ──────────────────────────────────
@@ -775,8 +782,11 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       cacheLinks.set(projeto, s);
     }
     const visto = (sh) => Date.parse(sh.last_viewed_at || '') || 0;
-    const links = s.lista.filter((sh) => !visto(sh) || visto(sh) >= desde - 60000)
-      .sort((a, b) => visto(b) - visto(a)).slice(0, 40);
+    // "Última visualização" do link nem sempre é atualizada na hora do
+    // comentário: aceita links vistos até 3 dias antes. Na busca na hora (aviso,
+    // que tenta várias vezes), só os 15 mais recentes — o Frame.io limita pedidos.
+    const links = s.lista.filter((sh) => !visto(sh) || visto(sh) >= desde - 3 * 864e5)
+      .sort((a, b) => visto(b) - visto(a)).slice(0, fresco ? 15 : 40);
     const lista = [];
     for (const sh of links) {
       let c = cacheAtividade.get(sh.id);
