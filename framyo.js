@@ -58,7 +58,18 @@ const apelidoValido = (s) => /^[a-z0-9._-]{2,40}$/.test(s);
 
 function usuarioPublico(u) {
   return { id: u.id, nome: u.nome, usuario: u.usuario, admin: !!u.admin, ativo: u.ativo !== false,
-           projetos: u.projetos || [], criado_em: u.criado_em };
+           projetos: u.projetos || [], criado_em: u.criado_em,
+           versao: u.versao || null, visto_em: u.visto_em || null, forcar_atualizacao: u.forcar_atualizacao || null };
+}
+
+// "1.10.0" > "1.9.2"
+function compararVersoes(a, b) {
+  const pa = String(a || '0').split('.').map(Number), pb = String(b || '0').split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
 }
 
 // ── armazenamento ─────────────────────────────────────────────────────────────
@@ -267,6 +278,14 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     if (!u) return res.status(401).json({ erro: 'Sessão expirada. Entre de novo.' });
     req.usuario = u;
     req.tokenHash = hashToken(t);
+    // O programa se identifica no User-Agent ("Framyo/1.4.0"): o admin vê a
+    // versão de cada pessoa. Fica na memória e vai junto no próximo salvamento.
+    const v = /Framyo\/(\d+(?:\.\d+){1,3})/.exec(String(req.headers['user-agent'] || ''));
+    if (v) {
+      u.versao = v[1];
+      u.visto_em = agora();
+      if (u.forcar_atualizacao && compararVersoes(v[1], u.forcar_atualizacao) >= 0) delete u.forcar_atualizacao;
+    }
     next();
   }
   const soAdmin = (req, res, next) => (req.usuario.admin ? next() : res.status(403).json({ erro: 'Só administradores.' }));
@@ -376,6 +395,19 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     D().usuarios.push(u);
     await loja.salvar();
     res.json({ usuario: usuarioPublico(u) });
+  }));
+
+  // Admin força a atualização no computador da pessoa: a bandeja dela vê no
+  // próximo /eventos (5 s), baixa e instala sozinha, com uma barrinha no canto.
+  r.post('/usuarios/:id/atualizar', autenticar, soAdmin, envolve(async (req, res) => {
+    const u = D().usuarios.find((x) => x.id === req.params.id);
+    if (!u) throw falha(404, 'Usuário não encontrado.');
+    const pub = D().atualizacao;
+    if (!pub || !pub.versao) throw falha(409, 'Nenhuma versão publicada. Publique em Admin › Atualizações.');
+    if (u.versao && compararVersoes(u.versao, pub.versao) >= 0) throw falha(409, `@${u.usuario} já está na versão ${u.versao}.`);
+    u.forcar_atualizacao = pub.versao;
+    await loja.salvar();
+    res.json({ ok: true, usuario: usuarioPublico(u) });
   }));
 
   r.put('/usuarios/:id', autenticar, soAdmin, envolve(async (req, res) => {
@@ -602,7 +634,9 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const meu = (e) => (e.responsavel_id ? e.responsavel_id === u.id : meus.has(e.projeto_id));
     const eventos = D().eventos.filter((e) => e.seq > desde && (!filtra || meu(e))).slice(-100);
     await nomearEventosAntigos(eventos);
-    res.json({ seq: D().seq, modo: D().config.notificacoes, eventos });
+    const pub = D().atualizacao;
+    const forcar = u.forcar_atualizacao && pub && pub.versao && compararVersoes(pub.versao, u.versao) > 0 ? pub.versao : null;
+    res.json({ seq: D().seq, modo: D().config.notificacoes, eventos, atualizar: forcar });
   }));
 
   // Avisos guardados antes de o nome do revisor por link funcionar: tenta uma
