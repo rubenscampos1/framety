@@ -1069,11 +1069,14 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // 3) avisa que terminou, e aqui o arquivo vira nova versão (se for o caso).
   r.post('/envios', autenticar, envolve(async (req, res) => {
     const conta = fio.conta();
-    const { pasta_id: pasta, nome, tamanho } = req.body || {};
+    const { pasta_id: pasta, nome, tamanho, tipo } = req.body || {};
     if (!pasta || !nome || !(Number(tamanho) > 0)) throw falha(400, 'Faltam pasta, nome ou tamanho do arquivo.');
+    // O tipo informado aqui é o que o PUT de cada parte tem de mandar como Content-Type.
+    const mediaType = /^[a-z]+\/[a-z0-9.+-]+$/i.test(String(tipo || '')) ? String(tipo) : undefined;
     const j = await fio.api('POST', `/accounts/${conta}/folders/${encodeURIComponent(pasta)}/files/local_upload`,
-                            { data: { name: limpaTexto(nome, 255), file_size: Number(tamanho) } });
-    res.json({ arquivo_id: j.data.id, partes: (j.data.upload_urls || []).map((u) => ({ url: u.url, tamanho: u.size })) });
+                            { data: Object.assign({ name: limpaTexto(nome, 255), file_size: Number(tamanho) }, mediaType ? { media_type: mediaType } : {}) });
+    res.json({ arquivo_id: j.data.id, media_type: j.data.media_type || mediaType || null,
+               partes: (j.data.upload_urls || []).map((u) => ({ url: u.url, tamanho: u.size })) });
   }));
 
   r.post('/envios/:id/concluir', autenticar, envolve(async (req, res) => {
