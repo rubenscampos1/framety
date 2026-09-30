@@ -111,7 +111,7 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
              {videos.length} {videos.length === 1 ? "vídeo" : "vídeos"}
            </span>
            {[
-             { chave: "formatoImersivo", rotulo: "Formato do imersivo", opcoes: window.FRAMETY_DATA.formatosImersivos || [] },
+             { chave: "formatoImersivo", rotulo: "Formato do imersivo", curto: "Imersivo", opcoes: window.FRAMETY_DATA.formatosImersivos || [] },
              { chave: "padrao",          rotulo: "Padrão",              opcoes: ["Altíssimo","Alto","Médio","Baixo","Popular"] },
              { chave: "formato",         rotulo: "Formato",             opcoes: ["Condomínio vertical","Condomínio horizontal","Business"] },
            ].filter(m => m.opcoes.length).map(m => (
@@ -120,7 +120,8 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
                  className={"pres-drop-btn" + (sel.tipo === m.chave ? " ativo" : "")}
                  onClick={() => setMenuAberto(a => a === m.chave ? null : m.chave)}
                  data-cursor="hover">
-                 <span>{sel.tipo === m.chave ? sel.valor : m.rotulo}</span>
+                 {sel.tipo === m.chave ? <span>{sel.valor}</span>
+                   : <span><span className="rot-longo">{m.rotulo}</span><span className="rot-curto">{m.curto || m.rotulo}</span></span>}
                  <Icon name="chevron-down" size={11} />
                </button>
                {menuAberto === m.chave && (
@@ -141,6 +142,22 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
              </div>
            ))}
          </div>
+         {/* Só no celular: a coluna de categorias vira uma faixa que desliza para
+             o lado, com a ordenação no fim — o mesmo que a lateral da versão web. */}
+         <nav className="pres-chips" aria-label="Categorias">
+           <button className={"pres-chip" + (sel.tipo === "todos" ? " ativo" : "")} onClick={() => setSel({ tipo: "todos", valor: null })}>
+             Todos <span className="num">{publicados.length}</span>
+           </button>
+           {cats.map(c => (
+             <button key={c.id} className={"pres-chip" + (sel.tipo === "cat" && sel.valor === c.id ? " ativo" : "")}
+               onClick={() => setSel({ tipo: "cat", valor: c.id })}>
+               {c.name} <span className="num">{c.count}</span>
+             </button>
+           ))}
+           <span className="pres-chip-sep" />
+           <button className={"pres-chip" + (sort === "recent" ? " ativo" : "")} onClick={() => setSort("recent")}>Recentes</button>
+           <button className={"pres-chip" + (sort === "views" ? " ativo" : "")} onClick={() => setSort("views")}>Mais vistos</button>
+         </nav>
        </header>
 
        <div className="pres-body">
@@ -248,7 +265,7 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
                     </button>
                   </header>
                   )}
-                  <div className="pres-grid">
+                  <div className={"pres-grid" + (sel.tipo === "todos" ? " rolar" : "")}>
                     {items.map(v => {
                       const thumb = window.getThumbUrl ? window.getThumbUrl(v) : null;
                       // A faixa de padrão/formato mistura categorias: o fundo do
