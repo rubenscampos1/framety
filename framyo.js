@@ -556,15 +556,30 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // O programa pergunta a cada 5 s: "o que chegou depois do nº X?".
   // No modo "atribuidos", cada um recebe os comentários dos vídeos de que é
   // responsável; nos vídeos sem responsável, os dos projetos atribuídos a ele.
-  r.get('/eventos', autenticar, (req, res) => {
+  r.get('/eventos', autenticar, envolve(async (req, res) => {
     const desde = Number(req.query.desde) || 0;
     const u = req.usuario;
     const filtra = D().config.notificacoes === 'atribuidos';
     const meus = new Set(u.projetos || []);
     const meu = (e) => (e.responsavel_id ? e.responsavel_id === u.id : meus.has(e.projeto_id));
     const eventos = D().eventos.filter((e) => e.seq > desde && (!filtra || meu(e))).slice(-100);
+    await nomearEventosAntigos(eventos);
     res.json({ seq: D().seq, modo: D().config.notificacoes, eventos });
-  });
+  }));
+
+  // Avisos guardados antes de o nome do revisor por link funcionar: tenta uma
+  // vez para cada um (poucos por consulta, para não atrasar a resposta).
+  async function nomearEventosAntigos(eventos) {
+    const sem = eventos.filter((e) => e.autor === 'Revisor externo' && !e.nome_tentado).slice(-5);
+    if (!sem.length) return;
+    for (const e of sem) {
+      e.nome_tentado = true;
+      const c = { created_at: e.criado_em, owner: null };
+      await nomearRevisores(fio.conta(), e.arquivo_id, [c]).catch(() => {});
+      if (c._nome) e.autor = c._nome;
+    }
+    await loja.salvar();
+  }
 
   // ── navegação (projetos, pastas, arquivos) ──────────────────────────────────
   let cacheProjetos = { em: 0, lista: null };
@@ -789,9 +804,24 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   }));
 
   // Nome e pai de uma pasta (para abrir um resultado de busca no lugar certo).
+  // Marcar / desmarcar um comentário como concluído (vale no Frame.io também).
+  r.put('/comentarios/:id/concluido', autenticar, envolve(async (req, res) => {
+    const concluido = !!(req.body || {}).concluido;
+    const c = (await fio.api('PATCH', `/accounts/${fio.conta()}/comments/${encodeURIComponent(req.params.id)}`,
+                             { data: { completed: concluido } })).data || {};
+    res.json({ id: req.params.id, concluido: c.completed_at !== undefined ? !!c.completed_at : concluido });
+  }));
+
+  // O "pai" de um vídeo pode ser uma pilha de versões: aí vem tipo "version_stack".
   r.get('/pastas/:id/info', autenticar, envolve(async (req, res) => {
-    const f = (await fio.api('GET', `/accounts/${fio.conta()}/folders/${encodeURIComponent(req.params.id)}`)).data;
-    res.json({ id: f.id, nome: f.name, pai: f.parent_id, projeto_id: f.project_id });
+    const id = encodeURIComponent(req.params.id);
+    let f, tipo = 'folder';
+    try { f = (await fio.api('GET', `/accounts/${fio.conta()}/folders/${id}`)).data; } catch (e) {
+      if (e.status !== 404 && e.status !== 422 && e.status !== 400) throw e;
+      f = (await fio.api('GET', `/accounts/${fio.conta()}/version_stacks/${id}`)).data;
+      tipo = 'version_stack';
+    }
+    res.json({ id: f.id, nome: f.name, pai: f.parent_id, projeto_id: f.project_id, tipo });
   }));
 
   r.post('/pastas/:id/subpastas', autenticar, envolve(async (req, res) => {
