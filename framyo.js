@@ -758,6 +758,15 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       }
       if (melhor) { usados.add(melhor.i); c._nome = melhor.nome; }
     }
+    // O Frame.io não registra cada comentário seguido da mesma pessoa: sem
+    // atividade no horário, vale quem comentou por último neste vídeo pelo
+    // link, nos 30 minutos antes.
+    for (const c of sem) {
+      if (c._nome) continue;
+      const t = Date.parse(c.created_at);
+      const antes = atividade.filter((x) => x.em <= t && t - x.em < 30 * 60000).sort((a, b) => b.em - a.em)[0];
+      if (antes) c._nome = antes.nome;
+    }
   }
 
   // Todos os comentários de um vídeo (os antigos também), na ordem do vídeo,
