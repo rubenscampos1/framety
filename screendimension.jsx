@@ -5,7 +5,6 @@
    descolar das paredes, gerando formatos que não fecham uma caixa perfeita.       */
 
 const SD_MAX_H      = 1080;   // altura de projeção fixa (px)
-const SD_FLOOR_BASE = 1920;   // limite da base do chão (px)
 /* Margem de proteção: 10% de cada borda de cada tela (esquerda, direita, topo e
    base) — sobra uma área segura de 80% × 80%. Só marca a área onde
    concentrar textos e conteúdo importante — não entra em nenhuma conta. */
@@ -648,7 +647,10 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
     const Wc = Math.round(lRes * scale);
     const Ws = Math.round(pRes * scale);
     const fTop  = Math.round(topRes * scale);
-    const fBase = Math.min(Math.round(baseRes * scale), SD_FLOOR_BASE);
+    // Base na mesma escala das demais medidas: cortar em 1920 px deixava uma
+    // base de 5 m quase igual a um topo de 3 m (o chão virava retângulo). Base
+    // maior que 1920 px só pede mais um projetor na largura, como nas paredes.
+    const fBase = Math.round(baseRes * scale);
     const fDepth = Math.round(depRes * scale);
     const frontTotalW = Ws * 2 + Wc;
     const timelineW = Math.max(frontTotalW, fBase, fTop);
