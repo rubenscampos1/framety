@@ -659,6 +659,8 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   const item = (x) => ({
     id: x.id, tipo: x.type, nome: x.name, pai: x.parent_id, projeto_id: x.project_id, view_url: x.view_url,
     atualizado_em: x.updated_at, tamanho: x.file_size, media_type: x.media_type, status: x.status,
+    // data em que o vídeo foi gerado/enviado (numa pilha, a da versão atual)
+    criado_em: (x.head_version && x.head_version.created_at) || x.created_at || null,
     versao_atual: x.head_version ? { id: x.head_version.id, nome: x.head_version.name } : undefined,
     miniatura: miniatura(x) || miniatura(x.head_version),
     responsavel: responsavelDe(x.id),
@@ -908,6 +910,121 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       }
     }
     res.json({ pilha_id: pilha });
+  }));
+
+  // ── pilhas de versões: tirar e apagar versões ───────────────────────────────
+  // Tirar da pilha = mover o vídeo para a pasta onde a pilha está.
+  r.post('/pilhas/:id/tirar', autenticar, envolve(async (req, res) => {
+    const conta = fio.conta();
+    const arquivo = String((req.body || {}).arquivo_id || '');
+    if (!arquivo) throw falha(400, 'Qual vídeo sai da pilha?');
+    const pilha = (await fio.api('GET', `/accounts/${conta}/version_stacks/${encodeURIComponent(req.params.id)}`)).data;
+    await fio.api('PATCH', `/accounts/${conta}/files/${encodeURIComponent(arquivo)}/move`, { data: { parent_id: pilha.parent_id } });
+    res.json({ ok: true, pasta_id: pilha.parent_id });
+  }));
+
+  // Apagar um vídeo (ou versão) no Frame.io. Só admin — não tem volta pelo Framyo.
+  r.delete('/arquivos/:id', autenticar, soAdmin, envolve(async (req, res) => {
+    await fio.api('DELETE', `/accounts/${fio.conta()}/files/${encodeURIComponent(req.params.id)}`);
+    res.json({ ok: true });
+  }));
+
+  // ── links de revisão (shares) ───────────────────────────────────────────────
+  const link = (s) => ({
+    id: s.id, nome: s.name || '', url: s.short_url || null, ativo: s.enabled !== false, acesso: s.access || 'public',
+    senha: !!s.passphrase, expira_em: s.expiration || null, comentarios: s.commenting_enabled !== false,
+    downloads: !!s.downloading_enabled, criado_em: s.created_at || null, visto_em: s.last_viewed_at || null,
+    descricao: s.description || '',
+  });
+  // O que a tela manda → os campos do Frame.io (só os que vieram).
+  function camposDoLink(b, criando) {
+    const d = {};
+    if (b.nome !== undefined) { const n = limpaTexto(b.nome, 175); if (!n) throw falha(400, 'Dê um nome para o link.'); d.name = n; }
+    if (b.acesso !== undefined) { if (!['public', 'secure'].includes(b.acesso)) throw falha(400, 'Acesso inválido.'); d.access = b.acesso; }
+    if (b.ativo !== undefined) d.enabled = !!b.ativo;
+    if (b.comentarios !== undefined) d.commenting_enabled = !!b.comentarios;
+    if (b.downloads !== undefined) d.downloading_enabled = !!b.downloads;
+    if (b.senha !== undefined) d.passphrase = limpaTexto(b.senha, 255) || null;
+    if (b.expira_em !== undefined) {
+      if (b.expira_em && isNaN(Date.parse(b.expira_em))) throw falha(400, 'Data de expiração inválida.');
+      d.expiration = b.expira_em ? new Date(b.expira_em).toISOString() : null;
+    }
+    if (b.descricao !== undefined) d.description = limpaTexto(b.descricao, 1000);
+    if (criando) {
+      if (!d.name) throw falha(400, 'Dê um nome para o link.');
+      d.type = 'asset';
+      d.access = d.access || 'public';
+      const ids = Array.isArray(b.itens) ? b.itens.map(String).filter(Boolean).slice(0, 100) : [];
+      if (ids.length) d.asset_ids = ids;
+    }
+    return d;
+  }
+
+  r.get('/projetos/:id/links', autenticar, envolve(async (req, res) => {
+    const lista = await fio.tudo(`/accounts/${fio.conta()}/projects/${encodeURIComponent(req.params.id)}/shares`);
+    res.json({ links: lista.map(link).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))) });
+  }));
+
+  r.get('/links/:id', autenticar, envolve(async (req, res) => {
+    const conta = fio.conta(), id = encodeURIComponent(req.params.id);
+    const [s, itens, revisores] = await Promise.all([
+      fio.api('GET', `/accounts/${conta}/shares/${id}`).then((j) => j.data),
+      fio.tudo(`/accounts/${conta}/shares/${id}/assets?include=media_links.thumbnail`).catch(() => []),
+      fio.tudo(`/accounts/${conta}/shares/${id}/reviewers`).catch(() => []),
+    ]);
+    res.json({ link: link(s), itens: itens.map(item),
+               revisores: revisores.map((u) => ({ id: u.id || null, nome: u.name || '', email: u.email })) });
+  }));
+
+  r.post('/projetos/:id/links', autenticar, envolve(async (req, res) => {
+    const s = (await fio.api('POST', `/accounts/${fio.conta()}/projects/${encodeURIComponent(req.params.id)}/shares`,
+                             { data: camposDoLink(req.body || {}, true) })).data;
+    res.json({ link: link(s) });
+  }));
+
+  r.put('/links/:id', autenticar, envolve(async (req, res) => {
+    const d = camposDoLink(req.body || {}, false);
+    if (!Object.keys(d).length) throw falha(400, 'Nada para mudar.');
+    const s = (await fio.api('PATCH', `/accounts/${fio.conta()}/shares/${encodeURIComponent(req.params.id)}`, { data: d })).data;
+    res.json({ link: link(s) });
+  }));
+
+  r.delete('/links/:id', autenticar, envolve(async (req, res) => {
+    await fio.api('DELETE', `/accounts/${fio.conta()}/shares/${encodeURIComponent(req.params.id)}`);
+    res.json({ ok: true });
+  }));
+
+  r.post('/links/:id/itens', autenticar, envolve(async (req, res) => {
+    const ids = [].concat((req.body || {}).itens || []).map(String).filter(Boolean).slice(0, 50);
+    if (!ids.length) throw falha(400, 'Escolha o que entra no link.');
+    for (const a of ids) {
+      await fio.api('POST', `/accounts/${fio.conta()}/shares/${encodeURIComponent(req.params.id)}/assets`, { data: { asset_id: a } });
+    }
+    res.json({ ok: true, adicionados: ids.length });
+  }));
+
+  r.delete('/links/:id/itens/:item', autenticar, envolve(async (req, res) => {
+    await fio.api('DELETE', `/accounts/${fio.conta()}/shares/${encodeURIComponent(req.params.id)}/assets/${encodeURIComponent(req.params.item)}`);
+    res.json({ ok: true });
+  }));
+
+  const emailValido = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
+  r.post('/links/:id/revisores', autenticar, envolve(async (req, res) => {
+    const b = req.body || {};
+    const emails = [].concat(b.emails || []).map((e) => limpaTexto(e, 200).toLowerCase()).filter(Boolean);
+    if (!emails.length || emails.some((e) => !emailValido(e))) throw falha(400, 'Informe e-mails válidos.');
+    await fio.api('POST', `/accounts/${fio.conta()}/shares/${encodeURIComponent(req.params.id)}/reviewers`, { data: {
+      reviewers: { emails: emails.slice(0, 10) }, message: limpaTexto(b.mensagem, 1000) || 'Você foi convidado para revisar no Frame.io.',
+      notify_by_email: b.avisar !== false } });
+    res.json({ ok: true });
+  }));
+
+  r.delete('/links/:id/revisores', autenticar, envolve(async (req, res) => {
+    const email = limpaTexto((req.body || {}).email, 200).toLowerCase();
+    if (!emailValido(email)) throw falha(400, 'E-mail inválido.');
+    await fio.api('DELETE', `/accounts/${fio.conta()}/shares/${encodeURIComponent(req.params.id)}/reviewers`,
+                  { data: { reviewers: { emails: [email] } } });
+    res.json({ ok: true });
   }));
 
   // ── envio de versões ────────────────────────────────────────────────────────
