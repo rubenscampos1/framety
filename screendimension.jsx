@@ -1821,7 +1821,8 @@ const SD_CSS = `
 .sd-page{ --sd-line:rgba(255,255,255,.08); --sd-line-2:rgba(255,255,255,.14); --sd-glass:rgba(12,13,17,.5); --sd-mute:#8b8f99;
   --sd-text:#eef0f4; --sd-ac:var(--accent,#2E86C1); background:transparent; position:relative; isolation:isolate;
   font-feature-settings:"cv11","ss01"; -webkit-font-smoothing:antialiased; }
-.sd-bgwave{ position:fixed; inset:0; width:100vw; height:100vh; z-index:-2; pointer-events:none; display:block; background:#050507; }
+/* blur leve no fundo; o scale cobre a borda que o blur deixa mais clara */
+.sd-bgwave{ position:fixed; inset:0; width:100vw; height:100vh; z-index:-2; pointer-events:none; display:block; background:#050507; filter:blur(1.6px); transform:scale(1.02); }
 .sd-page::before{ content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
   background:radial-gradient(130% 100% at 50% 10%, rgba(5,5,7,0) 0%, rgba(5,5,7,.15) 60%, rgba(5,5,7,.55) 100%); }
 
