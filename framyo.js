@@ -1140,10 +1140,18 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       const c = nuvem();
       let url;
       if (c) {
-        const r2 = await new Promise((ok, erro) => {
-          c.uploader.upload_stream({ resource_type: 'raw', public_id: `${pastaNuvem(versao)}/parte-${String(n).padStart(2, '0')}.bin`,
+        // O Cloudinary recusa extensões de executável (.bin, .exe…): a parte vai
+        // sem extensão e, se a conta também recusar, como .txt. O conteúdo é
+        // conferido pelo SHA-256 no download, a extensão não importa.
+        const subir = (ext) => new Promise((ok, erro) => {
+          c.uploader.upload_stream({ resource_type: 'raw', public_id: `${pastaNuvem(versao)}/parte-${String(n).padStart(2, '0')}${ext}`,
                                      overwrite: true, invalidate: true }, (e, x) => (e ? erro(e) : ok(x))).end(dados);
-        }).catch((e) => { throw falha(502, 'O Cloudinary recusou a parte: ' + e.message); });
+        });
+        let r2, ultimoErro;
+        for (const ext of ['', '.txt']) {
+          try { r2 = await subir(ext); break; } catch (e) { ultimoErro = e; }
+        }
+        if (!r2) throw falha(502, 'O Cloudinary recusou a parte: ' + (ultimoErro && ultimoErro.message));
         url = r2.secure_url;
       } else {
         const lista = partesLocais.get(versao) || [];
