@@ -630,6 +630,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   }));
 
   // ── busca, player, versões e comentários ────────────────────────────────────
+  const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   // Busca no projeto inteiro (subpastas, vídeos e pilhas). A busca do Frame.io
   // é da conta toda; o filtro pelo projeto é feito aqui.
   r.get('/busca', autenticar, envolve(async (req, res) => {
@@ -640,22 +641,37 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     // Sem projeto: a conta toda, só nos projetos que este usuário enxerga.
     const visiveis = await projetosVisiveis(req.usuario);
     const nomes = new Map(visiveis.map((x) => [x.id, x]));
-    const achados = [];
-    let proximo = `/accounts/${conta}/search?page_size=100`;
-    for (let i = 0; proximo && i < 5 && achados.length < 200; i++) {
-      const j = await fio.api('POST', proximo, { query: q, engine: 'lexical',
-        filters: { projects: !projeto, folders: true, files_and_version_stacks: true } });
-      for (const x of j.data || []) {
-        const a = x.result;
-        if (!a) continue;
-        if (x.type === 'project_result') {
-          if (!projeto && nomes.has(a.id)) achados.push(Object.assign({}, nomes.get(a.id), { tipo: 'projeto' }));
-          continue;
+    const buscar = async (termo, paginas, filtro) => {
+      const achados = [];
+      let proximo = `/accounts/${conta}/search?page_size=100`;
+      for (let i = 0; proximo && i < paginas && achados.length < 200; i++) {
+        const j = await fio.api('POST', proximo, { query: termo, engine: 'lexical',
+          filters: { projects: !projeto, folders: true, files_and_version_stacks: true } });
+        for (const x of j.data || []) {
+          const a = x.result;
+          if (!a || (filtro && !filtro(a.name))) continue;
+          if (x.type === 'project_result') {
+            if (!projeto && nomes.has(a.id)) achados.push(Object.assign({}, nomes.get(a.id), { tipo: 'projeto' }));
+            continue;
+          }
+          if (projeto ? a.project_id !== projeto : !nomes.has(a.project_id)) continue;
+          achados.push(Object.assign(item(a), { projeto_nome: (nomes.get(a.project_id) || {}).nome || '' }));
         }
-        if (projeto ? a.project_id !== projeto : !nomes.has(a.project_id)) continue;
-        achados.push(Object.assign(item(a), { projeto_nome: (nomes.get(a.project_id) || {}).nome || '' }));
+        proximo = j.links && j.links.next ? j.links.next.replace(/^\/v4/, '') : null;
       }
-      proximo = j.links && j.links.next ? j.links.next.replace(/^\/v4/, '') : null;
+      return achados;
+    };
+    let achados = await buscar(q, 5);
+    // A busca do Frame.io diferencia acento ("galicia" não acha "GALÍCIA"), mas
+    // aceita começo de palavra ("gal" acha). Sem nada achado e sem acento no
+    // termo: encurta a palavra maior até achar, e filtra aqui ignorando acento.
+    if (!achados.length && !/[^\x00-\x7f]/.test(q)) {
+      const partes = semAcento(q).split(/\s+/).filter(Boolean);
+      const maior = partes.reduce((a, b) => (b.length > a.length ? b : a), '');
+      const casa = (nome) => { const n = semAcento(nome); return partes.every((p) => n.includes(p)); };
+      for (let n = maior.length - 1; n >= 3 && !achados.length; n--) {
+        achados = await buscar(partes.map((p) => (p === maior ? p.slice(0, n) : p)).join(' '), 2, casa);
+      }
     }
     res.json({ itens: achados });
   }));
