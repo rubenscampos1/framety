@@ -520,7 +520,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   });
 
   // Quem comenta por link de revisão (cliente sem conta) vem sem dono.
-  const autorDe = (c) => (c.owner && (c.owner.name || c.owner.email)) || (c.owner ? 'Usuário do Frame.io' : 'Revisor externo');
+  const autorDe = (c) => (c.owner && (c.owner.name || c.owner.email)) || c._nome || (c.owner ? 'Usuário do Frame.io' : 'Revisor externo');
 
   const vistos = new Set();                    // o Frame.io pode repetir um aviso
   async function registrarComentario(b) {
@@ -560,8 +560,18 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   });
 
   // ── navegação (projetos, pastas, arquivos) ──────────────────────────────────
+  let cacheProjetos = { em: 0, lista: null };
   async function projetosVisiveis(u) {
     const conta = fio.conta();
+    if (!cacheProjetos.lista || Date.now() - cacheProjetos.em > 60000) {
+      cacheProjetos = { em: Date.now(), lista: await todosOsProjetos(conta) };
+    }
+    const lista = cacheProjetos.lista;
+    // Quem não é admin e tem projetos atribuídos vê só os seus.
+    if (!u.admin && (u.projetos || []).length) return lista.filter((p) => u.projetos.includes(p.id));
+    return lista;
+  }
+  async function todosOsProjetos(conta) {
     const lista = [];
     for (const ws of await fio.tudo(`/accounts/${conta}/workspaces`)) {
       for (const p of await fio.tudo(`/accounts/${conta}/workspaces/${ws.id}/projects`)) {
@@ -569,8 +579,6 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
                                                   area: ws.name, area_id: ws.id, view_url: p.view_url });
       }
     }
-    // Quem não é admin e tem projetos atribuídos vê só os seus.
-    if (!u.admin && (u.projetos || []).length) return lista.filter((p) => u.projetos.includes(p.id));
     return lista;
   }
 
@@ -629,18 +637,27 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const q = limpaTexto(req.query.q, 200);
     const projeto = String(req.query.projeto_id || '');
     if (q.length < 2) return res.json({ itens: [] });
+    // Sem projeto: a conta toda, só nos projetos que este usuário enxerga.
+    const visiveis = await projetosVisiveis(req.usuario);
+    const nomes = new Map(visiveis.map((x) => [x.id, x]));
     const achados = [];
     let proximo = `/accounts/${conta}/search?page_size=100`;
     for (let i = 0; proximo && i < 5 && achados.length < 200; i++) {
       const j = await fio.api('POST', proximo, { query: q, engine: 'lexical',
-        filters: { projects: false, folders: true, files_and_version_stacks: true } });
+        filters: { projects: !projeto, folders: true, files_and_version_stacks: true } });
       for (const x of j.data || []) {
         const a = x.result;
-        if (a && (!projeto || a.project_id === projeto)) achados.push(a);
+        if (!a) continue;
+        if (x.type === 'project_result') {
+          if (!projeto && nomes.has(a.id)) achados.push(Object.assign({}, nomes.get(a.id), { tipo: 'projeto' }));
+          continue;
+        }
+        if (projeto ? a.project_id !== projeto : !nomes.has(a.project_id)) continue;
+        achados.push(Object.assign(item(a), { projeto_nome: (nomes.get(a.project_id) || {}).nome || '' }));
       }
       proximo = j.links && j.links.next ? j.links.next.replace(/^\/v4/, '') : null;
     }
-    res.json({ itens: achados.map(item) });
+    res.json({ itens: achados });
   }));
 
   // Link para tocar (a versão leve do Frame.io, sem baixar o original) e o
@@ -671,11 +688,52 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     res.json({ versoes });
   }));
 
+  // Quem comenta por link de revisão (cliente sem conta) vem sem "owner" no
+  // comentário. O nome está na atividade do link ("comment_created", com nome
+  // e e-mail), sem dizer qual comentário: cruza pelo vídeo e pelo horário.
+  const cacheAtividade = new Map();              // projeto -> { em, lista }
+  async function atividadeDeComentarios(conta, projeto) {
+    const c = cacheAtividade.get(projeto);
+    if (c && Date.now() - c.em < 3 * 60000) return c.lista;
+    const lista = [];
+    const shares = await fio.tudo(`/accounts/${conta}/projects/${projeto}/shares`).catch(() => []);
+    for (const sh of shares.slice(0, 40)) {
+      const at = await fio.tudo(`/accounts/${conta}/shares/${sh.id}/activities?include=user`).catch(() => []);
+      for (const a of at) {
+        if (a.type === 'comment_created' && a.user && (a.user.name || a.user.email)) {
+          lista.push({ asset: a.asset_id, em: Date.parse(a.inserted_at), nome: a.user.name || a.user.email });
+        }
+      }
+    }
+    cacheAtividade.set(projeto, { em: Date.now(), lista });
+    return lista;
+  }
+  async function nomearRevisores(conta, arquivo, comentarios) {
+    const sem = comentarios.filter((c) => !c.owner);
+    if (!sem.length) return;
+    let a;
+    try { a = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(arquivo)}`)).data; } catch { return; }
+    const alvos = new Set([a.id, a.parent_id]);
+    const atividade = (await atividadeDeComentarios(conta, a.project_id)).filter((x) => alvos.has(x.asset));
+    const usados = new Set();
+    for (const c of sem) {
+      const t = Date.parse(c.created_at);
+      let melhor = null;
+      for (const [i, x] of atividade.entries()) {
+        const d = Math.abs(x.em - t);
+        if (!usados.has(i) && d < 120000 && (!melhor || d < melhor.d)) melhor = { i, d, nome: x.nome };
+      }
+      if (melhor) { usados.add(melhor.i); c._nome = melhor.nome; }
+    }
+  }
+
   // Todos os comentários de um vídeo (os antigos também), na ordem do vídeo,
   // com as respostas de cada um.
   r.get('/comentarios/:id', autenticar, envolve(async (req, res) => {
     const conta = fio.conta();
     const lista = await fio.tudo(`/accounts/${conta}/files/${encodeURIComponent(req.params.id)}/comments?include=owner,replies&timestamp_as_timecode=false`);
+    const todos = lista.concat(...lista.map((c) => c.replies || []));
+    await nomearRevisores(conta, req.params.id, todos).catch((e) => console.error('[framyo] nomes:', e.message));
     const comentarios = lista.map((c) => ({
       id: c.id, texto: c.text || '', criado_em: c.created_at,
       autor: autorDe(c),
@@ -686,6 +744,53 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       respostas: (c.replies || []).map((x) => ({ id: x.id, texto: x.text || '', autor: autorDe(x), criado_em: x.created_at })),
     })).sort((a, b) => (a.quadro ?? 1e12) - (b.quadro ?? 1e12) || String(a.criado_em).localeCompare(String(b.criado_em)));
     res.json({ comentarios });
+  }));
+
+  // Nome e pai de uma pasta (para abrir um resultado de busca no lugar certo).
+  r.get('/pastas/:id/info', autenticar, envolve(async (req, res) => {
+    const f = (await fio.api('GET', `/accounts/${fio.conta()}/folders/${encodeURIComponent(req.params.id)}`)).data;
+    res.json({ id: f.id, nome: f.name, pai: f.parent_id, projeto_id: f.project_id });
+  }));
+
+  r.post('/pastas/:id/subpastas', autenticar, envolve(async (req, res) => {
+    const nome = limpaTexto((req.body || {}).nome, 255);
+    if (!nome) throw falha(400, 'Dê um nome para a pasta.');
+    const f = (await fio.api('POST', `/accounts/${fio.conta()}/folders/${encodeURIComponent(req.params.id)}/folders`,
+                             { data: { name: nome } })).data;
+    res.json({ pasta: item(Object.assign({ type: 'folder' }, f)) });
+  }));
+
+  // Arrastar um item para dentro de uma pasta.
+  r.post('/mover', autenticar, envolve(async (req, res) => {
+    const { id, tipo, destino } = req.body || {};
+    const rota = { file: 'files', folder: 'folders', version_stack: 'version_stacks' }[tipo];
+    if (!id || !rota || !destino) throw falha(400, 'Faltam o item, o tipo ou a pasta de destino.');
+    if (id === destino) throw falha(400, 'Uma pasta não entra nela mesma.');
+    await fio.api('PATCH', `/accounts/${fio.conta()}/${rota}/${encodeURIComponent(id)}/move`, { data: { parent_id: destino } });
+    res.json({ ok: true });
+  }));
+
+  // Arrastar um vídeo para cima de outro: vira versão nova dele.
+  r.post('/empilhar', autenticar, envolve(async (req, res) => {
+    const conta = fio.conta();
+    const { arquivo_id: novo, sobre_id: base, tipo_sobre: tipo } = req.body || {};
+    if (!novo || !base || novo === base) throw falha(400, 'Escolha dois vídeos diferentes.');
+    let pilha;
+    if (tipo === 'version_stack') {
+      await fio.api('PATCH', `/accounts/${conta}/files/${encodeURIComponent(novo)}/move`, { data: { parent_id: base } });
+      pilha = base;
+    } else {
+      const orig = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(base)}`)).data;
+      const p = await fio.api('POST', `/accounts/${conta}/folders/${orig.parent_id}/version_stacks`,
+                              { data: { file_ids: [base, novo] } });
+      pilha = p.data && p.data.id;
+      if (pilha && D().responsaveis[base]) {
+        D().responsaveis[pilha] = D().responsaveis[base];
+        delete D().responsaveis[base];
+        await loja.salvar();
+      }
+    }
+    res.json({ pilha_id: pilha });
   }));
 
   // ── envio de versões ────────────────────────────────────────────────────────
