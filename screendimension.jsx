@@ -145,6 +145,88 @@ const sdRatio = (w, h) => {
 };
 
 /* Carrega um script externo uma única vez (Three.js / libs de PDF sob demanda). */
+/* Fundo da página: ondas de partículas (three.js), só nesta aba. Fica fixo
+   atrás de tudo, sem receber cliques. Pontos redondos e discretos para não
+   competir com os números; pausa com a aba escondida e respeita "reduzir
+   movimento" do sistema (aí fica parado). */
+const SDParticleWave = () => {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    let vivo = true, raf = 0, limpar = () => {};
+    (async () => {
+      await sdLoadScript("https://unpkg.com/three@0.160.0/build/three.min.js").catch(() => {});
+      for (let i = 0; i < 60 && vivo && !window.THREE; i++) await new Promise((r) => setTimeout(r, 100));
+      const THREE = window.THREE, canvas = ref.current;
+      if (!vivo || !THREE || !canvas) return;
+      let renderer;
+      try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "low-power" }); }
+      catch (_) { return; }                         // sem WebGL: fica só o fundo escuro
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      renderer.setClearColor(0x050507, 1);
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.Fog(0x050507, 14, 38);
+      const camera = new THREE.PerspectiveCamera(75, 1, 0.01, 1000);
+      camera.position.set(0, 6, 5);
+      const N = 170, gap = 0.3, pos = new Float32Array(N * N * 3), esc = new Float32Array(N * N);
+      for (let x = 0, i = 0; x < N; x++) for (let y = 0; y < N; y++, i++) {
+        pos[i * 3] = x * gap - (N * gap) / 2; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = y * gap - (N * gap) / 2; esc[i] = 1;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute("scale", new THREE.BufferAttribute(esc, 1));
+      const mat = new THREE.ShaderMaterial({
+        transparent: true, depthWrite: false,
+        uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Vector3(0.78, 0.84, 0.95) } },
+        vertexShader: `
+          attribute float scale; uniform float uTime; varying float vFade;
+          void main() {
+            vec3 p = position; float s = scale;
+            p.y += (sin(p.x + uTime) * 0.5) + (cos(p.y + uTime) * 0.1) * 2.0;
+            p.x += (sin(p.y + uTime) * 0.5);
+            s += (sin(p.x + uTime) * 0.5) + (cos(p.y + uTime) * 0.1) * 2.0;
+            vec4 mv = modelViewMatrix * vec4(p, 1.0);
+            gl_PointSize = max(s, 0.0) * 15.0 * (1.0 / -mv.z);
+            vFade = clamp(1.0 - (-mv.z - 6.0) / 40.0, 0.15, 1.0);   // some na distância
+            gl_Position = projectionMatrix * mv;
+          }`,
+        fragmentShader: `
+          uniform vec3 uColor; varying float vFade;
+          void main() {
+            vec2 c = gl_PointCoord - 0.5; float d = length(c);
+            if (d > 0.5) discard;                                   // ponto redondo
+            gl_FragColor = vec4(uColor, (1.0 - smoothstep(0.38, 0.5, d)) * 0.8 * vFade);
+          }`,
+      });
+      const pontos = new THREE.Points(geo, mat);
+      scene.add(pontos);
+      const medir = () => {
+        const w = window.innerWidth, h = window.innerHeight;
+        camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false);
+      };
+      medir();
+      const parado = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const quadro = () => {
+        if (!vivo) return;
+        if (!document.hidden) {
+          mat.uniforms.uTime.value += 0.02;
+          camera.lookAt(scene.position);
+          renderer.render(scene, camera);
+        }
+        if (!parado) raf = requestAnimationFrame(quadro);
+      };
+      quadro();
+      window.addEventListener("resize", medir);
+      limpar = () => {
+        cancelAnimationFrame(raf);
+        window.removeEventListener("resize", medir);
+        scene.remove(pontos); geo.dispose(); mat.dispose(); renderer.dispose();
+      };
+    })();
+    return () => { vivo = false; limpar(); };
+  }, []);
+  return <canvas ref={ref} className="sd-bgwave" aria-hidden="true" />;
+};
+
 const sdLoadScript = (src) => new Promise((resolve, reject) => {
   if ([...document.scripts].some((s) => s.src === src)) return resolve();
   const el = document.createElement("script");
@@ -1501,6 +1583,7 @@ const ScreenDimensionPage = () => {
   return (
     <div className="sd-page">
       <style>{SD_CSS}</style>
+      <SDParticleWave />
 
       <header className="sd-head">
         <h1 className="sd-title"><img className="sd-logo" src="/aspecty_logo.svg" alt="Aspecty" /></h1>
@@ -1731,4 +1814,90 @@ const SD_CSS = `
 .sd-ind-lbl{ font-size:9.5px; text-transform:uppercase; letter-spacing:0.08em; color:#8a8a92; margin-bottom:5px; min-height:22px; }
 .sd-ind-val{ font-size:clamp(17px,2vw,23px); font-weight:700; font-variant-numeric:tabular-nums; color:#fff; letter-spacing:-0.01em; }
 .sd-ind-sub{ margin-top:4px; font-size:10.5px; color:#77777f; font-variant-numeric:tabular-nums; }
+
+/* ── Acabamento (visual minimalista) ─────────────────────────────────────────
+   Só cor, borda, vidro e tipografia — posições e tamanhos continuam os de
+   cima. Fundo: ondas de partículas (SDParticleWave), fixo atrás de tudo. */
+.sd-page{ --sd-line:rgba(255,255,255,.08); --sd-line-2:rgba(255,255,255,.14); --sd-glass:rgba(12,13,17,.5); --sd-mute:#8b8f99;
+  --sd-text:#eef0f4; --sd-ac:var(--accent,#2E86C1); background:transparent; position:relative; isolation:isolate;
+  font-feature-settings:"cv11","ss01"; -webkit-font-smoothing:antialiased; }
+.sd-bgwave{ position:fixed; inset:0; width:100vw; height:100vh; z-index:-2; pointer-events:none; display:block; background:#050507; }
+.sd-page::before{ content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:radial-gradient(130% 100% at 50% 10%, rgba(5,5,7,0) 0%, rgba(5,5,7,.15) 60%, rgba(5,5,7,.55) 100%); }
+
+/* cabeçalho */
+.sd-head{ border-bottom:1px solid var(--sd-line); padding-bottom:12px; }
+.sd-tabs{ background:rgba(255,255,255,.04); border-color:var(--sd-line); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
+.sd-tab{ color:var(--sd-mute); font-weight:500; letter-spacing:.01em; }
+.sd-tab.on{ background:rgba(255,255,255,.1); color:#fff; box-shadow:none; }
+.sd-btn.ghost{ border-color:var(--sd-line-2); color:#dfe2e8; background:rgba(255,255,255,.02); font-weight:500; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+.sd-btn.ghost:hover{ background:rgba(255,255,255,.08); }
+.sd-export{ background:#f4f5f7; color:#0b0c0f; font-weight:600; box-shadow:0 6px 24px rgba(255,255,255,.08); }
+.sd-export:hover{ filter:none; background:#fff; }
+
+/* painéis de vidro */
+.sd-stage, .sd-3dsection, .sd-ind{ background:var(--sd-glass); border:1px solid var(--sd-line); border-radius:16px;
+  backdrop-filter:blur(18px) saturate(130%); -webkit-backdrop-filter:blur(18px) saturate(130%); box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 20px 50px rgba(0,0,0,.35); }
+.sd-3dtitle{ font-size:10.5px; letter-spacing:.16em; color:var(--sd-mute); font-weight:500; }
+.sd-3dwrap{ background:#08090c; border-color:var(--sd-line); border-radius:12px; }
+
+/* blocos internos: neutros, sem caixas coloridas */
+.sd-altrow, .sd-curvein{ background:rgba(255,255,255,.025); border:1px solid var(--sd-line); border-radius:14px; }
+.sd-altrow::before, .sd-curvein::before{ content:"Medidas"; background:none; color:var(--sd-mute); font-family:inherit; font-size:10px; letter-spacing:.16em;
+  font-weight:600; padding:0 6px; top:-7px; background:transparent; text-shadow:0 0 8px #07080a, 0 0 4px #07080a; }
+.sd-altrow-lbl{ font-weight:500; color:var(--sd-text); }
+.sd-altrow-lbl em{ color:var(--sd-mute); }
+.sd-cellin{ background:transparent; border:1px solid transparent; }
+.sd-cellin-lbl{ color:#c9ccd3; font-weight:500; }
+.sd-cellin-lbl em{ color:#6b6f79; }
+.sd-res{ color:#7d818b; }
+.sd-res b{ color:#e6e8ec; font-weight:600; }
+.sd-res-r{ color:#9fb4cc; font-weight:600; }
+
+/* campos: discretos até o foco */
+.sd-input-wrap{ background:rgba(255,255,255,.04); border:1px solid var(--sd-line-2); border-radius:10px; box-shadow:none; }
+.sd-input-wrap:hover{ background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.22); }
+.sd-input-wrap:focus-within{ background:rgba(255,255,255,.07); border-color:rgba(var(--accent-rgb,46,134,193),.9); box-shadow:0 0 0 3px rgba(var(--accent-rgb,46,134,193),.18); }
+.sd-input-wrap input{ font-weight:600; letter-spacing:-.01em; }
+.sd-input-wrap input::placeholder{ color:#5f636d; }
+.sd-input-wrap b{ color:#7d818b; font-weight:500; }
+
+/* as telas: planos sóbrios, com a central em destaque pela borda */
+.sd-screen, .sd-flat{ background:linear-gradient(180deg, rgba(120,146,190,.30), rgba(80,104,145,.22)); border:1px solid rgba(160,185,225,.28); border-radius:6px; box-shadow:none; }
+.sd-screen-c{ background:linear-gradient(180deg, rgba(var(--accent-rgb,46,134,193),.45), rgba(var(--accent-rgb,46,134,193),.28)); border-color:rgba(var(--accent-rgb,46,134,193),.95); outline:none; }
+.sd-screen-lbl{ font-weight:600; font-size:11px; letter-spacing:.04em; text-shadow:none; color:rgba(255,255,255,.92); }
+.sd-floor{ background:linear-gradient(180deg, rgba(56,178,156,.32), rgba(36,130,114,.22)); border:1px solid rgba(90,210,185,.35); box-sizing:border-box; }
+.sd-floorbox.trap{ outline:1px dashed rgba(255,255,255,.25); }
+.sd-masknote{ color:rgba(255,255,255,.42); }
+.sd-safe{ border:1px dashed rgba(255,181,71,.7); }
+.sd-safekey{ color:#8b8f99; }
+.sd-safekey i{ border-top:1px dashed rgba(255,181,71,.8); }
+
+/* testar vídeo e sangria: neutros, a cor fica só no marcador */
+.sd-vtest, .sd-bleed, .sd-bleed.on{ background:rgba(255,255,255,.025); border:1px solid var(--sd-line); border-radius:14px; }
+.sd-vtest-h b, .sd-bleed-h b{ font-weight:600; color:var(--sd-text); }
+.sd-vtest-h span, .sd-bleed-h span, .sd-bleed-in em{ color:var(--sd-mute); }
+.sd-vtest-h b i, .sd-bleed-h b i{ width:9px; height:9px; border-width:1.5px; }
+.sd-input-v, .sd-input-b{ border-color:var(--sd-line-2) !important; box-shadow:none !important; }
+.sd-input-v:focus-within{ border-color:rgba(168,85,247,.85) !important; box-shadow:0 0 0 3px rgba(168,85,247,.18) !important; }
+.sd-input-b:focus-within{ border-color:rgba(255,122,26,.85) !important; box-shadow:0 0 0 3px rgba(255,122,26,.18) !important; }
+.sd-input-v b, .sd-input-b b{ color:#7d818b !important; }
+.sd-vfit, .sd-bleed-r{ border-radius:10px; }
+.sd-tl-p{ background:rgba(120,146,190,.25); border-color:rgba(255,255,255,.18); }
+.sd-tl-p.c{ background:rgba(var(--accent-rgb,46,134,193),.4); }
+.sd-tl-p.f{ background:rgba(56,178,156,.28); }
+
+/* indicadores */
+.sd-ind{ padding:12px 14px; }
+.sd-ind-lbl{ font-size:9.5px; letter-spacing:.14em; color:var(--sd-mute); font-weight:500; }
+.sd-ind-val{ font-weight:600; letter-spacing:-.02em; color:#fff; }
+.sd-ind-sub{ color:#6f737d; }
+.sd-ind-safe{ border-color:rgba(255,181,71,.25); }
+.sd-ind-safe .sd-ind-lbl{ color:#e0a54a; }
+
+/* modais, gaveta e avisos no mesmo vidro */
+.sd-modal, .sd-drawer{ background:rgba(14,15,19,.86); border-color:var(--sd-line); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); }
+.sd-item{ background:rgba(255,255,255,.03); border-color:var(--sd-line); }
+.sd-toast{ background:rgba(20,21,26,.9); border-color:var(--sd-line-2); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
+.sd-editing{ background:rgba(255,255,255,.04); border-color:var(--sd-line-2); }
 `;
