@@ -743,6 +743,28 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     }
   }
 
+  // TEMPORÁRIO (diagnóstico dos nomes de revisor): só admin, só leitura.
+  r.get('/diagnostico/nomes/:id', autenticar, soAdmin, envolve(async (req, res) => {
+    const conta = fio.conta();
+    const a = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(req.params.id)}`)).data;
+    const com = await fio.tudo(`/accounts/${conta}/files/${encodeURIComponent(req.params.id)}/comments?include=owner`);
+    const shares = await fio.tudo(`/accounts/${conta}/projects/${a.project_id}/shares`).catch((e) => ({ erro: e.message }));
+    const saida = { arquivo: { id: a.id, pai: a.parent_id, projeto: a.project_id },
+      comentarios: com.map((c) => ({ em: c.created_at, dono: !!c.owner, owner_id: c.owner_id || null, chaves: Object.keys(c) })),
+      shares: Array.isArray(shares) ? shares.length : shares, atividades: [] };
+    if (Array.isArray(shares)) {
+      for (const sh of shares.slice(0, 80)) {
+        const at = await fio.tudo(`/accounts/${conta}/shares/${sh.id}/activities?include=user`).catch((e) => [{ erro: e.message }]);
+        const tipos = {};
+        for (const x of at) tipos[x.type || 'erro'] = (tipos[x.type || 'erro'] || 0) + 1;
+        const cc = at.filter((x) => x.type === 'comment_created').slice(0, 6)
+          .map((x) => ({ asset: x.asset_id, em: x.inserted_at, user: x.user ? { nome: x.user.name, email: !!x.user.email } : null, user_id: x.user_id }));
+        saida.atividades.push({ share: sh.id, nome: sh.name, criado: sh.created_at, tipos, cc, erro: at[0] && at[0].erro });
+      }
+    }
+    res.json(saida);
+  }));
+
   // Todos os comentários de um vídeo (os antigos também), na ordem do vídeo,
   // com as respostas de cada um.
   r.get('/comentarios/:id', autenticar, envolve(async (req, res) => {
