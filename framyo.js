@@ -21,6 +21,7 @@ const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { montarPosts } = require('./framyo-posts');
 
 // As duas variáveis de endereço existem só para os testes (um Frame.io falso).
 const FRAMEIO = process.env.FRAMYO_TESTE_FRAMEIO || 'https://api.frame.io/v4';
@@ -410,7 +411,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
 
   r.put('/frameio/segredo', autenticar, soAdmin, envolve(async (req, res) => {
     const s = limpaTexto((req.body || {}).client_secret, 300);
-    if (s.length < 10 || /s/.test(s)) throw falha(400, 'Esse Client Secret não parece válido. Copie de novo do Adobe Developer Console.');
+    if (s.length < 10 || /\s/.test(s)) throw falha(400, 'Esse Client Secret não parece válido. Copie de novo do Adobe Developer Console.');
     if (s.toLowerCase() === CLIENT_ID.toLowerCase()) {
       throw falha(400, 'Isso é o Client ID, não o Client Secret. No Adobe Developer Console, clique em “Retrieve client secret” e copie o que aparecer.');
     }
@@ -914,6 +915,9 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     resultado.view_url = a.view_url;
     res.json(resultado);
   }));
+
+  // ── calendário de posts (Google Drive) ──────────────────────────────────────
+  montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica: URL_PUBLICA });
 
   r.use((req, res) => res.status(404).json({ erro: 'Rota do Framyo não existe.' }));
   r.use((err, req, res, next) => {        // JSON quebrado e afins: fica aqui dentro
