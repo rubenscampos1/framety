@@ -1121,13 +1121,62 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   const PARTE_MAX = 9 * 1024 * 1024;
   const versaoValida = (v) => /^\d{1,3}(\.\d{1,3}){1,3}$/.test(String(v || ''));
   const partesLocais = new Map();                // só testes (sem Cloudinary): versão -> [Buffer]
-  const nuvem = () => (process.env.CLOUDINARY_URL ? require('cloudinary').v2 : null);
+  const nuvem = () => (process.env.FRAMYO_TESTE_NUVEM ? nuvemDeTeste : process.env.CLOUDINARY_URL ? require('cloudinary').v2 : null);
   const pastaNuvem = (v) => `framyo/atualizacoes/${v}`;
+  // O Cloudinary olha o conteúdo e recusa executáveis ("extension bin are not
+  // allowed"), qualquer que seja o nome. As partes vão embaralhadas (XOR com uma
+  // chave fixa) e este servidor desembaralha no download (/atualizacao/baixar).
+  const CHAVE_PARTE = crypto.createHash('sha256').update('framyo-atualizacao').digest();
+  const embaralhar = (buf, inicio = 0) => {
+    const saida = Buffer.allocUnsafe(buf.length);
+    for (let i = 0; i < buf.length; i++) saida[i] = buf[i] ^ CHAVE_PARTE[(inicio + i) % CHAVE_PARTE.length];
+    return saida;
+  };
+  // Só nos testes: um "Cloudinary" na memória que recusa executáveis como o real.
+  const guardadosTeste = new Map();
+  const nuvemDeTeste = {
+    uploader: { upload_stream: (op, cb) => ({ end: (buf) => {
+      if (buf[0] === 0x4d && buf[1] === 0x5a) return cb(new Error('resources with extension bin are not allowed'));
+      guardadosTeste.set(op.public_id, buf);
+      cb(null, { secure_url: `${process.env.FRAMYO_TESTE_NUVEM}/${encodeURIComponent(op.public_id)}` });
+    } }) },
+    api: { delete_resources_by_prefix: async (prefixo) => { for (const k of [...guardadosTeste.keys()]) if (k.startsWith(prefixo)) guardadosTeste.delete(k); } },
+  };
+  if (process.env.FRAMYO_TESTE_NUVEM) {
+    r.get('/atualizacao/teste-nuvem/:id', (req, res) => {
+      const b = guardadosTeste.get(req.params.id);
+      return b ? res.type('application/octet-stream').send(b) : res.status(404).json({ erro: 'não existe' });
+    });
+  }
 
   r.get('/atualizacao', autenticar, (req, res) => {
     const a = D().atualizacao;
     res.json(a ? { versao: a.versao, nome: a.nome, tamanho: a.tamanho, sha256: a.sha256, notas: a.notas || '',
-                   publicado_em: a.publicado_em, partes: a.partes.map((p) => ({ url: p.url, tamanho: p.tamanho })) } : { versao: null });
+                   publicado_em: a.publicado_em, partes: a.partes.map((p, i) => ({ url: p.embaralhada ? `${URL_PUBLICA}/api/framyo/atualizacao/baixar/${a.versao}/${i}` : p.url,
+                                                   tamanho: p.tamanho })) } : { versao: null });
+  });
+
+  // Download de uma parte da nuvem, já desembaralhada. Sem login: o instalador
+  // não tem segredo, e quem baixa (bandeja) confere o SHA-256 no fim.
+  r.get('/atualizacao/baixar/:versao/:n', async (req, res) => {
+    const a = D().atualizacao;
+    const p = a && a.versao === req.params.versao && a.partes[Number(req.params.n)];
+    if (!p || !p.embaralhada) return res.status(404).json({ erro: 'Parte não existe.' });
+    try {
+      const r2 = await fetch(p.url);
+      if (!r2.ok) return res.status(502).json({ erro: 'A nuvem não entregou a parte.' });
+      res.set({ 'Content-Type': 'application/octet-stream', 'Content-Length': String(p.tamanho), 'Cache-Control': 'no-store' });
+      let pos = 0;
+      for await (const pedaco of r2.body) {
+        const b = Buffer.from(pedaco);
+        res.write(embaralhar(b, pos));
+        pos += b.length;
+      }
+      res.end();
+    } catch (e) {
+      console.error('[framyo] baixar parte:', e.message);
+      if (!res.headersSent) res.status(502).json({ erro: 'Falha ao baixar a parte.' }); else res.destroy();
+    }
   });
 
   r.post('/atualizacao/partes/:versao/:n', autenticar, soAdmin, express.raw({ type: 'application/octet-stream', limit: PARTE_MAX + 1024 }),
@@ -1143,9 +1192,10 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
         // O Cloudinary recusa extensões de executável (.bin, .exe…): a parte vai
         // sem extensão e, se a conta também recusar, como .txt. O conteúdo é
         // conferido pelo SHA-256 no download, a extensão não importa.
+        const embaralhada = embaralhar(dados);
         const subir = (ext) => new Promise((ok, erro) => {
           c.uploader.upload_stream({ resource_type: 'raw', public_id: `${pastaNuvem(versao)}/parte-${String(n).padStart(2, '0')}${ext}`,
-                                     overwrite: true, invalidate: true }, (e, x) => (e ? erro(e) : ok(x))).end(dados);
+                                     overwrite: true, invalidate: true }, (e, x) => (e ? erro(e) : ok(x))).end(embaralhada);
         });
         let r2, ultimoErro;
         for (const ext of ['', '.txt']) {
@@ -1160,7 +1210,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
         url = `${URL_PUBLICA}/api/framyo/atualizacao/local/${versao}/${n}`;
       }
       const pend = D().atualizacao_envio && D().atualizacao_envio.versao === versao ? D().atualizacao_envio : { versao, partes: [] };
-      pend.partes[n] = { url, tamanho: dados.length, sha256: crypto.createHash('sha256').update(dados).digest('hex') };
+      pend.partes[n] = { url, tamanho: dados.length, sha256: crypto.createHash('sha256').update(dados).digest('hex'), embaralhada: !!c };
       D().atualizacao_envio = pend;
       await loja.salvar();
       res.json({ ok: true, n, url });
