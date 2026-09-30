@@ -59,7 +59,7 @@ function criarGoogle(loja, retorno) {
     if (!G().refresh_token) throw Object.assign(new Error('A conta Google ainda não foi conectada.'), { status: 409 });
     if (G().access_token && G().expira_em - Date.now() > 120000) return G().access_token;
     renovando = renovando || trocar({ grant_type: 'refresh_token', refresh_token: G().refresh_token })
-      .then((j) => { guardar(j); return loja.salvar(); }).finally(() => { renovando = null; });
+      .then((j) => { guardar(j); return loja.salvar().catch(() => {}); }).finally(() => { renovando = null; });
     await renovando;
     return G().access_token;
   }
@@ -241,9 +241,16 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     p.atualizado_em = agora();
     posts().push(p);
     await pasta(p);
-    await loja.salvar();
+    await salvarOuDesfazer(() => { const i = posts().indexOf(p); if (i >= 0) posts().splice(i, 1); });
     res.json({ post: publico(p) });
   }));
+
+  // Se o banco recusar a gravação, a mudança é desfeita na memória também: o
+  // que o Framyo mostra é sempre o que está no banco (sem post "fantasma" que
+  // aparece depois, nem duplicado quando a pessoa tenta de novo).
+  async function salvarOuDesfazer(desfazer) {
+    try { await loja.salvar(); } catch (e) { desfazer(); throw e; }
+  }
 
   const podeMexer = (u, p) => u.admin || p.criador_id === u.id || p.responsavel_id === u.id;
 
@@ -254,9 +261,10 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     const novo = lerPost(req.body || {}, p);
     if (novo.data !== p.data || novo.responsavel_id !== p.responsavel_id) novo.avisos = {};   // lembretes recomeçam
     novo.atualizado_em = agora();
+    const antes = JSON.parse(JSON.stringify(p));
     Object.assign(p, novo);
     await pasta(p);
-    await loja.salvar();
+    await salvarOuDesfazer(() => { for (const k of Object.keys(p)) delete p[k]; Object.assign(p, antes); });
     res.json({ post: publico(p) });
   }));
 
@@ -266,7 +274,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     const p = posts()[i];
     if (!req.usuario.admin && p.criador_id !== req.usuario.id) throw falha(403, 'Só quem criou ou um admin apagam o post.');
     posts().splice(i, 1);            // a pasta no Drive fica (os arquivos de ninguém somem)
-    await loja.salvar();
+    await salvarOuDesfazer(() => posts().splice(Math.min(i, posts().length), 0, p));
     res.json({ ok: true });
   }));
 

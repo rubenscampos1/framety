@@ -73,40 +73,74 @@ const VAZIO = () => ({
   seq: 0,
 });
 
+const DIAS_DE_COPIA = 30;             // cópias diárias guardadas (framyo_backup)
+
 function criarLoja({ pool, arquivo }) {
   let dados = null;
   let pronto = null;
   let gravando = Promise.resolve();
+  let copiaDoDia = null;               // dia (AAAA-MM-DD) da última cópia de segurança
 
   async function carregar() {
     if (pool) {
       await pool.query(`CREATE TABLE IF NOT EXISTS framyo_store (
         id INTEGER PRIMARY KEY DEFAULT 1, data JSONB NOT NULL, CONSTRAINT framyo_uma_linha CHECK (id = 1))`);
+      await pool.query(`CREATE TABLE IF NOT EXISTS framyo_backup (
+        dia DATE PRIMARY KEY, data JSONB NOT NULL, gravado_em TIMESTAMPTZ NOT NULL DEFAULT now())`);
       const r = await pool.query('SELECT data FROM framyo_store WHERE id = 1');
       dados = r.rows.length ? r.rows[0].data : VAZIO();
+    } else if (fs.existsSync(arquivo)) {
+      // Arquivo ilegível: para aqui (sem trocar por um banco vazio na próxima gravação).
+      dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
     } else {
-      try { dados = JSON.parse(fs.readFileSync(arquivo, 'utf8')); } catch { dados = VAZIO(); }
+      dados = VAZIO();
     }
     dados = Object.assign(VAZIO(), dados);
   }
 
+  async function gravar(copia) {
+    if (pool) {
+      await pool.query(`INSERT INTO framyo_store (id, data) VALUES (1, $1)
+                        ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`, [copia]);
+      // Uma cópia por dia (a do fim do dia fica), guardando os últimos 30 dias.
+      const dia = new Date().toISOString().slice(0, 10);
+      await pool.query(`INSERT INTO framyo_backup (dia, data) VALUES ($1, $2)
+                        ON CONFLICT (dia) DO UPDATE SET data = EXCLUDED.data, gravado_em = now()`, [dia, copia]);
+      if (copiaDoDia !== dia) {
+        copiaDoDia = dia;
+        await pool.query(`DELETE FROM framyo_backup WHERE dia < CURRENT_DATE - $1::int`, [DIAS_DE_COPIA]);
+      }
+    } else {
+      fs.writeFileSync(arquivo + '.tmp', copia);
+      fs.renameSync(arquivo + '.tmp', arquivo);
+    }
+  }
+
   // Gravações em fila: duas requisições ao mesmo tempo nunca se atropelam.
+  // Se o banco recusar (3 tentativas), quem pediu recebe o erro — a tela
+  // avisa em vez de mostrar "salvo" com o dado perdido. A fila segue.
   function salvar() {
     const copia = JSON.stringify(dados);
-    gravando = gravando.then(async () => {
-      if (pool) {
-        await pool.query(`INSERT INTO framyo_store (id, data) VALUES (1, $1)
-                          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`, [copia]);
-      } else {
-        fs.writeFileSync(arquivo + '.tmp', copia);
-        fs.renameSync(arquivo + '.tmp', arquivo);
+    const esta = gravando.then(async () => {
+      for (let i = 0; ; i++) {
+        try { return await gravar(copia); } catch (e) {
+          console.error('[framyo] erro ao gravar (tentativa ' + (i + 1) + '):', e.message);
+          if (i >= 2) throw Object.assign(new Error('Não foi possível salvar no banco agora. Tente de novo em instantes.'), { status: 503 });
+          await new Promise((ok) => setTimeout(ok, 500 * 2 ** i));
+        }
       }
-    }).catch((e) => console.error('[framyo] erro ao gravar:', e.message));
-    return gravando;
+    });
+    gravando = esta.catch(() => {});
+    return esta;
   }
 
   return {
-    pronto: () => (pronto = pronto || carregar()),
+    // Se o banco falhar ao ligar, a próxima requisição tenta de novo.
+    pronto: () => (pronto = pronto || carregar().catch((e) => {
+      pronto = null;
+      console.error('[framyo] erro ao carregar:', e.message);
+      throw Object.assign(new Error('O banco do Framyo não respondeu. Tente de novo em instantes.'), { status: 503 });
+    })),
     get dados() { return dados; },
     salvar,
   };
@@ -141,7 +175,7 @@ function criarFrameio(loja) {
     if (!f || !f.refresh_token) throw Object.assign(new Error('A conta Frame.io ainda não foi conectada.'), { status: 409 });
     if (f.access_token && f.expira_em - Date.now() > 120000) return f.access_token;
     renovando = renovando || trocarToken({ grant_type: 'refresh_token', refresh_token: f.refresh_token })
-      .then((j) => { guardarTokens(j); return loja.salvar(); })
+      .then((j) => { guardarTokens(j); return loja.salvar().catch(() => {}); })
       .finally(() => { renovando = null; });
     await renovando;
     return loja.dados.frameio.access_token;
@@ -921,7 +955,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
 
   r.use((req, res) => res.status(404).json({ erro: 'Rota do Framyo não existe.' }));
   r.use((err, req, res, next) => {        // JSON quebrado e afins: fica aqui dentro
-    res.status(err.status || 400).json({ erro: err.type === 'entity.parse.failed' ? 'JSON inválido.' : 'Pedido inválido.' });
+    res.status(err.status || 400).json({ erro: err.type === 'entity.parse.failed' ? 'JSON inválido.' : err.status === 503 ? err.message : 'Pedido inválido.' });
   });
 
   r.loja = loja;                          // para testes
