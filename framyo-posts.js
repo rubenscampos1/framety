@@ -208,7 +208,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
   function publico(p) {
     const enviado = p.arquivos_n > 0 || !!p.enviado_manual;
     return {
-      id: p.id, codigo: p.codigo, titulo: p.titulo || '', descricao: p.descricao || '', legenda: p.legenda || '', formato: p.formato, data: p.data || null,
+      id: p.id, codigo: p.codigo, titulo: p.titulo || '', descricao: p.descricao || '', legenda: p.legenda || '', postado: !!p.postado, postado_em: p.postado_em || null, postado_por: p.postado ? pessoa(p.postado_por) : null, formato: p.formato, data: p.data || null,
       responsavel: pessoa(p.responsavel_id), criador: pessoa(p.criador_id), criado_em: p.criado_em, atualizado_em: p.atualizado_em,
       drive_url: p.drive_id ? `https://drive.google.com/drive/folders/${p.drive_id}` : null, drive_erro: p.drive_erro || null,
       arquivos: (p.arquivos || []).map((a) => Object.assign({}, a, a.id ? { capa: linkMidia(p.id, a.id, 'capa'), arquivo: linkMidia(p.id, a.id, 'arquivo') } : {})),
@@ -269,6 +269,8 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     if (b.descricao !== undefined) p.descricao = limpaTexto(b.descricao, 4000);
     // Legenda que vai no post (o marketing escreve aqui). 2.200 = limite do Instagram.
     if (b.legenda !== undefined) p.legenda = limpaTexto(b.legenda, 2200);
+    // "Já foi postado": o check verde por cima do cartão no calendário.
+    if (b.postado !== undefined) p.postado = !!b.postado;
     if (b.formato !== undefined) {
       if (!FORMATOS[b.formato]) throw falha(400, 'Escolha o formato: Reels, Feed ou Carrossel.');
       p.formato = b.formato;
@@ -315,10 +317,15 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     const b = req.body || {};
     // A legenda qualquer pessoa da equipe escreve (é o trabalho do marketing);
     // o resto do post continua só com quem criou, o responsável ou um admin.
-    const soLegenda = Object.keys(b).every((k) => k === 'legenda');
-    if (!soLegenda && ehMarketing(req.usuario)) throw falha(403, 'O acesso de marketing escreve só a legenda dos posts.');
+    // Legenda e "já foi postado" qualquer pessoa da equipe marca (inclusive marketing).
+    const soLegenda = Object.keys(b).every((k) => k === 'legenda' || k === 'postado');
+    if (!soLegenda && ehMarketing(req.usuario)) throw falha(403, 'O acesso de marketing escreve só a legenda e marca o post como postado.');
     if (!soLegenda && !podeMexer(req.usuario, p)) throw falha(403, 'Só quem criou, o responsável ou um admin mexem neste post.');
     const novo = lerPost(b, p);
+    if (b.postado !== undefined && !!b.postado !== !!p.postado) {
+      novo.postado_em = b.postado ? agora() : null;
+      novo.postado_por = b.postado ? req.usuario.id : null;
+    }
     if (novo.data !== p.data || novo.responsavel_id !== p.responsavel_id) novo.avisos = {};   // lembretes recomeçam
     novo.atualizado_em = agora();
     const antes = JSON.parse(JSON.stringify(p));
@@ -353,7 +360,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     const u = req.usuario;
     if (ehMarketing(u)) return res.json({ lembretes: [] });     // marketing: nada de aviso na área de trabalho
     const saida = [];
-    const meus = posts().filter((p) => p.data && diasAte(p.data) >= 0 && diasAte(p.data) <= 7 &&
+    const meus = posts().filter((p) => !p.postado && p.data && diasAte(p.data) >= 0 && diasAte(p.data) <= 7 &&   // já postado: sem lembrete
       ((p.responsavel_id || p.criador_id) === u.id || p.criador_id === u.id));
     await emLotes(meus, 4, (p) => conferir(p, 10 * 60000));
     for (const p of meus) {
