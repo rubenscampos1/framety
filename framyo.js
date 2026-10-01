@@ -83,6 +83,7 @@ const VAZIO = () => ({
   oauth_estados: {},           // state -> { criado_em } (login em andamento)
   responsaveis: {},            // id do vídeo ou da pilha de versões -> id do usuário
   eventos: [],
+  envios: [],                  // o que a equipe subiu pelo Framyo (feed do Início), mais novo primeiro
   seq: 0,
 });
 
@@ -1126,10 +1127,28 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
         }
       }
     }
-    const a = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(novo)}`)).data;
+    const a = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(novo)}?include=project`)).data;
     resultado.view_url = a.view_url;
+    // Feed do Início: quem subiu o quê, onde.
+    D().envios.unshift({ id: crypto.randomBytes(6).toString('hex'), em: agora(), usuario_id: req.usuario.id, usuario: req.usuario.usuario,
+      nome: req.usuario.nome, arquivo_id: novo, arquivo_nome: a.name || limpaTexto((req.body || {}).nome, 255), pilha_id: resultado.pilha_id || null, versao: !!base,
+      projeto_id: a.project_id, projeto_nome: (a.project && a.project.name) || '', view_url: a.view_url });
+    if (D().envios.length > 300) D().envios.length = 300;
+    await loja.salvar().catch((e) => console.error('[framyo] feed:', e.message));
     res.json(resultado);
   }));
+
+  // ── Início: últimos envios da equipe e últimos comentários ──────────────────
+  r.get('/feed', autenticar, (req, res) => {
+    const u = req.usuario;
+    const restrito = !u.admin && (u.projetos || []).length;
+    const ve = (x) => !restrito || u.projetos.includes(x.projeto_id);
+    const n = Math.min(Number(req.query.n) || 40, 100);
+    res.json({
+      envios: D().envios.filter(ve).slice(0, n),
+      comentarios: D().eventos.filter((e) => e.tipo === 'comentario' && ve(e)).slice(-n).reverse(),
+    });
+  });
 
   // ── atualização do programa ─────────────────────────────────────────────────
   // O admin publica o instalador novo pelo Framyo (Admin › Atualizações): ele
