@@ -402,6 +402,16 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
 
   // Admin força a atualização no computador da pessoa: a bandeja dela vê no
   // próximo /eventos (5 s), baixa e instala sozinha, com uma barrinha no canto.
+  // Todos de uma vez: quem está ativo e atrás da versão publicada.
+  r.post('/usuarios/atualizar-todos', autenticar, soAdmin, envolve(async (req, res) => {
+    const pub = D().atualizacao;
+    if (!pub || !pub.versao) throw falha(409, 'Nenhuma versão publicada ainda.');
+    const alvo = D().usuarios.filter((u) => u.ativo !== false && (!u.versao || compararVersoes(u.versao, pub.versao) < 0));
+    for (const u of alvo) u.forcar_atualizacao = pub.versao;
+    await loja.salvar();
+    res.json({ ok: true, versao: pub.versao, usuarios: alvo.map((u) => u.usuario) });
+  }));
+
   r.post('/usuarios/:id/atualizar', autenticar, soAdmin, envolve(async (req, res) => {
     const u = D().usuarios.find((x) => x.id === req.params.id);
     if (!u) throw falha(404, 'Usuário não encontrado.');
@@ -639,7 +649,9 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     await nomearEventosAntigos(eventos);
     const pub = D().atualizacao;
     const forcar = u.forcar_atualizacao && pub && pub.versao && compararVersoes(pub.versao, u.versao) > 0 ? pub.versao : null;
-    res.json({ seq: D().seq, modo: D().config.notificacoes, eventos, atualizar: forcar });
+    // versao: a última publicada — o programa pergunta a cada 3 s e avisa na hora.
+    res.json({ seq: D().seq, modo: D().config.notificacoes, eventos, atualizar: forcar,
+               versao: pub && pub.versao ? { versao: pub.versao, notas: pub.notas || '', tamanho: pub.tamanho } : null });
   }));
 
   // Avisos guardados antes de o nome do revisor por link funcionar: tenta uma
