@@ -1155,7 +1155,25 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     });
   }
 
-  r.get('/atualizacao', autenticar, (req, res) => {
+  // O construir.py publica sozinho com a chave de publicação (variável
+  // FRAMYO_CHAVE_PUBLICAR no Render = arquivo publicar.chave na pasta do Framyo).
+  // Sem a chave, só um admin logado publica.
+  function publicador(req, res, next) {
+    const chave = String(req.headers['x-framyo-chave-publicar'] || '');
+    const certa = process.env.FRAMYO_CHAVE_PUBLICAR || '';
+    if (chave) {
+      const a = crypto.createHash('sha256').update(chave).digest(), b = crypto.createHash('sha256').update(certa).digest();
+      if (certa.length >= 32 && crypto.timingSafeEqual(a, b)) {
+        req.usuario = { id: 'construir', usuario: 'construir', admin: true };
+        return next();
+      }
+      return res.status(401).json({ erro: 'Chave de publicação inválida (confira FRAMYO_CHAVE_PUBLICAR no Render).' });
+    }
+    autenticar(req, res, () => soAdmin(req, res, next));
+  }
+  const leitorDaVersao = (req, res, next) => (req.headers['x-framyo-chave-publicar'] ? publicador(req, res, next) : autenticar(req, res, next));
+
+  r.get('/atualizacao', leitorDaVersao, (req, res) => {
     const a = D().atualizacao;
     res.json(a ? { versao: a.versao, nome: a.nome, tamanho: a.tamanho, sha256: a.sha256, notas: a.notas || '',
                    publicado_em: a.publicado_em, partes: a.partes.map((p, i) => ({ url: p.embaralhada ? `${URL_PUBLICA}/api/framyo/atualizacao/baixar/${a.versao}/${i}` : p.url,
@@ -1185,7 +1203,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     }
   });
 
-  r.post('/atualizacao/partes/:versao/:n', autenticar, soAdmin, express.raw({ type: 'application/octet-stream', limit: PARTE_MAX + 1024 }),
+  r.post('/atualizacao/partes/:versao/:n', publicador, express.raw({ type: 'application/octet-stream', limit: PARTE_MAX + 1024 }),
     envolve(async (req, res) => {
       const { versao } = req.params, n = Number(req.params.n);
       if (!versaoValida(versao) || !Number.isInteger(n) || n < 0 || n > 60) throw falha(400, 'Versão ou parte inválida.');
@@ -1231,7 +1249,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     res.end(p);
   });
 
-  r.post('/atualizacao/publicar', autenticar, soAdmin, envolve(async (req, res) => {
+  r.post('/atualizacao/publicar', publicador, envolve(async (req, res) => {
     const b = req.body || {};
     const versao = String(b.versao || '');
     if (!versaoValida(versao)) throw falha(400, 'Versão inválida (ex.: 1.5.0).');
