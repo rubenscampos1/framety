@@ -9296,3 +9296,68 @@ img.yt43 {
   /* Vídeo em pé na fileira: mesma altura dos outros, inteiro no meio. */
   .pres-shell .pres-grid.rolar .pres-card-thumb.v916 { aspect-ratio: 16 / 9 !important; background-size: contain !important; background-repeat: no-repeat; background-color: #07080b; }
 }
+
+/* ─────────────────────────────────────────────
+   APRESENTAÇÃO NO CELULAR — v2: logos fixas embaixo, filtros resumidos numa
+   linha (o resto num painel por baixo) e cada categoria com um título em box
+   que fica preso no topo enquanto se rola por ela.
+   ───────────────────────────────────────────── */
+.pres-dock, .pres-chips-linha > .pres-filtro-btn, .pres-folha-fundo { display: none; }
+@media (max-width: 900px) {
+  /* Logos: saem do topo e ficam fixas no canto de baixo, como a barrinha do site. */
+  .pres-shell .pres-top-left { display: none !important; }
+  .pres-shell .pres-dock {
+    display: flex; align-items: center; gap: 10px;
+    position: fixed; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 260;
+    padding: 8px 14px 8px 12px; border-radius: 999px;
+    background: rgba(10,11,15,0.62); border: 1px solid rgba(255,255,255,0.10);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 10px 30px -10px rgba(0,0,0,0.6);
+  }
+  .pres-dock-framety { height: 30px; width: auto; transform: translateY(5px); }
+  .pres-dock-sep { height: 18px; width: auto; opacity: 0.4; }
+  .pres-dock-skyline { height: 18px; width: auto; display: block; }
+  .pres-shell .pres-main { padding-bottom: 96px !important; }
+
+  /* Topo: busca + uma linha (filtros e categorias). Os menus antigos saem. */
+  .pres-shell .pres-top { padding-top: 14px !important; }
+  .pres-shell .pres-top > .pres-recortes { display: none !important; }
+  .pres-shell .pres-chips-linha { order: 3; flex: 1 1 100%; display: flex; align-items: center; gap: 8px; min-width: 0; margin-right: -16px; }
+  .pres-shell .pres-chips-linha > .pres-chips { order: 0; flex: 1; margin: 0; padding: 2px 16px 2px 0; }
+  .pres-shell .pres-chips-linha > .pres-filtro-btn {
+    display: inline-flex; flex: none; align-items: center; justify-content: center; position: relative;
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); color: #fff;
+  }
+  .pres-filtro-btn.ativo::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent, #3b8ee8); }
+
+  /* Painel de filtros, por baixo. */
+  .pres-folha-fundo { display: flex; position: fixed; inset: 0; z-index: 300; align-items: flex-end; background: rgba(0,0,0,0.55); }
+  .pres-folha {
+    width: 100%; max-height: 78vh; overflow-y: auto; padding: 18px 16px calc(22px + env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0; background: #0d0f14; border-top: 1px solid rgba(255,255,255,0.10);
+  }
+  .pres-folha-cab { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .pres-folha-cab b { font-size: 17px; color: #fff; }
+  .pres-folha-cab button { background: none; border: 0; color: rgba(255,255,255,0.6); font-size: 13px; }
+  .pres-folha-grupo + .pres-folha-grupo { margin-top: 16px; }
+  .pres-folha-rotulo { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.45); margin-bottom: 8px; }
+  .pres-folha-opcoes { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pres-folha .pres-chip:disabled { opacity: 0.35; }
+
+  /* Título de cada categoria: um box que fica preso no topo durante a rolagem. */
+  .pres-shell .pres-row-head {
+    position: sticky; top: 0; z-index: 5;
+    margin: 0 -4px 12px !important; padding: 10px 12px 10px 14px !important; align-items: center !important;
+    border-radius: 12px; border: 1px solid rgba(255,255,255,0.09);
+    background: rgba(14,16,22,0.82); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 8px 24px -14px rgba(0,0,0,0.8);
+  }
+  .pres-shell .pres-row-head::before { content: ""; flex: none; width: 3px; height: 18px; border-radius: 2px; background: var(--accent, #3b8ee8); margin-right: 2px; }
+  .pres-shell .pres-row-head h2 { font-size: 17px !important; }
+  .pres-shell .pres-row-count { font-size: 10px; padding: 3px 7px; }
+  .pres-shell .pres-main { padding-top: 12px !important; }
+  /* Uma só caixa de rolagem (a dos vídeos), com altura limitada: senão o título não prende. */
+  .pres-shell .pres-body { overflow: hidden !important; min-height: 0; flex: 1; }
+  .pres-shell .pres-main { overflow-y: auto !important; overflow-x: hidden; min-height: 0; min-width: 0; height: 100%; }
+}

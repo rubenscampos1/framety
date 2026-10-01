@@ -22,6 +22,13 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
   const cats = window.FRAMETY_DATA.categories;
   const publicados = window.FRAMETY_DATA.videos.filter(v => v.status !== "draft");
   const [menuAberto, setMenuAberto] = React.useState(null);
+  const [folhaAberta, setFolhaAberta] = React.useState(false);   // celular: painel de filtros
+  const RECORTES = [
+    { chave: "formatoImersivo", rotulo: "Formato do imersivo", curto: "Imersivo", opcoes: window.FRAMETY_DATA.formatosImersivos || [] },
+    { chave: "padrao",          rotulo: "Padrão",              opcoes: ["Altíssimo","Alto","Médio","Baixo","Popular"] },
+    { chave: "formato",         rotulo: "Formato",             opcoes: ["Condomínio vertical","Condomínio horizontal","Business"] },
+  ].filter(m => m.opcoes.length);
+  const filtroExtra = RECORTES.some(m => m.chave === sel.tipo) || sort !== "recent";
   /* Clicar fora fecha — o menu é solto na página, não um modal. */
   React.useEffect(() => {
     if (!menuAberto) return;
@@ -110,11 +117,7 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
            <span className="pres-recortes-conta">
              {videos.length} {videos.length === 1 ? "vídeo" : "vídeos"}
            </span>
-           {[
-             { chave: "formatoImersivo", rotulo: "Formato do imersivo", curto: "Imersivo", opcoes: window.FRAMETY_DATA.formatosImersivos || [] },
-             { chave: "padrao",          rotulo: "Padrão",              opcoes: ["Altíssimo","Alto","Médio","Baixo","Popular"] },
-             { chave: "formato",         rotulo: "Formato",             opcoes: ["Condomínio vertical","Condomínio horizontal","Business"] },
-           ].filter(m => m.opcoes.length).map(m => (
+           {RECORTES.map(m => (
              <div className="pres-drop" key={m.chave} onClick={e => e.stopPropagation()}>
                <button
                  className={"pres-drop-btn" + (sel.tipo === m.chave ? " ativo" : "")}
@@ -142,8 +145,12 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
              </div>
            ))}
          </div>
-         {/* Só no celular: a coluna de categorias vira uma faixa que desliza para
-             o lado, com a ordenação no fim — o mesmo que a lateral da versão web. */}
+         {/* Só no celular: uma linha só — o botão de filtros (imersivo, padrão,
+             formato e ordem, num painel por baixo) e as categorias deslizando. */}
+         <div className="pres-chips-linha">
+         <button className={"pres-filtro-btn" + (filtroExtra ? " ativo" : "")} onClick={() => setFolhaAberta(true)} aria-label="Filtros">
+           <Icon name="filter" size={15} />
+         </button>
          <nav className="pres-chips" aria-label="Categorias">
            <button className={"pres-chip" + (sel.tipo === "todos" ? " ativo" : "")} onClick={() => setSel({ tipo: "todos", valor: null })}>
              Todos <span className="num">{publicados.length}</span>
@@ -154,11 +161,44 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
                {c.name} <span className="num">{c.count}</span>
              </button>
            ))}
-           <span className="pres-chip-sep" />
-           <button className={"pres-chip" + (sort === "recent" ? " ativo" : "")} onClick={() => setSort("recent")}>Recentes</button>
-           <button className={"pres-chip" + (sort === "views" ? " ativo" : "")} onClick={() => setSort("views")}>Mais vistos</button>
+           {RECORTES.some(m => m.chave === sel.tipo) && (
+             <button className="pres-chip ativo" onClick={() => setSel({ tipo: "todos", valor: null })}>{sel.valor} ✕</button>
+           )}
          </nav>
+         </div>
        </header>
+
+       {folhaAberta && (
+         <div className="pres-folha-fundo" onClick={() => setFolhaAberta(false)}>
+           <div className="pres-folha" onClick={e => e.stopPropagation()}>
+             <div className="pres-folha-cab">
+               <b>Filtros</b>
+               <button onClick={() => { setSel({ tipo: "todos", valor: null }); setSort("recent"); }}>Limpar</button>
+             </div>
+             {RECORTES.map(m => (
+               <div className="pres-folha-grupo" key={m.chave}>
+                 <div className="pres-folha-rotulo">{m.rotulo}</div>
+                 <div className="pres-folha-opcoes">
+                   {m.opcoes.map(o => (
+                     <button key={o} disabled={!conta(m.chave, o)}
+                       className={"pres-chip" + (sel.tipo === m.chave && sel.valor === o ? " ativo" : "")}
+                       onClick={() => { setSel(sel.tipo === m.chave && sel.valor === o ? { tipo: "todos", valor: null } : { tipo: m.chave, valor: o }); setFolhaAberta(false); }}>
+                       {o} <span className="num">{conta(m.chave, o)}</span>
+                     </button>
+                   ))}
+                 </div>
+               </div>
+             ))}
+             <div className="pres-folha-grupo">
+               <div className="pres-folha-rotulo">Ordenar</div>
+               <div className="pres-folha-opcoes">
+                 <button className={"pres-chip" + (sort === "recent" ? " ativo" : "")} onClick={() => { setSort("recent"); setFolhaAberta(false); }}>Mais recentes</button>
+                 <button className={"pres-chip" + (sort === "views" ? " ativo" : "")} onClick={() => { setSort("views"); setFolhaAberta(false); }}>Mais vistos</button>
+               </div>
+             </div>
+           </div>
+         </div>
+       )}
 
        <div className="pres-body">
          <aside className="pres-side glass-strong glass">
@@ -313,6 +353,13 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
           )}
          </main>
        </div>
+      </div>
+      <div className="pres-dock glass" aria-hidden="false">
+        <img src="/vector_framety.svg?v=1" alt="Framety" className="pres-dock-framety" />
+        <img src="/vector_bar.svg?v=1" alt="" className="pres-dock-sep" />
+        <a href="https://www.skylineip.com.br/" target="_blank" rel="noopener noreferrer" aria-label="Site do Grupo Skyline">
+          <img src="/vector_skyline.svg?v=1" alt="Grupo Skyline" className="pres-dock-skyline" />
+        </a>
       </div>
     </div>
   );
