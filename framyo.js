@@ -60,6 +60,7 @@ const apelidoValido = (s) => /^[a-z0-9._-]{2,40}$/.test(s);
 
 function usuarioPublico(u) {
   return { id: u.id, nome: u.nome, usuario: u.usuario, admin: !!u.admin, ativo: u.ativo !== false,
+           marketing: !u.admin && !!u.marketing, papel: u.admin ? 'admin' : u.marketing ? 'marketing' : 'editor',
            projetos: u.projetos || [], criado_em: u.criado_em,
            versao: u.versao || null, visto_em: u.visto_em || null, forcar_atualizacao: u.forcar_atualizacao || null };
 }
@@ -282,6 +283,10 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     if (!u) return res.status(401).json({ erro: 'Sessão expirada. Entre de novo.' });
     req.usuario = u;
     req.tokenHash = hashToken(t);
+    // Marketing: só o calendário. Nada de Frame.io (projetos, vídeos, comentários, links, envios, Início).
+    if (u.marketing && !u.admin && /^\/(projetos|pastas|arquivos|busca|midia|versoes|comentarios|mover|empilhar|pilhas|links|envios|feed|responsaveis)(\/|$)/.test(req.path)) {
+      return res.status(403).json({ erro: 'O acesso de marketing é só o calendário de posts.' });
+    }
     // O programa se identifica no User-Agent ("Framyo/1.4.0"): o admin vê a
     // versão de cada pessoa. Fica na memória e vai junto no próximo salvamento.
     const v = /Framyo\/(\d+(?:\.\d+){1,3})/.exec(String(req.headers['user-agent'] || ''));
@@ -370,7 +375,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     if (D().usuarios.some((x) => x.usuario === usuario)) throw falha(409, `Já existe o usuário @${usuario}.`);
     if (String(b.senha || '').length < 6) throw falha(400, 'A senha precisa de pelo menos 6 caracteres.');
     return { id: novoId('u_'), nome: limpaTexto(b.nome, 80) || usuario, usuario, senha: hashSenha(String(b.senha)),
-             admin: !!admin, ativo: true, projetos: [], criado_em: agora() };
+             admin: !!admin, marketing: !admin && b.papel === 'marketing', ativo: true, projetos: [], criado_em: agora() };
   }
   const admins = () => D().usuarios.filter((x) => x.admin && x.ativo !== false);
 
@@ -396,7 +401,8 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   r.get('/usuarios', autenticar, soAdmin, (req, res) => res.json({ usuarios: D().usuarios.map(usuarioPublico) }));
 
   r.post('/usuarios', autenticar, soAdmin, envolve(async (req, res) => {
-    const u = novoUsuario(req.body || {}, !!(req.body || {}).admin);
+    const b0 = req.body || {};
+    const u = novoUsuario(b0, b0.papel ? b0.papel === 'admin' : !!b0.admin);
     if (Array.isArray(req.body.projetos)) u.projetos = req.body.projetos.map(String).slice(0, 500);
     D().usuarios.push(u);
     await loja.salvar();
@@ -443,9 +449,15 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       for (const [k, s] of Object.entries(D().sessoes)) if (s.usuario_id === u.id) delete D().sessoes[k];
     }
     // Nunca deixa o Framyo sem nenhum admin ativo.
+    // Papel: admin, editor ou marketing (marketing: só o calendário e a legenda dos posts).
+    if (b.papel !== undefined) {
+      if (!['admin', 'editor', 'marketing'].includes(b.papel)) throw falha(400, 'Papel inválido.');
+      b.admin = b.papel === 'admin';
+    }
     const tiraAdmin = (b.admin === false && u.admin) || (b.ativo === false && u.admin);
     if (tiraAdmin && admins().length <= 1) throw falha(400, 'Precisa sobrar pelo menos um administrador ativo.');
     if (b.admin !== undefined) u.admin = !!b.admin;
+    if (b.papel !== undefined) u.marketing = b.papel === 'marketing';
     if (b.ativo !== undefined) {
       u.ativo = !!b.ativo;
       if (!u.ativo) for (const [k, s] of Object.entries(D().sessoes)) if (s.usuario_id === u.id) delete D().sessoes[k];
@@ -648,7 +660,8 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const filtra = D().config.notificacoes === 'atribuidos';
     const meus = new Set(u.projetos || []);
     const meu = (e) => (e.responsavel_id ? e.responsavel_id === u.id : meus.has(e.projeto_id));
-    const eventos = D().eventos.filter((e) => e.seq > desde && (!filtra || meu(e))).slice(-100);
+    const eventos = u.marketing && !u.admin ? []         // marketing não recebe avisos de comentário
+      : D().eventos.filter((e) => e.seq > desde && (!filtra || meu(e))).slice(-100);
     await nomearEventosAntigos(eventos);
     const pub = D().atualizacao;
     const forcar = u.forcar_atualizacao && pub && pub.versao && compararVersoes(pub.versao, u.versao) > 0 ? pub.versao : null;

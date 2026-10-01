@@ -154,6 +154,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
   const retorno = `${urlPublica}/api/framyo/google/callback`;
   const g = criarGoogle(loja, retorno);
   const posts = () => D().posts || (D().posts = []);
+  const ehMarketing = (u) => !!(u && u.marketing && !u.admin);
 
   // ── prévia do conteúdo (fotos, carrossel, vídeo) ───────────────────────────
   // A pasta do Drive é privada: o programa não consegue carregar a miniatura
@@ -286,6 +287,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
   }
 
   r.post('/posts', autenticar, envolve(async (req, res) => {
+    if (ehMarketing(req.usuario)) throw falha(403, 'O acesso de marketing não cria posts — só escreve a legenda.');
     const b = req.body || {};
     const p = lerPost(Object.assign({ formato: 'feed' }, b), {
       id: 'post_' + crypto.randomBytes(6).toString('hex'), codigo: crypto.randomBytes(3).toString('hex'),
@@ -314,6 +316,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     // A legenda qualquer pessoa da equipe escreve (é o trabalho do marketing);
     // o resto do post continua só com quem criou, o responsável ou um admin.
     const soLegenda = Object.keys(b).every((k) => k === 'legenda');
+    if (!soLegenda && ehMarketing(req.usuario)) throw falha(403, 'O acesso de marketing escreve só a legenda dos posts.');
     if (!soLegenda && !podeMexer(req.usuario, p)) throw falha(403, 'Só quem criou, o responsável ou um admin mexem neste post.');
     const novo = lerPost(b, p);
     if (novo.data !== p.data || novo.responsavel_id !== p.responsavel_id) novo.avisos = {};   // lembretes recomeçam
@@ -348,6 +351,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
   // ── lembretes (a bandeja pergunta de tempos em tempos) ──────────────────────
   r.get('/lembretes', autenticar, envolve(async (req, res) => {
     const u = req.usuario;
+    if (ehMarketing(u)) return res.json({ lembretes: [] });     // marketing: nada de aviso na área de trabalho
     const saida = [];
     const meus = posts().filter((p) => p.data && diasAte(p.data) >= 0 && diasAte(p.data) <= 7 &&
       ((p.responsavel_id || p.criador_id) === u.id || p.criador_id === u.id));
