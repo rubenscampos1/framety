@@ -146,7 +146,7 @@ function criarGoogle(loja, retorno) {
   const urlLogin = (estado) => `${AUTORIZAR}?${new URLSearchParams({ client_id: clientId(), redirect_uri: retorno, response_type: 'code',
     scope: ESCOPO, access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state: estado })}`;
 
-  return { G, clientId, segredo, trocar, guardar, api, conectado, pronto, garantirPasta, arquivos, conferirPasta, urlLogin };
+  return { G, clientId, segredo, trocar, guardar, api, token, conectado, pronto, garantirPasta, arquivos, conferirPasta, urlLogin };
 }
 
 function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica }) {
@@ -155,13 +155,63 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
   const g = criarGoogle(loja, retorno);
   const posts = () => D().posts || (D().posts = []);
 
+  // ── prévia do conteúdo (fotos, carrossel, vídeo) ───────────────────────────
+  // A pasta do Drive é privada: o programa não consegue carregar a miniatura
+  // nem o vídeo direto. Ele recebe um endereço DESTE servidor, assinado e
+  // válido por 6 h, que busca no Drive com a conta conectada e repassa (o
+  // vídeo com Range, para dar play e avançar). Endereço relativo: o programa
+  // completa com o servidor que ele usa.
+  const SEGREDO_MIDIA = crypto.randomBytes(32);
+  const assinatura = (post, arq, tipo, exp) => crypto.createHmac('sha256', SEGREDO_MIDIA).update(`${post}|${arq}|${tipo}|${exp}`).digest('hex').slice(0, 32);
+  function linkMidia(post, arq, tipo) {
+    const exp = Math.floor(Date.now() / 1000) + 6 * 3600;
+    return `/api/framyo/posts/${encodeURIComponent(post)}/midia/${encodeURIComponent(arq)}?tipo=${tipo}&exp=${exp}&sig=${assinatura(post, arq, tipo, exp)}`;
+  }
+  r.get('/posts/:id/midia/:arq', envolve(async (req, res) => {
+    const { id, arq } = req.params;
+    const tipo = req.query.tipo === 'arquivo' ? 'arquivo' : 'capa';
+    const exp = Number(req.query.exp) || 0;
+    const sig = String(req.query.sig || '');
+    const certa = assinatura(id, arq, tipo, exp);
+    if (exp < Date.now() / 1000 || sig.length !== certa.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(certa))) {
+      throw falha(403, 'Link de prévia vencido. Atualize o calendário.');
+    }
+    const p = posts().find((x) => x.id === id);
+    const a = p && (p.arquivos || []).find((x) => x.id === arq);
+    if (!a) throw falha(404, 'Arquivo não encontrado neste post.');
+    const auth = { Authorization: `Bearer ${await g.token()}` };
+    let r2 = null;
+    if (tipo === 'capa') {
+      // Miniatura do Drive (foto e vídeo) em tamanho bom; se não houver, a própria imagem.
+      const f = await g.api('GET', `/files/${encodeURIComponent(arq)}?fields=thumbnailLink&supportsAllDrives=true`).catch(() => ({}));
+      if (f.thumbnailLink) {
+        r2 = await fetch(f.thumbnailLink.replace(/=s\d+$/, '=s1000'), { headers: auth }).catch(() => null);
+        if (r2 && !r2.ok) r2 = null;
+      }
+      if (!r2 && /^image\//.test(a.tipo || '')) r2 = await fetch(`${DRIVE}/files/${encodeURIComponent(arq)}?alt=media&supportsAllDrives=true`, { headers: auth });
+      if (!r2 || !r2.ok) throw falha(404, 'Ainda sem prévia (o Drive pode estar processando o arquivo).');
+      res.set({ 'Content-Type': r2.headers.get('content-type') || 'image/jpeg', 'Cache-Control': 'private, max-age=3600' });
+    } else {
+      const cab = Object.assign({}, auth, req.headers.range ? { Range: req.headers.range } : {});
+      r2 = await fetch(`${DRIVE}/files/${encodeURIComponent(arq)}?alt=media&supportsAllDrives=true`, { headers: cab });
+      if (!r2.ok && r2.status !== 206) throw falha(502, 'O Google Drive não entregou o arquivo.');
+      res.status(r2.status);
+      for (const k of ['content-type', 'content-length', 'content-range', 'accept-ranges']) { const v = r2.headers.get(k); if (v) res.set(k, v); }
+      if (!r2.headers.get('content-type') && a.tipo) res.set('Content-Type', a.tipo);
+      res.set('Cache-Control', 'private, max-age=600');
+    }
+    const { Readable } = require('stream');
+    Readable.fromWeb(r2.body).on('error', () => res.destroy()).pipe(res);
+  }));
+
   function publico(p) {
     const enviado = p.arquivos_n > 0 || !!p.enviado_manual;
     return {
-      id: p.id, codigo: p.codigo, titulo: p.titulo || '', descricao: p.descricao || '', formato: p.formato, data: p.data || null,
+      id: p.id, codigo: p.codigo, titulo: p.titulo || '', descricao: p.descricao || '', legenda: p.legenda || '', formato: p.formato, data: p.data || null,
       responsavel: pessoa(p.responsavel_id), criador: pessoa(p.criador_id), criado_em: p.criado_em, atualizado_em: p.atualizado_em,
       drive_url: p.drive_id ? `https://drive.google.com/drive/folders/${p.drive_id}` : null, drive_erro: p.drive_erro || null,
-      arquivos: p.arquivos || [], arquivos_n: p.arquivos_n || 0, enviado, enviado_manual: !!p.enviado_manual,
+      arquivos: (p.arquivos || []).map((a) => Object.assign({}, a, a.id ? { capa: linkMidia(p.id, a.id, 'capa'), arquivo: linkMidia(p.id, a.id, 'arquivo') } : {})),
+      arquivos_n: p.arquivos_n || 0, enviado, enviado_manual: !!p.enviado_manual,
       verificado_em: p.verificado_em || null,
     };
   }
@@ -180,7 +230,8 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     if (!verificando.has(p.id)) {
       verificando.set(p.id, g.arquivos(p).then((lista) => {
         p.arquivos_n = lista.length;
-        p.arquivos = lista.slice(0, 6).map((f) => ({ nome: f.name, tipo: f.mimeType, url: f.webViewLink, miniatura: f.thumbnailLink || null }));
+        p.arquivos = lista.sort((a, b) => a.name.localeCompare(b.name, 'pt', { numeric: true })).slice(0, 20)
+          .map((f) => ({ id: f.id, nome: f.name, tipo: f.mimeType, url: f.webViewLink, miniatura: f.thumbnailLink || null }));
         p.verificado_em = agora();
       }).catch((e) => { p.drive_erro = e.message; }).finally(() => verificando.delete(p.id)));
     }
@@ -215,6 +266,8 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     const p = Object.assign({}, base);
     if (b.titulo !== undefined) p.titulo = limpaTexto(b.titulo, 120);
     if (b.descricao !== undefined) p.descricao = limpaTexto(b.descricao, 4000);
+    // Legenda que vai no post (o marketing escreve aqui). 2.200 = limite do Instagram.
+    if (b.legenda !== undefined) p.legenda = limpaTexto(b.legenda, 2200);
     if (b.formato !== undefined) {
       if (!FORMATOS[b.formato]) throw falha(400, 'Escolha o formato: Reels, Feed ou Carrossel.');
       p.formato = b.formato;
@@ -257,8 +310,12 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
   r.put('/posts/:id', autenticar, envolve(async (req, res) => {
     const p = posts().find((x) => x.id === req.params.id);
     if (!p) throw falha(404, 'Esse post não existe mais.');
-    if (!podeMexer(req.usuario, p)) throw falha(403, 'Só quem criou, o responsável ou um admin mexem neste post.');
-    const novo = lerPost(req.body || {}, p);
+    const b = req.body || {};
+    // A legenda qualquer pessoa da equipe escreve (é o trabalho do marketing);
+    // o resto do post continua só com quem criou, o responsável ou um admin.
+    const soLegenda = Object.keys(b).every((k) => k === 'legenda');
+    if (!soLegenda && !podeMexer(req.usuario, p)) throw falha(403, 'Só quem criou, o responsável ou um admin mexem neste post.');
+    const novo = lerPost(b, p);
     if (novo.data !== p.data || novo.responsavel_id !== p.responsavel_id) novo.avisos = {};   // lembretes recomeçam
     novo.atualizado_em = agora();
     const antes = JSON.parse(JSON.stringify(p));
