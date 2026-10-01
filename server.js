@@ -697,6 +697,42 @@ function problemaNoIdDaCategoria(id, ignorar) {
 // (Registered BEFORE the repo-root handler because the uploads folder lives
 // inside DIR — otherwise the generic handler would serve it with the short TTL.)
 app.use('/uploads', express.static(UPLOADS, { maxAge: '365d', immutable: true, etag: true }));
+
+// JSX já compilado: antes o navegador baixava o Babel (~1 MB) e traduzia os
+// .jsx a cada visita — 1 a 3 s de tela preta no celular. Agora o servidor
+// traduz uma vez (e de novo só quando o arquivo muda) com as MESMAS opções que
+// o Babel do navegador usava, e entrega /<nome>.jsx.js pronto.
+const babelServidor = require('@babel/standalone');
+const jsxCompilados = new Map();          // nome -> { mtime, code, etag }
+function compilarJsx(nome) {
+  const arq = path.join(DIR, nome + '.jsx');
+  const mtime = fs.statSync(arq).mtimeMs;
+  const atual = jsxCompilados.get(nome);
+  if (atual && atual.mtime === mtime) return atual;
+  const code = babelServidor.transform(fs.readFileSync(arq, 'utf8'), {
+    filename: nome + '.jsx', presets: ['react', 'env'],
+    plugins: ['transform-class-properties', 'transform-object-rest-spread', 'transform-flow-strip-types'],
+  }).code;
+  const pronto = { mtime, code, etag: '"' + crypto.createHash('sha1').update(code).digest('hex').slice(0, 16) + '"' };
+  jsxCompilados.set(nome, pronto);
+  return pronto;
+}
+app.get(/^\/([a-z0-9_-]+)\.jsx\.js$/i, (req, res, next) => {
+  const nome = req.params[0];
+  if (!fs.existsSync(path.join(DIR, nome + '.jsx'))) return next();
+  try {
+    const c = compilarJsx(nome);
+    res.set({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-cache', ETag: c.etag });
+    if (req.headers['if-none-match'] === c.etag) return res.status(304).end();
+    res.send(c.code);
+  } catch (e) {
+    console.error('[jsx]', nome, e.message);
+    res.status(500).type('application/javascript').send(`console.error(${JSON.stringify('Erro ao compilar ' + nome + '.jsx: ' + e.message)});`);
+  }
+});
+// Compila tudo ao subir: a primeira visita já pega pronto.
+for (const f of fs.readdirSync(DIR)) if (f.endsWith('.jsx')) { try { compilarJsx(f.slice(0, -4)); } catch (e) { console.error('[jsx]', f, e.message); } }
+
 // Repo assets (css/js/jsx/html): revalidate every load via ETag ('no-cache' =
 // "you may cache, but always check with me first"). The browser gets a tiny 304
 // when nothing changed and the fresh file the instant it does — so a deploy (or a

@@ -9361,3 +9361,13 @@ img.yt43 {
   .pres-shell .pres-body { overflow: hidden !important; min-height: 0; flex: 1; }
   .pres-shell .pres-main { overflow-y: auto !important; overflow-x: hidden; min-height: 0; min-width: 0; height: 100%; }
 }
+
+/* Fileiras de vídeos no celular: só deslizam para os lados. O gesto vertical
+   passa direto para a página (antes a fileira "sambava" para cima e para baixo). */
+@media (max-width: 900px) {
+  .pres-shell .pres-grid.rolar {
+    overflow-y: hidden !important; overscroll-behavior-x: contain; overscroll-behavior-y: none;
+    touch-action: pan-x pan-y;
+  }
+  .pres-shell .pres-chips { overflow-y: hidden; touch-action: pan-x pan-y; }
+}
