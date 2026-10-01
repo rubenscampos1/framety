@@ -9156,7 +9156,11 @@ body.home-pronta .whisper.no-ar .whisper-w {
   flex: 0 0 auto !important;
   align-self: center !important;
 }
-.modal-sug-thumb.v916 { aspect-ratio: 9 / 16 !important; }
+/* "Outros projetos" no modal: as miniaturas são sempre 16:9, mesmo quando o
+   vídeo sugerido é em pé (Reels/Shorts) — senão um vertical esticava a fileira
+   inteira. Cada cartão fica com a própria altura. */
+.modal-sug-thumb.v916 { aspect-ratio: 16 / 9 !important; }
+.modal-sug-track { align-items: flex-start; }
 
 /* Busca */
 .gsearch-video-thumb.v916 { width: 45px !important; height: 80px !important; }
@@ -9384,7 +9388,5 @@ img.yt43 {
    vídeo em pé na mesma moldura 16:9 dos outros, inteiro sobre fundo preto —
    antes um 9:16 esticava todos os cartões para ~400 px. */
 @media (max-width: 720px) {
-  .modal-sug-track { align-items: flex-start; }
-  .modal-sug-thumb.v916 { aspect-ratio: 16 / 9 !important; background-color: #000; background-size: contain !important; background-repeat: no-repeat; background-position: center; }
-  .modal-sug-thumb.v916 > img, .modal-sug-thumb.v916 > video { object-fit: contain !important; }
+  /* (as miniaturas 16:9 de "Outros projetos" agora valem para todas as telas — ver .modal-sug-thumb.v916) */
 }
