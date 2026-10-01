@@ -34,6 +34,8 @@ const EVENTOS_WEBHOOK = ['comment.created'];
 const MAX_EVENTOS = 3000;             // o feed guarda os últimos N comentários
 const ESPERA_NOME_MS = Number(process.env.FRAMYO_TESTE_ESPERA_NOME_MS) || 4000;   // nova tentativa do nome do revisor
 const SESSAO_DIAS = 90;
+// Impressão (SHA-256) da chave de publicação do construir.py — ver publicador().
+const IMPRESSAO_CHAVE_PUBLICAR = '4cb8af34d51936d746114ad8d7416a921abac432a3d97bdfc030eae3296a8eb3';
 
 // ── utilidades ────────────────────────────────────────────────────────────────
 const agora = () => new Date().toISOString();
@@ -1172,10 +1174,14 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // Sem a chave, só um admin logado publica.
   function publicador(req, res, next) {
     const chave = String(req.headers['x-framyo-chave-publicar'] || '');
-    const certa = process.env.FRAMYO_CHAVE_PUBLICAR || '';
+    // Só a impressão (SHA-256) da chave fica aqui: ela não publica nada e não
+    // revela a chave, que mora só em publicar.chave no computador do build.
+    // FRAMYO_CHAVE_PUBLICAR no Render, se existir, troca a chave sem mexer no código.
+    const certa = process.env.FRAMYO_CHAVE_PUBLICAR
+      ? crypto.createHash('sha256').update(process.env.FRAMYO_CHAVE_PUBLICAR).digest('hex') : IMPRESSAO_CHAVE_PUBLICAR;
     if (chave) {
-      const a = crypto.createHash('sha256').update(chave).digest(), b = crypto.createHash('sha256').update(certa).digest();
-      if (certa.length >= 32 && crypto.timingSafeEqual(a, b)) {
+      const a = crypto.createHash('sha256').update(chave).digest(), b = Buffer.from(certa, 'hex');
+      if (chave.length >= 32 && b.length === 32 && crypto.timingSafeEqual(a, b)) {
         req.usuario = { id: 'construir', usuario: 'construir', admin: true };
         return next();
       }
