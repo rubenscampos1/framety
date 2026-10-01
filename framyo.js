@@ -630,7 +630,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     D().eventos.push({
       seq: D().seq, tipo: 'comentario', comentario_id: id, criado_em: c.created_at || agora(),
       texto: c.text || '', autor: autorDe(c),
-      arquivo_id: arq.id, arquivo_nome: arq.name, view_url: arq.view_url,
+      arquivo_id: arq.id, pai_id: arq.parent_id || null, arquivo_nome: arq.name, view_url: arq.view_url,
       projeto_id: arq.project_id, projeto_nome: (arq.project && arq.project.name) || '',
       timestamp: c.timestamp == null ? null : c.timestamp,
       responsavel_id: resp ? resp.id : null, responsavel: resp ? resp.usuario : null,
@@ -1139,16 +1139,36 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   }));
 
   // ── Início: últimos envios da equipe e últimos comentários ──────────────────
-  r.get('/feed', autenticar, (req, res) => {
+  // "Para quem" é o comentário, decidido na hora (o responsável pode ter sido
+  // definido depois do comentário): o responsável do vídeo ou da pilha em que
+  // ele está; sem responsável, quem tem o projeto atribuído.
+  function paraQuem(e) {
+    const r = responsavelDe(e.arquivo_id, e.pai_id);
+    if (r) return [r.usuario];
+    return D().usuarios.filter((x) => x.ativo !== false && (x.projetos || []).includes(e.projeto_id)).map((x) => x.usuario);
+  }
+
+  r.get('/feed', autenticar, envolve(async (req, res) => {
     const u = req.usuario;
     const restrito = !u.admin && (u.projetos || []).length;
     const ve = (x) => !restrito || u.projetos.includes(x.projeto_id);
     const n = Math.min(Number(req.query.n) || 40, 100);
+    const comentarios = D().eventos.filter((e) => e.tipo === 'comentario' && ve(e)).slice(-n).reverse();
+    // Avisos antigos não guardavam a pasta/pilha do vídeo: busca uma vez e guarda.
+    const sem = comentarios.filter((e) => e.pai_id === undefined && e.arquivo_id);
+    if (sem.length && D().frameio && D().frameio.refresh_token) {
+      const conta = fio.conta();
+      await Promise.all(sem.map(async (e) => {
+        const a = await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(e.arquivo_id)}`).catch(() => null);
+        e.pai_id = (a && a.data && a.data.parent_id) || null;
+      }));
+      await loja.salvar().catch(() => {});
+    }
     res.json({
       envios: D().envios.filter(ve).slice(0, n),
-      comentarios: D().eventos.filter((e) => e.tipo === 'comentario' && ve(e)).slice(-n).reverse(),
+      comentarios: comentarios.map((e) => Object.assign({}, e, { para: paraQuem(e) })),
     });
-  });
+  }));
 
   // ── atualização do programa ─────────────────────────────────────────────────
   // O admin publica o instalador novo pelo Framyo (Admin › Atualizações): ele
