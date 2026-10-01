@@ -9371,3 +9371,20 @@ img.yt43 {
   }
   .pres-shell .pres-chips { overflow-y: hidden; touch-action: pan-x pan-y; }
 }
+
+/* Modal do vídeo no celular: nada encolhe para caber na tela — o modal rola.
+   Sem isto, com "Outros projetos" alto (imersivos), o player era espremido
+   até ~19 px e o vídeo sumia (aconteceu abrindo pela apresentação). */
+@media (max-width: 720px) {
+  .modal-frame.modal-frame-glass > * { flex-shrink: 0 !important; }
+  .modal-player { flex: none !important; min-height: calc(100vw * 9 / 16); }
+}
+
+/* "Outros projetos" no modal (celular): cada cartão com a própria altura, e o
+   vídeo em pé na mesma moldura 16:9 dos outros, inteiro sobre fundo preto —
+   antes um 9:16 esticava todos os cartões para ~400 px. */
+@media (max-width: 720px) {
+  .modal-sug-track { align-items: flex-start; }
+  .modal-sug-thumb.v916 { aspect-ratio: 16 / 9 !important; background-color: #000; background-size: contain !important; background-repeat: no-repeat; background-position: center; }
+  .modal-sug-thumb.v916 > img, .modal-sug-thumb.v916 > video { object-fit: contain !important; }
+}
