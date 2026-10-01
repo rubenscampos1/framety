@@ -27,10 +27,6 @@ const getVimeoId = (url) => {
    troca a proporção — ver a classe .v916 no styles.css. */
 const ehVertical = (v) => !!v && (v.vertical === true ||
   (v.vertical == null && /\/shorts\//i.test(v.videoUrl || "")));
-/* A miniatura é sempre horizontal (16:9), mesmo de vídeo em pé (Reels/Shorts):
-   a capa do portfólio segue o padrão deitado. Só o player respeita o vídeo em
-   pé (ehVertical). Para voltar a capa em pé nos verticais, devolva ehVertical(v). */
-const thumbEmPe = (v) => false;
 /* A capa gravada no vídeo pode ser uma imagem do próprio YouTube: os cadastros
    importados vieram assim, e o seletor de frame do console grava 1.jpg, 2.jpg
    ou 3.jpg — o quadro a um quarto, na metade e a três quartos do vídeo. Esses
@@ -573,7 +569,7 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
         {/* Categoria majoritariamente em pé cabe mais por linha: o card é
             estreito e, com três colunas, sobrava vão demais entre um e outro. */}
         {view === "grid" && (
-          <div className={"cat-grid" + (filtered.length && filtered.filter(thumbEmPe).length * 2 >= filtered.length ? " cat-grid-em-pe" : "")}>
+          <div className={"cat-grid" + (filtered.length && filtered.filter(ehVertical).length * 2 >= filtered.length ? " cat-grid-em-pe" : "")}>
             {filtered.map(v => {
               const thumb = getThumbUrl(v);
               const ytId  = getYouTubeId(v.videoUrl);
@@ -584,11 +580,11 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
                    aqui que eles precisam ser desligados. O que sobra é a thumb,
                    e o brilho no hover fica por conta do box-shadow, que o
                    componente não escreve. */
-                <SpotlightCard key={v.id} color="red" className={"cat-card" + (thumbEmPe(v) ? " v916" : "")} onClick={() => onOpenVideo(v.id)}
+                <SpotlightCard key={v.id} color="red" className={"cat-card" + (ehVertical(v) ? " v916" : "")} onClick={() => onOpenVideo(v.id)}
                   onMouseEnter={() => handleCardEnter(v)}
                   onMouseLeave={handleCardLeave}
                   style={{ '--radius': 12, '--backdrop': 'transparent', '--backup-border': 'transparent' }}>
-                  <div className={`cat-card-thumb${thumbEmPe(v) ? " v916" : ""}${classeTarja(thumb)}${thumb || isPreview ? "" : ` ${cat?.bgClass||"bg-comm"}`}`}
+                  <div className={`cat-card-thumb${ehVertical(v) ? " v916" : ""}${classeTarja(thumb)}${thumb || isPreview ? "" : ` ${cat?.bgClass||"bg-comm"}`}`}
                     style={!isPreview && thumb ? {backgroundImage:`url(${thumb})`,backgroundSize:"var(--zoom-thumb, cover)",backgroundPosition:"center"} : {}}>
 
                     {/* YouTube preview iframe on hover */}
@@ -639,7 +635,7 @@ const CategoryPage = ({ catId, onBack, onOpenVideo }) => {
                 </div>
                 <div className="meta-tags">{v.tags.map(t => <span key={t}>{t}</span>)}</div>
                 <div className="arrow"><Icon name="arrow-up-right" size={14}/></div>
-                <div className={`cat-list-preview${thumbEmPe(v) ? " v916" : ""}${classeTarja(window.getThumbUrl?.(v))} ${cat?.bgClass||"bg-comm"}`}
+                <div className={`cat-list-preview${ehVertical(v) ? " v916" : ""}${classeTarja(window.getThumbUrl?.(v))} ${cat?.bgClass||"bg-comm"}`}
                   style={window.getThumbUrl?.(v) ? { backgroundImage: `url(${window.getThumbUrl(v)})`, backgroundSize: "cover", backgroundPosition: "center" } : {}}>
                   {!window.getThumbUrl?.(v) && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-mono)",fontSize:10,letterSpacing:"0.2em",color:"rgba(255,255,255,0.4)"}}>[ PREVIEW ]</div>}
                 </div>
@@ -859,7 +855,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
                       return (
                         <button key={s.id} className="modal-sug-card"
                           onClick={() => onOpenVideo && onOpenVideo(s.id)}>
-                          <div className={"modal-sug-thumb" + (thumbEmPe(s) ? " v916" : "") + classeTarja(sThumb)} style={sThumb ? {backgroundImage:`url(${sThumb})`} : {}}>
+                          <div className={"modal-sug-thumb" + (ehVertical(s) ? " v916" : "") + classeTarja(sThumb)} style={sThumb ? {backgroundImage:`url(${sThumb})`} : {}}>
                             {!sThumb && <Icon name="play" size={12} style={{color:"rgba(255,255,255,0.3)"}}/>}
                           </div>
                           <div className="modal-sug-info">
@@ -958,7 +954,7 @@ const PlaylistPage = ({ catId }) => {
             const isActive = v.id === active.id;
             return (
               <button key={v.id} className={"playlist-item" + (isActive ? " active" : "")} onClick={() => setActiveId(v.id)} data-cursor="hover">
-                <div className={"playlist-item-thumb" + (thumbEmPe(v) ? " v916" : "") + classeTarja(thumb)} style={thumb ? { backgroundImage:`url(${thumb})` } : {}}>
+                <div className={"playlist-item-thumb" + (ehVertical(v) ? " v916" : "") + classeTarja(thumb)} style={thumb ? { backgroundImage:`url(${thumb})` } : {}}>
                   {!thumb && <Icon name="play" size={13}/>}
                   {isActive && <span className="playlist-item-playing"><Icon name="play" size={10}/></span>}
                   {v.duration && <span className="playlist-item-dur">{v.duration}</span>}
@@ -976,4 +972,4 @@ const PlaylistPage = ({ catId }) => {
   );
 };
 
-Object.assign(window, { thumbEmPe, CategoryPage, VideoModal, ClientBadge, PlaylistPage, getYouTubeId, getVimeoId, getThumbUrl, getThumbHD, thumbReserva, ehVertical, temTarjaYt, classeTarja });
+Object.assign(window, { CategoryPage, VideoModal, ClientBadge, PlaylistPage, getYouTubeId, getVimeoId, getThumbUrl, getThumbHD, thumbReserva, ehVertical, temTarjaYt, classeTarja });

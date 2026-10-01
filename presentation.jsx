@@ -241,12 +241,12 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
                 onMouseLeave={() => setHeroHover(false)}
                 style={{ '--radius': 20 }}
               >
-                <div className={`pres-hero-thumb${window.thumbEmPe?.(featured) ? " v916" : ""} ${featuredCat?.bgClass || "bg-comm"}`}
+                <div className={`pres-hero-thumb${window.ehVertical?.(featured) ? " v916" : ""} ${featuredCat?.bgClass || "bg-comm"}`}
                   style={!heroHover && featThumb ? {
                     backgroundImage: `url(${featThumb})`,
                     /* O destaque é uma faixa larga: vídeo em pé aparece inteiro
                        e centrado, em vez de recortado nas pontas. */
-                    backgroundSize: window.thumbEmPe?.(featured) ? "contain" : "cover",
+                    backgroundSize: window.ehVertical?.(featured) ? "contain" : "cover",
                     backgroundRepeat: "no-repeat",
                     backgroundPosition: "center",
                   } : {}}>
@@ -320,7 +320,7 @@ const PresentationMode = ({ onExit, onOpenVideo }) => {
                           data-cursor="hover"
                           style={{ '--radius': 14 }}
                         >
-                          <div className={`pres-card-thumb${window.thumbEmPe?.(v) ? " v916" : ""}${window.classeTarja?.(thumb) || ""} ${cat.bgClass}`}
+                          <div className={`pres-card-thumb${window.ehVertical?.(v) ? " v916" : ""}${window.classeTarja?.(thumb) || ""} ${cat.bgClass}`}
                             style={thumb ? { backgroundImage: `url(${thumb})`, backgroundSize: "cover", backgroundPosition: "center" } : {}}>
                             {!thumb && <div className="pres-placeholder small">[ THUMB ]</div>}
                             <span className="pres-card-duration">{v.duration}</span>
