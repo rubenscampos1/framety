@@ -56,15 +56,28 @@ function montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaT
       s.arquivo = { nome: m.arquivo.nome, tamanho: m.arquivo.tamanho, tipo: m.arquivo.tipo,
                     url: link(m.id, 'arquivo'), capa: visual ? link(m.id, 'capa') : null };
     }
+    if (m.comentario) s.comentario = m.comentario;
     return s;
   };
   const naoLidas = (c, eu) => c.msgs.filter((m) => m.para === eu && m.seq > (c.lido[eu] || 0)).length;
 
-  function gravar(de, para, texto, arquivo) {
+  // Comentário do Frame.io compartilhado no chat: vai como um cartão (quem
+  // comentou, o vídeo e o texto) e, na tela, clicar abre o vídeo naquele ponto.
+  function lerComentario(c) {
+    if (!c || typeof c !== 'object' || !c.arquivo_id) return null;
+    const ts = Number(c.timestamp);
+    return { comentario_id: limpaTexto(String(c.comentario_id || ''), 80), arquivo_id: limpaTexto(String(c.arquivo_id), 80),
+             arquivo_nome: limpaTexto(c.arquivo_nome, 255), projeto_id: limpaTexto(String(c.projeto_id || ''), 80),
+             projeto_nome: limpaTexto(c.projeto_nome, 120), autor: limpaTexto(c.autor, 120), texto: limpaTexto(c.texto, 2000),
+             timestamp: Number.isFinite(ts) && c.timestamp != null ? ts : null };
+  }
+
+  function gravar(de, para, texto, arquivo, comentario) {
     const c = conversa(de, para, true);
     chat().seq += 1;
     const m = { id: 'm_' + crypto.randomBytes(8).toString('hex'), seq: chat().seq, de, para, texto, em: agora() };
     if (arquivo) m.arquivo = arquivo;
+    if (comentario) m.comentario = comentario;
     c.msgs.push(m);
     if (c.msgs.length > MAX_MENSAGENS) c.msgs.splice(0, c.msgs.length - MAX_MENSAGENS);
     c.lido[de] = m.seq;                     // quem escreveu já leu até aqui
@@ -103,8 +116,9 @@ function montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaT
   r.post('/chat/:uid/mensagens', autenticar, envolve(async (req, res) => {
     const o = outro(req);
     const texto = limpaTexto((req.body || {}).texto, MAX_TEXTO);
-    if (!texto) throw falha(400, 'Escreva a mensagem.');
-    const m = gravar(req.usuario.id, o.id, texto);
+    const comentario = lerComentario((req.body || {}).comentario);
+    if (!texto && !comentario) throw falha(400, 'Escreva a mensagem.');
+    const m = gravar(req.usuario.id, o.id, texto, null, comentario);
     try { await loja.salvar(); } catch (e) { conversa(m.de, m.para).msgs.pop(); throw e; }
     res.json({ mensagem: publica(m) });
   }));
@@ -201,7 +215,8 @@ function montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaT
     }
     novas.sort((a, b) => a.seq - b.seq);
     return { seq: chat().seq, nao_lidas: total,
-             novas: novas.slice(-20).map((m) => ({ id: m.id, seq: m.seq, de: pessoa(m.de), texto: m.texto || '', arquivo: m.arquivo ? m.arquivo.nome : null })) };
+             novas: novas.slice(-20).map((m) => ({ id: m.id, seq: m.seq, de: pessoa(m.de), texto: m.texto || '', arquivo: m.arquivo ? m.arquivo.nome : null,
+                                                      comentario: m.comentario ? { autor: m.comentario.autor, arquivo_nome: m.comentario.arquivo_nome } : null })) };
   }
 
   return { resumo };
