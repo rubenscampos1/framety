@@ -33,6 +33,9 @@ function montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaT
   const ehMarketing = (u) => !!(u && u.marketing && !u.admin);
   // Com quem dá para conversar: usuários ativos, menos os de marketing (só calendário) e a própria pessoa.
   const contatos = (eu) => D().usuarios.filter((x) => x.ativo !== false && x.id !== eu.id && !ehMarketing(x));
+  // Online = o Framyo da pessoa (janela ou bandeja) falou com o servidor nos últimos 20 s
+  // (os dois perguntam por novidades a cada 3 s; ver o User-Agent em autenticar()).
+  const online = (u) => !!u.visto_em && Date.now() - Date.parse(u.visto_em) < 20000;
   const outro = (req) => {
     const o = D().usuarios.find((x) => x.id === req.params.uid && x.ativo !== false);
     if (!o || o.id === req.usuario.id || ehMarketing(o)) throw falha(404, 'Pessoa não encontrada.');
@@ -74,8 +77,10 @@ function montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaT
     const lista = contatos(req.usuario).map((o) => {
       const c = conversa(eu, o.id);
       const ultima = c && c.msgs.length ? c.msgs[c.msgs.length - 1] : null;
-      return { com: pessoa(o.id), ultima: ultima ? publica(ultima) : null, nao_lidas: c ? naoLidas(c, eu) : 0 };
-    }).sort((a, b) => ((b.ultima && b.ultima.seq) || 0) - ((a.ultima && a.ultima.seq) || 0) || a.com.nome.localeCompare(b.com.nome, 'pt'));
+      return { com: pessoa(o.id), ultima: ultima ? publica(ultima) : null, nao_lidas: c ? naoLidas(c, eu) : 0,
+               online: online(o), visto_em: o.visto_em || null };
+    // conversas mais recentes primeiro; entre quem ainda não tem conversa, quem está online vem antes
+    }).sort((a, b) => ((b.ultima && b.ultima.seq) || 0) - ((a.ultima && a.ultima.seq) || 0) || (b.online - a.online) || a.com.nome.localeCompare(b.com.nome, 'pt'));
     res.json({ conversas: lista, arquivos: google.pronto() });
   });
 
@@ -90,7 +95,8 @@ function montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaT
       c.lido[eu] = c.msgs[c.msgs.length - 1].seq;            // abriu a conversa: leu
       await loja.salvar().catch(() => {});
     }
-    res.json({ com: pessoa(o.id), mensagens: pagina.map(publica), tem_mais: todas.length > pagina.length,
+    res.json({ com: pessoa(o.id), online: online(o), visto_em: o.visto_em || null,
+               mensagens: pagina.map(publica), tem_mais: todas.length > pagina.length,
                lido_por_ele: c ? (c.lido[o.id] || 0) : 0 });
   }));
 
