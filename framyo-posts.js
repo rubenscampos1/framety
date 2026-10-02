@@ -146,7 +146,7 @@ function criarGoogle(loja, retorno) {
   const urlLogin = (estado) => `${AUTORIZAR}?${new URLSearchParams({ client_id: clientId(), redirect_uri: retorno, response_type: 'code',
     scope: ESCOPO, access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state: estado })}`;
 
-  return { G, clientId, segredo, trocar, guardar, api, token, conectado, pronto, garantirPasta, arquivos, conferirPasta, urlLogin };
+  return { G, clientId, segredo, trocar, guardar, api, token, conectado, pronto, pastaFilha, garantirPasta, arquivos, conferirPasta, urlLogin };
 }
 
 function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica }) {
@@ -463,7 +463,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     res.json(estadoDrive());
   }));
 
-  return { estadoDrive };
+  return { estadoDrive, google: g };
 }
 
 module.exports = { montarPosts, idDaPasta, hojeBR, diasAte };

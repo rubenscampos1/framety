@@ -22,6 +22,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { montarPosts } = require('./framyo-posts');
+const { montarChat } = require('./framyo-chat');
+let chatApi = null;            // montado junto com as rotas; o /eventos consulta o resumo do chat
 
 // As duas variáveis de endereço existem só para os testes (um Frame.io falso).
 const FRAMEIO = process.env.FRAMYO_TESTE_FRAMEIO || 'https://api.frame.io/v4';
@@ -284,7 +286,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     req.usuario = u;
     req.tokenHash = hashToken(t);
     // Marketing: só o calendário. Nada de Frame.io (projetos, vídeos, comentários, links, envios, Início).
-    if (u.marketing && !u.admin && /^\/(projetos|pastas|arquivos|busca|midia|versoes|comentarios|mover|empilhar|pilhas|links|envios|feed|responsaveis)(\/|$)/.test(req.path)) {
+    if (u.marketing && !u.admin && /^\/(projetos|pastas|arquivos|busca|midia|versoes|comentarios|mover|empilhar|pilhas|links|envios|feed|responsaveis|chat)(\/|$)/.test(req.path)) {
       return res.status(403).json({ erro: 'O acesso de marketing é só o calendário de posts.' });
     }
     // O programa se identifica no User-Agent ("Framyo/1.4.0"): o admin vê a
@@ -666,7 +668,10 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const pub = D().atualizacao;
     const forcar = u.forcar_atualizacao && pub && pub.versao && compararVersoes(pub.versao, u.versao) > 0 ? pub.versao : null;
     // versao: a última publicada — o programa pergunta a cada 3 s e avisa na hora.
+    // chat: total de não lidas e o que chegou depois do nº que este programa já viu (?chat=N)
+    const chatVisto = req.query.chat === undefined ? null : Number(req.query.chat) || 0;
     res.json({ seq: D().seq, modo: D().config.notificacoes, eventos, atualizar: forcar,
+               chat: chatApi ? chatApi.resumo(u, chatVisto) : null,
                versao: pub && pub.versao ? { versao: pub.versao, notas: pub.notas || '', tamanho: pub.tamanho } : null });
   }));
 
@@ -1353,7 +1358,10 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   }));
 
   // ── calendário de posts (Google Drive) ──────────────────────────────────────
-  montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica: URL_PUBLICA });
+  const { google } = montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica: URL_PUBLICA });
+
+  // ── chat privado entre os usuários (arquivos no mesmo Google Drive) ─────────
+  chatApi = montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaTexto, google });
 
   r.use((req, res) => res.status(404).json({ erro: 'Rota do Framyo não existe.' }));
   r.use((err, req, res, next) => {        // JSON quebrado e afins: fica aqui dentro
