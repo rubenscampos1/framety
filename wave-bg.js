@@ -15,10 +15,27 @@
 (function () {
   const canvas = document.createElement('canvas');
   canvas.id = 'wave-bg';
-  // O desfoque é filtro de CSS numa camada só (barato). A escala de 1.12 existe
-  // por causa dele: sem sobra, o blur puxaria o vazio de fora e deixaria uma
-  // moldura clara em volta da tela.
-  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:-1;pointer-events:none;opacity:0;transition:opacity 2.5s ease;transform:scale(1.12);filter:blur(9px);will-change:transform;';
+  /* MODO LEVE — Safari e computadores fracos.
+     O desfoque por filtro de CSS num canvas que redesenha é barato no Chrome
+     (fica na placa de vídeo), mas no Safari o filtro é refeito a cada quadro
+     por um caminho lento: a página inteira engasga, ao carregar e depois.
+     No modo leve o canvas é um retângulo PEQUENO (1/7 da tela em cada lado):
+     o desfoque é aplicado nele ainda pequeno — uma área ~50 vezes menor — e só
+     então o resultado é ampliado para cobrir a tela (ampliar é de graça). Fica
+     suave como o original. Dá para forçar com ?fundo=leve ou ?fundo=normal. */
+  const REDUCAO = 7;
+  const ua = navigator.userAgent;
+  const safari = /Safari\//.test(ua) && !/Chrome\/|Chromium\/|Edg\/|OPR\/|Android/.test(ua);
+  const poucaMaquina = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
+  const pedido = (new URLSearchParams(location.search).get('fundo') || '').toLowerCase();
+  const LEVE = pedido === 'leve' || (pedido !== 'normal' && (safari || poucaMaquina));
+  window.__waveBgLeve = LEVE;
+  // O desfoque é filtro de CSS numa camada só (barato no Chrome). A escala de
+  // 1.12 existe por causa dele: sem sobra, o blur puxaria o vazio de fora e
+  // deixaria uma moldura clara em volta da tela.
+  canvas.style.cssText = LEVE
+    ? `position:fixed;top:50%;left:50%;z-index:-1;pointer-events:none;opacity:0;transition:opacity 2.5s ease;transform:translate(-50%,-50%) scale(${REDUCAO * 1.12});filter:blur(${(9 / REDUCAO).toFixed(2)}px);`
+    : 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:-1;pointer-events:none;opacity:0;transition:opacity 2.5s ease;transform:scale(1.12);filter:blur(9px);will-change:transform;';
   document.body.prepend(canvas);
 
   const ACCENT_FALLBACK = '#2E86C1';
@@ -35,17 +52,18 @@
   if (!window.THREE) {
     // three.js não chegou (offline, bloqueio de rede): um gradiente parado
     // ainda é melhor do que o vazio preto atrás do site.
+    if (LEVE) canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:-1;pointer-events:none;opacity:0;transition:opacity 2.5s ease;';
     canvas.style.background =
       'radial-gradient(120% 90% at 22% 8%, rgba(46,134,193,0.30), transparent 60%), ' +
       'radial-gradient(90% 70% at 85% 90%, rgba(20,60,110,0.35), transparent 65%), #05060a';
     return;
   }
 
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false });
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: LEVE });
   // Metade da resolução: o desfoque por cima esconde a diferença, e o custo do
   // borrão de tela cheia (refeito a cada quadro, porque o canvas redesenha)
   // cai junto com a área. Era o maior peso da página.
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1) * 0.5);
+  renderer.setPixelRatio(LEVE ? 1 / REDUCAO : Math.min(window.devicePixelRatio, 1) * 0.5);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
@@ -188,6 +206,10 @@
     const width = window.innerWidth;
     const height = window.innerHeight;
     renderer.setSize(width, height);
+    if (LEVE) {        // o elemento em si fica pequeno; o transform amplia de volta
+      canvas.style.width = Math.ceil(width / REDUCAO) + 'px';
+      canvas.style.height = Math.ceil(height / REDUCAO) + 'px';
+    }
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
 
@@ -242,8 +264,7 @@
   // tela com metade do trabalho da placa de vídeo — e tudo o que fica por cima
   // com efeito de vidro (desfoque do fundo) também é recalculado pela metade.
   // Computador mais fraco (poucos núcleos ou pouca memória): 24.
-  const fraco = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
-  const INTERVALO = 1000 / (fraco ? 24 : 30);
+  const INTERVALO = 1000 / (poucaMaquina ? 24 : 30);
   let ultimoQuadro = 0;
   const render = (agora = performance.now()) => {
     requestAnimationFrame(render);
