@@ -151,6 +151,91 @@ const Magnetic = ({ children, strength = 0.1, ...rest }) => {
 };
 
 /* Spotlight / Glow Card — replicates the 21st.dev effect */
+/* ── Brilho que segue o mouse: um motor só para todos os cartões ─────────────
+   Antes cada cartão ouvia o mouse e era redesenhado a cada movimento — com 30
+   vídeos na página, 30 cartões (e 60 camadas de brilho com desfoque) por
+   movimento, mesmo os que estavam longe do cursor, onde o brilho é invisível.
+   Agora: um ouvinte, uma atualização por quadro, a posição vai para o <html>
+   (os cartões herdam) e só os cartões PERTO do cursor ligam as camadas de
+   brilho (atributo data-perto). A aparência é a mesma; o trabalho, uma fração. */
+const SPOT_CARTOES = new Set();
+const SPOT_ALCANCE = 270;            // px além da borda do cartão (o brilho tem 250)
+let spotX = -9999, spotY = -9999, spotPendente = false;
+const spotAtualizar = () => {
+  spotPendente = false;
+  const raiz = document.documentElement.style;
+  raiz.setProperty('--x', spotX.toFixed(2));
+  raiz.setProperty('--xp', (spotX / window.innerWidth).toFixed(2));
+  raiz.setProperty('--y', spotY.toFixed(2));
+  raiz.setProperty('--yp', (spotY / window.innerHeight).toFixed(2));
+  SPOT_CARTOES.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const perto = spotX > r.left - SPOT_ALCANCE && spotX < r.right + SPOT_ALCANCE && spotY > r.top - SPOT_ALCANCE && spotY < r.bottom + SPOT_ALCANCE;
+    if (perto !== el.hasAttribute('data-perto')) perto ? el.setAttribute('data-perto', '') : el.removeAttribute('data-perto');
+  });
+};
+const spotAgendar = () => { if (!spotPendente) { spotPendente = true; requestAnimationFrame(spotAtualizar); } };
+if (typeof document !== 'undefined' && !IS_TOUCH) {
+  document.addEventListener('pointermove', (e) => { spotX = e.clientX; spotY = e.clientY; spotAgendar(); }, { passive: true });
+  // Rolar muda quais cartões estão sob o cursor parado.
+  document.addEventListener('scroll', spotAgendar, { passive: true, capture: true });
+}
+const SPOT_CSS = `
+    [data-glow]::before,
+    [data-glow]::after {
+      pointer-events: none;
+      content: "";
+      position: absolute;
+      inset: calc(var(--border-size) * -1);
+      border: var(--border-size) solid transparent;
+      border-radius: calc(var(--radius) * 1px);
+      background-attachment: fixed;
+      background-size: calc(100% + (2 * var(--border-size))) calc(100% + (2 * var(--border-size)));
+      background-repeat: no-repeat;
+      background-position: 50% 50%;
+      mask: linear-gradient(transparent, transparent), linear-gradient(white, white);
+      -webkit-mask: linear-gradient(transparent, transparent), linear-gradient(white, white);
+      mask-clip: padding-box, border-box;
+      -webkit-mask-clip: padding-box, border-box;
+      mask-composite: intersect;
+      -webkit-mask-composite: source-in, xor;
+    }
+    [data-glow]::before {
+      background-image: radial-gradient(
+        calc(var(--spotlight-size) * 0.75) calc(var(--spotlight-size) * 0.75) at
+        calc(var(--x, 0) * 1px) calc(var(--y, 0) * 1px),
+        hsl(var(--hue, 355) 100% 50% / 1), transparent 100%
+      );
+      filter: brightness(2);
+    }
+    [data-glow]::after {
+      background-image: radial-gradient(
+        calc(var(--spotlight-size) * 0.5) calc(var(--spotlight-size) * 0.5) at
+        calc(var(--x, 0) * 1px) calc(var(--y, 0) * 1px),
+        hsl(0 100% 100% / 0.18), transparent 100%
+      );
+    }
+    [data-glow] [data-glow] {
+      position: absolute; inset: 0;
+      opacity: var(--outer, 1);
+      border-radius: calc(var(--radius) * 1px);
+      filter: blur(calc(var(--border-size) * 10));
+      background: none; pointer-events: none; border: none;
+    }
+    [data-glow] > [data-glow]::before { inset: -10px; border-width: 10px; }
+    /* Longe do cursor o brilho é transparente: as camadas nem são criadas. */
+    .spotlight-card:not([data-perto]) { background-image: none !important; }
+    .spotlight-card:not([data-perto])::before,
+    .spotlight-card:not([data-perto])::after,
+    .spotlight-card:not([data-perto]) > [data-glow] { display: none; }
+`;
+if (typeof document !== 'undefined' && !document.getElementById('spotlight-css')) {
+  const estilo = document.createElement('style');
+  estilo.id = 'spotlight-css';
+  estilo.textContent = SPOT_CSS;
+  document.head.appendChild(estilo);
+}
+
 const SpotlightCard = ({ children, className = "", color = "red", style = {}, overlay = true, ...rest }) => {
   const cardRef = useRef(null);
 
@@ -165,17 +250,11 @@ const SpotlightCard = ({ children, className = "", color = "red", style = {}, ov
 
   useEffect(() => {
     if (IS_TOUCH) return; // no pointer-follow glow on touch — keeps scrolling smooth
-    const syncPointer = (e) => {
-      const { clientX: x, clientY: y } = e;
-      if (cardRef.current) {
-        cardRef.current.style.setProperty('--x', x.toFixed(2));
-        cardRef.current.style.setProperty('--xp', (x / window.innerWidth).toFixed(2));
-        cardRef.current.style.setProperty('--y', y.toFixed(2));
-        cardRef.current.style.setProperty('--yp', (y / window.innerHeight).toFixed(2));
-      }
-    };
-    document.addEventListener('pointermove', syncPointer);
-    return () => document.removeEventListener('pointermove', syncPointer);
+    const el = cardRef.current;
+    if (!el) return;
+    SPOT_CARTOES.add(el);
+    spotAgendar();
+    return () => { SPOT_CARTOES.delete(el); };
   }, []);
 
   const { base, spread } = colorMap[color] || colorMap.red;
@@ -213,60 +292,12 @@ const SpotlightCard = ({ children, className = "", color = "red", style = {}, ov
     ...style
   };
 
-  const css = `
-    [data-glow]::before,
-    [data-glow]::after {
-      pointer-events: none;
-      content: "";
-      position: absolute;
-      inset: calc(var(--border-size) * -1);
-      border: var(--border-size) solid transparent;
-      border-radius: calc(var(--radius) * 1px);
-      background-attachment: fixed;
-      background-size: calc(100% + (2 * var(--border-size))) calc(100% + (2 * var(--border-size)));
-      background-repeat: no-repeat;
-      background-position: 50% 50%;
-      mask: linear-gradient(transparent, transparent), linear-gradient(white, white);
-      -webkit-mask: linear-gradient(transparent, transparent), linear-gradient(white, white);
-      mask-clip: padding-box, border-box;
-      -webkit-mask-clip: padding-box, border-box;
-      mask-composite: intersect;
-      -webkit-mask-composite: source-in, xor;
-    }
-    [data-glow]::before {
-      background-image: radial-gradient(
-        calc(var(--spotlight-size) * 0.75) calc(var(--spotlight-size) * 0.75) at
-        calc(var(--x, 0) * 1px) calc(var(--y, 0) * 1px),
-        hsl(var(--hue, 355) 100% 50% / 1), transparent 100%
-      );
-      filter: brightness(2);
-    }
-    [data-glow]::after {
-      background-image: radial-gradient(
-        calc(var(--spotlight-size) * 0.5) calc(var(--spotlight-size) * 0.5) at
-        calc(var(--x, 0) * 1px) calc(var(--y, 0) * 1px),
-        hsl(0 100% 100% / 0.18), transparent 100%
-      );
-    }
-    [data-glow] [data-glow] {
-      position: absolute; inset: 0;
-      will-change: filter;
-      opacity: var(--outer, 1);
-      border-radius: calc(var(--radius) * 1px);
-      filter: blur(calc(var(--border-size) * 10));
-      background: none; pointer-events: none; border: none;
-    }
-    [data-glow] > [data-glow]::before { inset: -10px; border-width: 10px; }
-  `;
 
   return (
-    <React.Fragment>
-      <style dangerouslySetInnerHTML={{ __html: css }} />
-      <div ref={cardRef} data-glow style={glowStyles} className={`spotlight-card ${className}`} {...rest}>
-        {overlay && <div data-glow />}
-        {children}
-      </div>
-    </React.Fragment>
+    <div ref={cardRef} data-glow style={glowStyles} className={`spotlight-card ${className}`} {...rest}>
+      {overlay && <div data-glow />}
+      {children}
+    </div>
   );
 };
 

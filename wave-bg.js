@@ -238,18 +238,30 @@
   const stillMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const clock = new THREE.Clock();
-  const render = () => {
+  // O fundo se move devagar: 30 quadros por segundo dão o mesmo resultado na
+  // tela com metade do trabalho da placa de vídeo — e tudo o que fica por cima
+  // com efeito de vidro (desfoque do fundo) também é recalculado pela metade.
+  // Computador mais fraco (poucos núcleos ou pouca memória): 24.
+  const fraco = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
+  const INTERVALO = 1000 / (fraco ? 24 : 30);
+  let ultimoQuadro = 0;
+  const render = (agora = performance.now()) => {
     requestAnimationFrame(render);
     if (hidden || covered) return;            // aba escondida ou fundo coberto: não gasta GPU
+    if (agora - ultimoQuadro < INTERVALO - 3) return;
+    // Os amortecimentos abaixo eram "por quadro" a 60 fps: o fator mantém a mesma velocidade.
+    const k = Math.min(4, Math.max(1, (agora - ultimoQuadro) / (1000 / 60)));
+    ultimoQuadro = agora;
     const time = stillMotion ? 8 : clock.getElapsedTime();
     uniforms.u_time.value = time;
 
-    scrollEased += (scrollNow() - scrollEased) * 0.08;
+    scrollEased += (scrollNow() - scrollEased) * (1 - Math.pow(1 - 0.08, k));
     uniforms.u_scroll.value = scrollEased;
     orbGroup.position.y = scrollEased * 3.2;
 
-    camera.position.x += (mouseX * 0.004 - camera.position.x) * 0.05;
-    camera.position.y += (-mouseY * 0.004 - camera.position.y) * 0.05;
+    const amort = 1 - Math.pow(1 - 0.05, k);
+    camera.position.x += (mouseX * 0.004 - camera.position.x) * amort;
+    camera.position.y += (-mouseY * 0.004 - camera.position.y) * amort;
     camera.lookAt(scene.position);
 
     if (!stillMotion) {

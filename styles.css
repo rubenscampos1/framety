@@ -1771,8 +1771,9 @@ body.in-cat-page.cat-peek .cat-page {
   font-size: 10px;
   letter-spacing: 0.14em;
   color: rgba(255,255,255,0.8);
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(4px);
+  /* Sem desfoque de fundo: eram 30 desfoques recalculados a cada quadro numa
+     categoria. O preto um pouco mais firme dá a mesma leitura sobre a capa. */
+  background: rgba(0,0,0,0.62);
   padding: 3px 8px;
   border-radius: 4px;
   z-index: 2;
@@ -1802,10 +1803,10 @@ body.in-cat-page.cat-peek .cat-page {
   z-index: 3;
   color: #fff;
 }
+.cat-card:hover .cat-card-play svg { backdrop-filter: blur(8px); }   /* o desfoque só existe no cartão sob o mouse */
 .cat-card-play svg {
   width: 42px; height: 42px;
   background: rgba(255,255,255,0.1);
-  backdrop-filter: blur(8px);
   border-radius: 50%;
   border: 1px solid rgba(255,255,255,0.2);
   padding: 14px;
@@ -3766,7 +3767,7 @@ main, .feat-list, .categories-grid, .exp-grid { background: transparent; }
   position: absolute; bottom: 8px; right: 8px; z-index: 2;
   font-family: var(--font-mono); font-size: 10px;
   padding: 3px 7px; border-radius: 5px;
-  background: rgba(0,0,0,0.82); backdrop-filter: blur(6px);
+  background: rgba(0,0,0,0.86);   /* sem desfoque de fundo: era um por vídeo (143 na apresentação) */
   letter-spacing: 0.08em; color: rgba(255,255,255,0.9);
 }
 .pres-card-play {
