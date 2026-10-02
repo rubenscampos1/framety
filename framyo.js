@@ -64,7 +64,7 @@ function usuarioPublico(u) {
   return { id: u.id, nome: u.nome, usuario: u.usuario, admin: !!u.admin, ativo: u.ativo !== false,
            marketing: !u.admin && !!u.marketing, papel: u.admin ? 'admin' : u.marketing ? 'marketing' : 'editor',
            projetos: u.projetos || [], criado_em: u.criado_em,
-           versao: u.versao || null, visto_em: u.visto_em || null, forcar_atualizacao: u.forcar_atualizacao || null };
+           versao: u.versao || null, sistema: u.sistema || null, visto_em: u.visto_em || null, forcar_atualizacao: u.forcar_atualizacao || null };
 }
 
 // "1.10.0" > "1.9.2"
@@ -289,11 +289,13 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     if (u.marketing && !u.admin && /^\/(projetos|pastas|arquivos|busca|midia|versoes|comentarios|mover|empilhar|pilhas|links|envios|feed|responsaveis|chat)(\/|$)/.test(req.path)) {
       return res.status(403).json({ erro: 'O acesso de marketing é só o calendário de posts.' });
     }
-    // O programa se identifica no User-Agent ("Framyo/1.4.0"): o admin vê a
-    // versão de cada pessoa. Fica na memória e vai junto no próximo salvamento.
-    const v = /Framyo\/(\d+(?:\.\d+){1,3})/.exec(String(req.headers['user-agent'] || ''));
+    // O programa se identifica no User-Agent ("Framyo/1.4.0", no Mac "Framyo/1.7.1 (mac)"):
+    // o admin vê a versão e o sistema de cada pessoa, e a atualização certa vai para cada um.
+    // Fica na memória e vai junto no próximo salvamento.
+    const v = /Framyo\/(\d+(?:\.\d+){1,3})(?: \((mac)\))?/.exec(String(req.headers['user-agent'] || ''));
     if (v) {
       u.versao = v[1];
+      u.sistema = v[2] === 'mac' ? 'mac' : 'windows';
       u.visto_em = agora();
       if (u.forcar_atualizacao && compararVersoes(v[1], u.forcar_atualizacao) >= 0) delete u.forcar_atualizacao;
     }
@@ -414,10 +416,13 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // Admin força a atualização no computador da pessoa: a bandeja dela vê no
   // próximo /eventos (5 s), baixa e instala sozinha, com uma barrinha no canto.
   // Todos de uma vez: quem está ativo e atrás da versão publicada.
+  // A versão publicada serve para o sistema desta pessoa? (o pacote de Mac vai junto, mas pode faltar)
+  const temPara = (pub, u) => !!pub && !!pub.versao && (u.sistema === 'mac' ? !!pub.mac : true);
+
   r.post('/usuarios/atualizar-todos', autenticar, soAdmin, envolve(async (req, res) => {
     const pub = D().atualizacao;
     if (!pub || !pub.versao) throw falha(409, 'Nenhuma versão publicada ainda.');
-    const alvo = D().usuarios.filter((u) => u.ativo !== false && (!u.versao || compararVersoes(u.versao, pub.versao) < 0));
+    const alvo = D().usuarios.filter((u) => u.ativo !== false && temPara(pub, u) && (!u.versao || compararVersoes(u.versao, pub.versao) < 0));
     for (const u of alvo) u.forcar_atualizacao = pub.versao;
     await loja.salvar();
     res.json({ ok: true, versao: pub.versao, usuarios: alvo.map((u) => u.usuario) });
@@ -429,6 +434,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const pub = D().atualizacao;
     if (!pub || !pub.versao) throw falha(409, 'Nenhuma versão publicada. Publique em Admin › Atualizações.');
     if (u.versao && compararVersoes(u.versao, pub.versao) >= 0) throw falha(409, `@${u.usuario} já está na versão ${u.versao}.`);
+    if (!temPara(pub, u)) throw falha(409, `A versão ${pub.versao} ainda não tem o pacote para Mac.`);
     u.forcar_atualizacao = pub.versao;
     await loja.salvar();
     res.json({ ok: true, usuario: usuarioPublico(u) });
@@ -665,7 +671,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const eventos = u.marketing && !u.admin ? []         // marketing não recebe avisos de comentário
       : D().eventos.filter((e) => e.seq > desde && (!filtra || meu(e))).slice(-100);
     await nomearEventosAntigos(eventos);
-    const pub = D().atualizacao;
+    const pub = temPara(D().atualizacao, u) ? D().atualizacao : null;
     const forcar = u.forcar_atualizacao && pub && pub.versao && compararVersoes(pub.versao, u.versao) > 0 ? pub.versao : null;
     // versao: a última publicada — o programa pergunta a cada 3 s e avisa na hora.
     // chat: total de não lidas e o que chegou depois do nº que este programa já viu (?chat=N)
@@ -1203,6 +1209,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // versão nova, baixam as partes, juntam, conferem o SHA-256 e instalam por
   // cima. Só a última versão fica na nuvem: ao publicar, a anterior é apagada.
   const PARTE_MAX = 9 * 1024 * 1024;
+  const TIPOS_EXTRA = ['pacote', 'mac'];          // além do instalador: pacote do Windows e o Framyo.app do Mac
   const versaoValida = (v) => /^\d{1,3}(\.\d{1,3}){1,3}$/.test(String(v || ''));
   const partesLocais = new Map();                // só testes (sem Cloudinary): versão -> [Buffer]
   const nuvem = () => (process.env.FRAMYO_TESTE_NUVEM ? nuvemDeTeste : process.env.CLOUDINARY_URL ? require('cloudinary').v2 : null);
@@ -1259,12 +1266,14 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const a = D().atualizacao;
     const lista = (partes, tipo) => partes.map((p, i) => ({ tamanho: p.tamanho,
       url: p.embaralhada ? `${URL_PUBLICA}/api/framyo/atualizacao/baixar/${a.versao}/${i}${tipo}` : p.url }));
+    const conjunto = (c, tipo) => (c ? { tamanho: c.tamanho, sha256: c.sha256, partes: lista(c.partes, tipo) } : null);
     // "partes" = o instalador (.exe), para instalar do zero e para os Framyo antigos.
     // "pacote" = só os arquivos do programa (.zip): o Framyo já instalado extrai e
     // reinicia, sem baixar nem rodar executável nenhum (é o que não dispara antivírus).
+    // "mac" = o Framyo.app compactado (.zip), para os Framyo de Mac — mesma versão, publicada junto.
     res.json(a ? { versao: a.versao, nome: a.nome, tamanho: a.tamanho, sha256: a.sha256, notas: a.notas || '',
                    publicado_em: a.publicado_em, partes: lista(a.partes, ''),
-                   pacote: a.pacote ? { tamanho: a.pacote.tamanho, sha256: a.pacote.sha256, partes: lista(a.pacote.partes, '?tipo=pacote') } : null }
+                   pacote: conjunto(a.pacote, '?tipo=pacote'), mac: conjunto(a.mac, '?tipo=mac') }
                : { versao: null });
   });
 
@@ -1272,7 +1281,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // não tem segredo, e quem baixa (bandeja) confere o SHA-256 no fim.
   r.get('/atualizacao/baixar/:versao/:n', async (req, res) => {
     const a = D().atualizacao;
-    const partes = a && (req.query.tipo === 'pacote' ? (a.pacote && a.pacote.partes) : a.partes);
+    const partes = a && (TIPOS_EXTRA.includes(req.query.tipo) ? (a[req.query.tipo] && a[req.query.tipo].partes) : a.partes);
     const p = a && a.versao === req.params.versao && partes && partes[Number(req.params.n)];
     if (!p || !p.embaralhada) return res.status(404).json({ erro: 'Parte não existe.' });
     try {
@@ -1299,8 +1308,8 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       const dados = req.body;
       if (!Buffer.isBuffer(dados) || !dados.length) throw falha(400, 'Parte vazia.');
       if (dados.length > PARTE_MAX) throw falha(413, 'Parte grande demais (máx. 9 MB).');
-      const pacote = req.query.tipo === 'pacote';
-      const prefixo = pacote ? 'pacote' : 'parte';
+      const pacote = TIPOS_EXTRA.includes(req.query.tipo) ? req.query.tipo : '';
+      const prefixo = pacote || 'parte';
       const c = nuvem();
       let url;
       if (c) {
@@ -1319,14 +1328,14 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
         if (!r2) throw falha(502, 'O Cloudinary recusou a parte: ' + (ultimoErro && ultimoErro.message));
         url = r2.secure_url;
       } else {
-        const chave = versao + (pacote ? '|pacote' : '');
+        const chave = versao + (pacote ? '|' + pacote : '');
         const lista = partesLocais.get(chave) || [];
         lista[n] = dados;
         partesLocais.set(chave, lista);
-        url = `${URL_PUBLICA}/api/framyo/atualizacao/local/${versao}/${n}${pacote ? '?tipo=pacote' : ''}`;
+        url = `${URL_PUBLICA}/api/framyo/atualizacao/local/${versao}/${n}${pacote ? '?tipo=' + pacote : ''}`;
       }
       const pend = D().atualizacao_envio && D().atualizacao_envio.versao === versao ? D().atualizacao_envio : { versao, partes: [] };
-      const destino = pacote ? (pend.pacote = pend.pacote || []) : pend.partes;
+      const destino = pacote ? (pend[pacote] = pend[pacote] || []) : pend.partes;
       destino[n] = { url, tamanho: dados.length, sha256: crypto.createHash('sha256').update(dados).digest('hex'), embaralhada: !!c };
       D().atualizacao_envio = pend;
       await loja.salvar();
@@ -1336,7 +1345,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // só nos testes (sem Cloudinary): serve a parte guardada na memória
   r.get('/atualizacao/local/:versao/:n', (req, res) => {
     if (process.env.CLOUDINARY_URL) return res.status(404).json({ erro: 'Rota do Framyo não existe.' });
-    const p = (partesLocais.get(req.params.versao + (req.query.tipo === 'pacote' ? '|pacote' : '')) || [])[Number(req.params.n)];
+    const p = (partesLocais.get(req.params.versao + (TIPOS_EXTRA.includes(req.query.tipo) ? '|' + req.query.tipo : '')) || [])[Number(req.params.n)];
     if (!p) return res.status(404).json({ erro: 'Parte não existe.' });
     res.setHeader('Content-Type', 'application/octet-stream');
     res.end(p);
@@ -1354,19 +1363,22 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const tamanho = partes.reduce((s, p) => s + p.tamanho, 0);
     if (Number(b.tamanho) !== tamanho) throw falha(409, `O tamanho não bate (${tamanho} x ${b.tamanho}). Envie de novo.`);
     if (!/^[0-9a-f]{64}$/.test(String(b.sha256 || ''))) throw falha(400, 'SHA-256 inválido.');
-    let pacote = null;
-    if (b.pacote) {
-      const qp = Number(b.pacote.partes);
-      const pp = (pend.pacote || []).slice(0, qp);
-      if (!qp || pp.length !== qp || pp.some((x) => !x)) throw falha(409, 'Faltam partes do pacote. Envie de novo.');
+    const conferir = (tipo, nome) => {
+      const dito = b[tipo];
+      if (!dito) return null;
+      const qp = Number(dito.partes);
+      const pp = (pend[tipo] || []).slice(0, qp);
+      if (!qp || pp.length !== qp || pp.some((x) => !x)) throw falha(409, `Faltam partes do ${nome}. Envie de novo.`);
       const tp = pp.reduce((s2, x) => s2 + x.tamanho, 0);
-      if (Number(b.pacote.tamanho) !== tp) throw falha(409, `O tamanho do pacote não bate (${tp} x ${b.pacote.tamanho}). Envie de novo.`);
-      if (!/^[0-9a-f]{64}$/.test(String(b.pacote.sha256 || ''))) throw falha(400, 'SHA-256 do pacote inválido.');
-      pacote = { tamanho: tp, sha256: b.pacote.sha256, partes: pp };
-    }
+      if (Number(dito.tamanho) !== tp) throw falha(409, `O tamanho do ${nome} não bate (${tp} x ${dito.tamanho}). Envie de novo.`);
+      if (!/^[0-9a-f]{64}$/.test(String(dito.sha256 || ''))) throw falha(400, `SHA-256 do ${nome} inválido.`);
+      return { tamanho: tp, sha256: dito.sha256, partes: pp };
+    };
+    const pacote = conferir('pacote', 'pacote');
+    const mac = conferir('mac', 'pacote de Mac');
     const anterior = D().atualizacao;
     D().atualizacao = { versao, nome: limpaTexto(b.nome, 120) || `Framyo Setup ${versao}.exe`, tamanho, sha256: b.sha256,
-                        notas: limpaTexto(b.notas, 2000), partes, pacote, publicado_em: agora(), por: req.usuario.id };
+                        notas: limpaTexto(b.notas, 2000), partes, pacote, mac, publicado_em: agora(), por: req.usuario.id };
     delete D().atualizacao_envio;
     await loja.salvar();
     // só a última versão fica na nuvem
@@ -1375,7 +1387,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       await c.api.delete_resources_by_prefix(pastaNuvem(anterior.versao) + '/', { resource_type: 'raw' })
         .catch((e) => console.error('[framyo] apagar versão antiga:', e.message));
     }
-    res.json({ ok: true, versao, tamanho, partes: qtd });
+    res.json({ ok: true, versao, tamanho, partes: qtd, mac: !!mac });
   }));
 
   // ── calendário de posts (Google Drive) ──────────────────────────────────────
