@@ -722,7 +722,12 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     return t ? t.url || t.download_url || t.inline_url || null : null;
   };
   const item = (x) => ({
-    id: x.id, tipo: x.type, nome: x.name, pai: x.parent_id, projeto_id: x.project_id, view_url: x.view_url,
+    // Numa pilha de versões o nome que vale é o da versão atual: o nome da pilha
+    // no Frame.io fica parado no de quando ela foi criada/aumentada e não volta
+    // quando uma versão é apagada (aparecia "V6" com a pilha indo só até a V4).
+    id: x.id, tipo: x.type, nome: (x.type === 'version_stack' && x.head_version && x.head_version.name) || x.name,
+    nome_pilha: x.type === 'version_stack' ? x.name : undefined,
+    pai: x.parent_id, projeto_id: x.project_id, view_url: x.view_url,
     atualizado_em: x.updated_at, tamanho: x.file_size, media_type: x.media_type, status: x.status,
     // data em que o vídeo foi gerado/enviado (numa pilha, a da versão atual)
     criado_em: (x.head_version && x.head_version.created_at) || x.created_at || null,
