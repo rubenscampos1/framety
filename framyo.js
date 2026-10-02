@@ -1257,16 +1257,23 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
 
   r.get('/atualizacao', leitorDaVersao, (req, res) => {
     const a = D().atualizacao;
+    const lista = (partes, tipo) => partes.map((p, i) => ({ tamanho: p.tamanho,
+      url: p.embaralhada ? `${URL_PUBLICA}/api/framyo/atualizacao/baixar/${a.versao}/${i}${tipo}` : p.url }));
+    // "partes" = o instalador (.exe), para instalar do zero e para os Framyo antigos.
+    // "pacote" = só os arquivos do programa (.zip): o Framyo já instalado extrai e
+    // reinicia, sem baixar nem rodar executável nenhum (é o que não dispara antivírus).
     res.json(a ? { versao: a.versao, nome: a.nome, tamanho: a.tamanho, sha256: a.sha256, notas: a.notas || '',
-                   publicado_em: a.publicado_em, partes: a.partes.map((p, i) => ({ url: p.embaralhada ? `${URL_PUBLICA}/api/framyo/atualizacao/baixar/${a.versao}/${i}` : p.url,
-                                                   tamanho: p.tamanho })) } : { versao: null });
+                   publicado_em: a.publicado_em, partes: lista(a.partes, ''),
+                   pacote: a.pacote ? { tamanho: a.pacote.tamanho, sha256: a.pacote.sha256, partes: lista(a.pacote.partes, '?tipo=pacote') } : null }
+               : { versao: null });
   });
 
   // Download de uma parte da nuvem, já desembaralhada. Sem login: o instalador
   // não tem segredo, e quem baixa (bandeja) confere o SHA-256 no fim.
   r.get('/atualizacao/baixar/:versao/:n', async (req, res) => {
     const a = D().atualizacao;
-    const p = a && a.versao === req.params.versao && a.partes[Number(req.params.n)];
+    const partes = a && (req.query.tipo === 'pacote' ? (a.pacote && a.pacote.partes) : a.partes);
+    const p = a && a.versao === req.params.versao && partes && partes[Number(req.params.n)];
     if (!p || !p.embaralhada) return res.status(404).json({ erro: 'Parte não existe.' });
     try {
       const r2 = await fetch(p.url);
@@ -1292,6 +1299,8 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       const dados = req.body;
       if (!Buffer.isBuffer(dados) || !dados.length) throw falha(400, 'Parte vazia.');
       if (dados.length > PARTE_MAX) throw falha(413, 'Parte grande demais (máx. 9 MB).');
+      const pacote = req.query.tipo === 'pacote';
+      const prefixo = pacote ? 'pacote' : 'parte';
       const c = nuvem();
       let url;
       if (c) {
@@ -1300,7 +1309,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
         // conferido pelo SHA-256 no download, a extensão não importa.
         const embaralhada = embaralhar(dados);
         const subir = (ext) => new Promise((ok, erro) => {
-          c.uploader.upload_stream({ resource_type: 'raw', public_id: `${pastaNuvem(versao)}/parte-${String(n).padStart(2, '0')}${ext}`,
+          c.uploader.upload_stream({ resource_type: 'raw', public_id: `${pastaNuvem(versao)}/${prefixo}-${String(n).padStart(2, '0')}${ext}`,
                                      overwrite: true, invalidate: true }, (e, x) => (e ? erro(e) : ok(x))).end(embaralhada);
         });
         let r2, ultimoErro;
@@ -1310,13 +1319,15 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
         if (!r2) throw falha(502, 'O Cloudinary recusou a parte: ' + (ultimoErro && ultimoErro.message));
         url = r2.secure_url;
       } else {
-        const lista = partesLocais.get(versao) || [];
+        const chave = versao + (pacote ? '|pacote' : '');
+        const lista = partesLocais.get(chave) || [];
         lista[n] = dados;
-        partesLocais.set(versao, lista);
-        url = `${URL_PUBLICA}/api/framyo/atualizacao/local/${versao}/${n}`;
+        partesLocais.set(chave, lista);
+        url = `${URL_PUBLICA}/api/framyo/atualizacao/local/${versao}/${n}${pacote ? '?tipo=pacote' : ''}`;
       }
       const pend = D().atualizacao_envio && D().atualizacao_envio.versao === versao ? D().atualizacao_envio : { versao, partes: [] };
-      pend.partes[n] = { url, tamanho: dados.length, sha256: crypto.createHash('sha256').update(dados).digest('hex'), embaralhada: !!c };
+      const destino = pacote ? (pend.pacote = pend.pacote || []) : pend.partes;
+      destino[n] = { url, tamanho: dados.length, sha256: crypto.createHash('sha256').update(dados).digest('hex'), embaralhada: !!c };
       D().atualizacao_envio = pend;
       await loja.salvar();
       res.json({ ok: true, n, url });
@@ -1325,7 +1336,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // só nos testes (sem Cloudinary): serve a parte guardada na memória
   r.get('/atualizacao/local/:versao/:n', (req, res) => {
     if (process.env.CLOUDINARY_URL) return res.status(404).json({ erro: 'Rota do Framyo não existe.' });
-    const p = (partesLocais.get(req.params.versao) || [])[Number(req.params.n)];
+    const p = (partesLocais.get(req.params.versao + (req.query.tipo === 'pacote' ? '|pacote' : '')) || [])[Number(req.params.n)];
     if (!p) return res.status(404).json({ erro: 'Parte não existe.' });
     res.setHeader('Content-Type', 'application/octet-stream');
     res.end(p);
@@ -1343,9 +1354,19 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const tamanho = partes.reduce((s, p) => s + p.tamanho, 0);
     if (Number(b.tamanho) !== tamanho) throw falha(409, `O tamanho não bate (${tamanho} x ${b.tamanho}). Envie de novo.`);
     if (!/^[0-9a-f]{64}$/.test(String(b.sha256 || ''))) throw falha(400, 'SHA-256 inválido.');
+    let pacote = null;
+    if (b.pacote) {
+      const qp = Number(b.pacote.partes);
+      const pp = (pend.pacote || []).slice(0, qp);
+      if (!qp || pp.length !== qp || pp.some((x) => !x)) throw falha(409, 'Faltam partes do pacote. Envie de novo.');
+      const tp = pp.reduce((s2, x) => s2 + x.tamanho, 0);
+      if (Number(b.pacote.tamanho) !== tp) throw falha(409, `O tamanho do pacote não bate (${tp} x ${b.pacote.tamanho}). Envie de novo.`);
+      if (!/^[0-9a-f]{64}$/.test(String(b.pacote.sha256 || ''))) throw falha(400, 'SHA-256 do pacote inválido.');
+      pacote = { tamanho: tp, sha256: b.pacote.sha256, partes: pp };
+    }
     const anterior = D().atualizacao;
     D().atualizacao = { versao, nome: limpaTexto(b.nome, 120) || `Framyo Setup ${versao}.exe`, tamanho, sha256: b.sha256,
-                        notas: limpaTexto(b.notas, 2000), partes, publicado_em: agora(), por: req.usuario.id };
+                        notas: limpaTexto(b.notas, 2000), partes, pacote, publicado_em: agora(), por: req.usuario.id };
     delete D().atualizacao_envio;
     await loja.salvar();
     // só a última versão fica na nuvem
