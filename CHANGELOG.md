@@ -5,6 +5,19 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Aspecty: sala simples, proporção, overlap, pixels e esticar o vídeo.**
+  - *Sala simples* (retangular): uma caixa desativa as duas telas laterais;
+    ficam a central e o chão, em toda a página, no 3D e na ficha em PDF.
+  - *Proporção* sempre à vista nas duas salas (forma reduzida, decimal e
+    pixels), também nos indicadores e no 3D.
+  - *Overlap* (era "Sobreposição mínima"): um % aberto da largura. As fatias
+    vizinhas se misturam e o vídeo a produzir encolhe esse tanto (3.840 com
+    10% → 3.456). Links antigos com `blend=` continuam valendo.
+  - *Unidade das medidas*: metros, pixels (largura com a altura em 1080) ou
+    proporção (16:9, 1,78). Trocar de unidade converte o que já foi digitado.
+  - *Testar um vídeo*: preview com uma imagem de verdade; arrastar as bordas
+    estica ou comprime o vídeo e mostra a porcentagem, na página e no 3D.
+
 - **screendimension agora se chama Aspecty.** Logo (`aspecty_logo.svg`, branco)
   no topo da página no lugar do texto "screendimension", e a versão escura
   (`aspecty_logo_dark.svg`) no topo da ficha em PDF — o PDF ignora
