@@ -1141,14 +1141,17 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
 /* ─────────────────────── Sala semicircular (uma tela curva) ──────────────────── */
 /* A tela é uma faixa só, curvada, coberta por projetores de 1920×1080 lado a
    lado. A altura vale sempre 1080 px (escala = 1080 / altura) e o comprimento
-   medido AO LONGO da curva vira a largura da timeline — nunca muda com o overlap.
-   Overlap (% da largura total): é quanto de imagem os projetores repetem para
-   se misturar (blend), repartido por igual entre as junções. Para cobrir a tela
-   eles precisam entregar, juntos, largura × (1 + overlap); quando os que já
-   estão não dão conta, entra mais um projetor. O que sobra dos 1920 px de cada
-   um é cortado nas bordas. O ângulo só entra na geometria (raio, abertura, 3D). */
+   medido AO LONGO da curva dá a largura sem overlap; o número de projetores sai
+   de quantos 1920 cabem nela.
+   Overlap (% da largura total): os projetores vizinhos se cruzam e se misturam
+   (blend), então a timeline fica esse tanto mais estreita — 10% numa tela de
+   3.840 = 384 px a menos → 3.456 × 1.080, com os mesmos projetores. O total é
+   repartido por igual entre as junções. Uma faixa de blend não pode passar da
+   metade da fatia de um projetor; quando o % pedido passa disso, entra mais um
+   projetor. O ângulo só entra na geometria (raio, abertura, 3D). */
 const sdM = (n) => (Math.round(n * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const SD_OV_MAX = 45;   // overlap máximo (%): perto de 50% o número de projetores dispara
 const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const [A, setA]     = React.useState(initial.A ?? "3");      // altura da tela (m)
   const [C, setC]     = React.useState(initial.C ?? "");       // comprimento ao longo da curva (m)
@@ -1174,26 +1177,26 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
 
   const R = React.useMemo(() => {
     const scale = SD_MAX_H / a;
-    const Wpx = Math.round(arc * scale);         // largura da timeline: a tela com a altura em 1080
+    const Wn = Math.round(arc * scale);          // largura sem overlap: a tela com a altura em 1080
     const Hpx = SD_MAX_H;
-    const N0 = Math.max(1, Math.ceil(Wpx / 1920 - 0.004)); // projetores sem overlap (uns pixels de arredondamento não pedem mais um)
-    const blend = N0 > 1 ? Math.min(blendAsk, 50) : 0;     // % da largura total
-    const total = Wpx * blend / 100;             // px de overlap somando todas as junções
-    // Com overlap os projetores têm de entregar largura + overlap; e a faixa de
-    // uma junção não pode passar da metade da fatia (senão cruzaria dois vizinhos).
-    let N = N0 > 1 ? Math.max(N0, Math.ceil((Wpx + total) / 1920 - 0.004)) : 1;
-    while (N > 1 && total / (N - 1) > (Wpx + total) / N / 2 + 0.5) N++;
-    const ov = N > 1 ? total / (N - 1) : 0;      // faixa de blend em cada junção (px)
-    // Fatia de cada projetor na timeline. O que sobra dos 1920 é cortado por
-    // igual nas duas bordas.
-    const pw = Math.min(1920, (Wpx + total) / N);
+    const N0 = Math.max(1, Math.ceil(Wn / 1920 - 0.004)); // projetores sem overlap (uns pixels de arredondamento não pedem mais um)
+    const blend = N0 > 1 ? Math.min(blendAsk, SD_OV_MAX) : 0;   // % da largura total
+    // Cada junção leva blend/(N−1) da largura e cada fatia tem largura/N: a faixa
+    // cabe em meia fatia enquanto blend ≤ (N−1)/(2N). Passou disso, mais um projetor.
+    let N = N0;
+    while (N > 1 && blend / 100 > (N - 1) / (2 * N) + 1e-9) N++;
+    const less = N > 1 ? Math.round(Wn * blend / 100) : 0;      // px a menos na largura
+    const Wpx = Wn - less;                       // a timeline a produzir
+    const ov = N > 1 ? less / (N - 1) : 0;       // faixa de blend em cada junção (px)
+    // Fatia de cada projetor. O que sobra dos 1920 é cortado por igual nas duas bordas.
+    const pw = Math.min(1920, Wn / N);
     const cut = Math.max(0, (1920 - pw) / 2);
     const projs = Array.from({ length: N }, (_, i) => i * (pw - ov));
     const theta = angDeg * Math.PI / 180;
     const radiusM = arc / theta;
     const chordM = angDeg >= 360 ? 0 : 2 * radiusM * Math.sin(theta / 2);
     const depthM = radiusM * (1 - Math.cos(theta / 2));   // da abertura até o fundo da curva
-    return { scale, Wpx, Hpx, N, N0, ov, total, blend, pw, cut, projs, theta, radiusM, chordM, depthM, projM: pw / scale };
+    return { scale, Wn, Wpx, Hpx, N, N0, ov, less, blend, pw, cut, projs, theta, radiusM, chordM, depthM, projM: pw / scale };
   }, [a, arc, angDeg, blendAsk]);
   const blend = R.blend;
   const fit = sdFit(R.Wpx, R.Hpx, Vw, Vh, St);   // vídeo testado contra a tela inteira
@@ -1215,7 +1218,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     title: "Sala semicircular",
     subtitle: `Tela única curva  ·  ${sdM(arc)} m de curva × ${sdM(a)} m de altura`,
     hero: [
-      { lbl: "Vídeo a produzir", val: `${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)}`, unit: "px", sub: R.ov > 0 ? `com overlap de ${sdPct(blend / 100)}  ·  escala ${R.scale.toFixed(1)} px/m` : `escala ${R.scale.toFixed(1)} px/m` },
+      { lbl: "Vídeo a produzir", val: `${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)}`, unit: "px", sub: R.less ? `com overlap de ${sdPct(blend / 100)}  ·  sem ele seria ${sdFmt(R.Wn)}` : `escala ${R.scale.toFixed(1)} px/m` },
       { lbl: "Proporção", val: sdRatio(R.Wpx, R.Hpx), unit: "", sub: "largura : altura" },
       { lbl: "Projetores", val: String(R.N), unit: "× 1920×1080", sub: R.N > 1 ? `lado a lado, cada um ${sdFmt(R.pw)} × ${sdFmt(R.Hpx)}${R.N > R.N0 ? `  ·  +${R.N - R.N0} pelo overlap` : ""}` : "um só cobre a tela" },
     ],
@@ -1228,7 +1231,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     details: [
       ["Cada projetor usa", `${sdFmt(R.pw)} × ${sdFmt(R.Hpx)} px`, `${sdM(R.projM)} × ${sdM(a)} m`],
       ["Corte por projetor", `${sdFmt(R.cut)} px em cada borda`, "de 1920 px"],
-      ["Overlap (blend) por junção", R.ov > 0 ? `${sdFmt(R.ov)} px` : "nenhum", R.ov > 0 ? `${sdPct(blend / 100)} da largura  ·  ${sdFmt(R.total)} px no total` : "projetores encostados"],
+      ["Overlap (blend) por junção", R.ov > 0 ? `${sdFmt(R.ov)} px` : "nenhum", R.ov > 0 ? `${sdPct(blend / 100)} da largura  ·  ${sdFmt(R.less)} px a menos no total` : "projetores encostados"],
       ["Proporção", sdRatio(R.Wpx, R.Hpx), `${(R.Wpx / R.Hpx).toFixed(2).replace(".", ",")}:1`],
       ["Raio da curva", `${sdM(R.radiusM)} m`, R.chordM > 0 ? `abertura ${sdM(R.chordM)} m` : "círculo fechado"],
       ["Área segura", `${sdSafeTxt(R.Wpx, R.Hpx)} px`, `${sdM(arc * 0.8)} × ${sdM(a * 0.8)} m`],
@@ -1269,12 +1272,12 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
             <label><span className="sd-cellin-lbl">Ângulo do arco <em>180° = meio círculo</em></span>
               <span className="sd-input-wrap"><input type="number" min="1" max="360" step="1" inputMode="decimal" value={Ang} onChange={(e) => setAng(e.target.value)} /><b>°</b></span></label>
             <label><span className="sd-cellin-lbl">Overlap <em>blend · % da largura total</em></span>
-              <span className="sd-input-wrap"><input type="number" min="0" max="50" step="0.5" inputMode="decimal" value={Bl} onChange={(e) => setBl(e.target.value)} /><b>%</b></span></label>
-            <div className={`sd-ovinfo ${R.ov > 0 ? "on" : ""}`}>
+              <span className="sd-input-wrap"><input type="number" min="0" max={SD_OV_MAX} step="0.5" inputMode="decimal" value={Bl} onChange={(e) => setBl(e.target.value)} /><b>%</b></span></label>
+            <div className={`sd-ovinfo ${R.less ? "on" : ""}`}>
               {R.N < 2 ? <>Overlap só existe com dois ou mais projetores — esta tela cabe em um.</>
-                : !(R.ov > 0) ? <>Sem overlap: os {R.N} projetores encostam um no outro. Timeline de <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b> ({sdRatio(R.Wpx, R.Hpx)}).</>
-                : <>Overlap de <b>{sdPct(blend / 100)}</b> da largura = <b>{sdFmt(R.total)} px</b>{R.N > 2 ? <>, <b>{sdFmt(R.ov)} px</b> em cada uma das {R.N - 1} junções</> : <> no meio, entre os dois projetores</>}. Timeline de <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b> ({sdRatio(R.Wpx, R.Hpx)}) com <b>{R.N} projetores</b>{R.N > R.N0 ? <> — {R.N0} cobririam só {sdFmt(R.N0 * 1920)} px e a tela com o overlap pede {sdFmt(R.Wpx + R.total)}, então entra{R.N - R.N0 > 1 ? "m" : ""} mais {R.N - R.N0}</> : null}. Cada um usa {sdFmt(R.pw)} dos 1.920 px.</>}
-              {blendAsk > 50 && R.N0 > 1 ? <> Limitado a 50%.</> : null}
+                : !R.less ? <>Sem overlap: os {R.N} projetores encostam um no outro. Timeline de <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b> ({sdRatio(R.Wpx, R.Hpx)}). Com 10% a largura cairia para {sdFmt(Math.round(R.Wn * 0.9))} px.</>
+                : <>Overlap de <b>{sdPct(blend / 100)}</b> = <b>−{sdFmt(R.less)} px</b> na largura: {sdFmt(R.Wn)} → timeline de <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b> ({sdRatio(R.Wpx, R.Hpx)}) com <b>{R.N} projetores</b> · blend de <b>{sdFmt(R.ov)} px</b> {R.N > 2 ? `em cada uma das ${R.N - 1} junções` : "no meio, entre os dois projetores"}.{R.N > R.N0 ? <> Com {R.N0} projetores o overlap vai até {sdPct((R.N0 - 1) / (2 * R.N0))}; para {sdPct(blend / 100)} entra{R.N - R.N0 > 1 ? "m" : ""} mais {R.N - R.N0}.</> : null}</>}
+              {blendAsk > SD_OV_MAX && R.N0 > 1 ? <> Limitado a {SD_OV_MAX}%.</> : null}
             </div>
           </div>
           {!cM && <span className="sd-badge">{Un === "m" ? "digite o comprimento da curva" : Un === "px" ? "digite a largura da tela" : "digite a proporção da tela"}</span>}
@@ -1334,7 +1337,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
         <div className="sd-ind"><div className="sd-ind-lbl">Vídeo a produzir</div><div className="sd-ind-val">{sdFmt(R.Wpx)}×{sdFmt(R.Hpx)}</div><div className="sd-ind-sub">proporção {sdRatio(R.Wpx, R.Hpx)}</div></div>
         <div className="sd-ind"><div className="sd-ind-lbl">Projetores 1920×1080</div><div className="sd-ind-val">{R.N}</div><div className="sd-ind-sub">cada um usa {sdFmt(R.pw)} × {sdFmt(R.Hpx)} · {sdM(R.projM)} × {sdM(a)} m</div></div>
         <div className="sd-ind"><div className="sd-ind-lbl">Proporção da timeline</div><div className="sd-ind-val">{sdRatio(R.Wpx, R.Hpx)}</div><div className="sd-ind-sub">timeline {sdFmt(R.Wpx)} × {sdFmt(R.Hpx)} px{R.Wpx % 2 ? ` · largura ímpar, use ${sdFmt(R.Wpx + 1)}` : ""}</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Overlap</div><div className="sd-ind-val">{R.ov > 0 ? `${sdFmt(R.ov)} px` : "nenhum"}</div><div className="sd-ind-sub">{R.ov > 0 ? `${sdPct(blend / 100)} da largura · por junção (${R.N - 1})${R.N > 2 ? ` · ${sdFmt(R.total)} px no total` : ""}` : "projetores encostados, sem blend"}</div></div>
+        <div className="sd-ind"><div className="sd-ind-lbl">Overlap</div><div className="sd-ind-val">{R.less ? `−${sdFmt(R.less)} px` : "nenhum"}</div><div className="sd-ind-sub">{R.less ? `${sdPct(blend / 100)} da largura · blend de ${sdFmt(R.ov)} px por junção · sem overlap ${sdFmt(R.Wn)}` : "projetores encostados, sem blend"}</div></div>
         <div className="sd-ind sd-ind-safe"><div className="sd-ind-lbl">Área segura (margem 10%)</div><div className="sd-ind-val">{sdSafeTxt(R.Wpx, R.Hpx).replace(/ /g, "")}</div><div className="sd-ind-sub">{sdM(arc * 0.8)} × {sdM(a * 0.8)} m · textos aqui dentro</div></div>
         <div className="sd-ind"><div className="sd-ind-lbl">Escala</div><div className="sd-ind-val">{R.scale.toFixed(1)}</div><div className="sd-ind-sub">px/m · raio {sdM(R.radiusM)} m</div></div>
       </section>

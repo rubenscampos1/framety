@@ -11,10 +11,11 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
   - *Proporção* sempre à vista nas duas salas (forma reduzida, decimal e
     pixels), também nos indicadores e no 3D.
   - *Overlap* (era "Sobreposição mínima"): % da largura total, repartido
-    entre as junções, e entra na conta dos projetores. A timeline não muda
-    (altura sempre 1080, largura = comprimento da curva); quando os
-    projetores não cobrem largura + overlap, entra mais um (8 × 2,25 m com
-    10% → 3.840 × 1.080 com 3 projetores, 192 px por junção). Limite de 50%.
+    entre as junções. Os projetores se cruzam e a timeline fica esse tanto
+    mais estreita, com a altura sempre em 1080 (8 × 2,25 m com 10% →
+    3.456 × 1.080, 2 projetores, 384 px de blend no meio). Uma faixa de
+    blend vai até meia fatia de projetor; passou disso, entra mais um
+    projetor (2 projetores aguentam até 25%). Limite de 45%.
     Links antigos com `blend=` continuam valendo.
   - *Unidade das medidas*: metros, pixels (largura com a altura em 1080) ou
     proporção (16:9, 1,78). Trocar de unidade converte o que já foi digitado.
