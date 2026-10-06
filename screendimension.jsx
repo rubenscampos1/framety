@@ -751,7 +751,8 @@ const SDPreview3D = ({ res, initView }) => {
   function buildCurve(THREE, grp, r) {
     const t = three.current;
     const W = 0.0016;
-    const H = SD_MAX_H * W, Lw = (r.Wpx || 1920) * W;
+    const Hpx = r.Hpx || SD_MAX_H;
+    const H = Hpx * W, Lw = (r.Wpx || 1920) * W;
     const th = Math.max(0.05, Math.min(2 * Math.PI, r.theta || Math.PI));
     const R = Lw / th;
     const base = Math.max(Lw * 0.75, H * 2.4);
@@ -804,7 +805,7 @@ const SDPreview3D = ({ res, initView }) => {
       const seg = Math.max(20, Math.round(th * 16)) * 2;
       for (let i = 0; i < seg; i += 2) poly([pt(S0 + (S1 - S0) * i / seg, H * v, 0.998), pt(S0 + (S1 - S0) * (i + 1) / seg, H * v, 0.998)], SD_SAFE_3D, 0.95);
     });
-    put(`área segura ${sdSafeTxt(r.Wpx)}`, pt(0.5, H * (S1 - 0.08), 0.97), "rgba(255,181,71,0.85)", 0.75);
+    put(`área segura ${sdSafeTxt(r.Wpx, Hpx)}`, pt(0.5, H * (S1 - 0.08), 0.97), "rgba(255,181,71,0.85)", 0.75);
 
     // projetores: o corte dos 1920px aparece em vermelho só onde ele sobra de
     // fato — nas duas pontas da curva, um pouco atrás da tela (raio maior). Entre
@@ -834,7 +835,7 @@ const SDPreview3D = ({ res, initView }) => {
         if (u0 > 0) poly([pt(u0, 0, 0.999), pt(u0, H, 0.999)], 0xffffff, 0.6);
         if (u1 < 1) poly([pt(u1, 0, 0.999), pt(u1, H, 0.999)], 0xffffff, 0.6);
       }
-      put(`P${i + 1} · ${sdFmt(Math.min(pw, r.Wpx))} × ${sdFmt(SD_MAX_H)}`, pt((u0 + u1) / 2, H / 2, 0.97), "rgba(255,255,255,0.45)", 0.8);
+      put(`P${i + 1} · ${sdFmt(Math.min(pw, r.Wpx))} × ${sdFmt(Hpx)}`, pt((u0 + u1) / 2, H / 2, 0.97), "rgba(255,255,255,0.45)", 0.8);
     });
     // overlap: a faixa onde duas fatias vizinhas se misturam (blend), em âmbar
     if (projs.length > 1 && (r.ov || 0) > 0.5) projs.slice(1).forEach((x) => {
@@ -849,13 +850,13 @@ const SDPreview3D = ({ res, initView }) => {
       dash((f) => pt(-e + (1 + 2 * e) * f, y1, K), 48);
       dash((f) => pt(-e, y0 + (y1 - y0) * f, K), 12);
       dash((f) => pt(1 + e, y0 + (y1 - y0) * f, K), 12);
-      put(`sangria ${sdFmt(Math.round(r.Wpx * (1 + r.bleed)))} × ${sdFmt(Math.round(SD_MAX_H * (1 + r.bleed)))}`, pt(0.5, y0 - H * 0.08, K), "rgba(255,122,26,0.9)", 0.6);
+      put(`sangria ${sdFmt(Math.round(r.Wpx * (1 + r.bleed)))} × ${sdFmt(Math.round(Hpx * (1 + r.bleed)))}`, pt(0.5, y0 - H * 0.08, K), "rgba(255,122,26,0.9)", 0.6);
     }
     if (r.fit) {
       const K = 0.985, col = r.fit.ok ? SD_PURPLE_3D : 0xff4d4d;
       const a = Math.max(0, r.fit.a), b = Math.min(1, r.fit.b);        // o que cai dentro da tela
       // a imagem de teste sobre a curva, esticada como no preview
-      { const tex = fitTexture(THREE, r.fit, r.Wpx, SD_MAX_H), n = segs(0, 1), pos = [], uv = [];
+      { const tex = fitTexture(THREE, r.fit, r.Wpx, Hpx), n = segs(0, 1), pos = [], uv = [];
         for (let i = 0; i < n; i++) {
           const u0 = i / n, u1 = (i + 1) / n, p00 = pt(u0, 0, K), p10 = pt(u1, 0, K), p11 = pt(u1, H, K), p01 = pt(u0, H, K);
           pos.push(...p00, ...p10, ...p11, ...p00, ...p11, ...p01);
@@ -870,12 +871,12 @@ const SDPreview3D = ({ res, initView }) => {
       [a, b].forEach((u) => { for (let i = 0; i < 12; i += 2) poly([pt(u, H * i / 12, K), pt(u, H * (i + 1) / 12, K)], col, 0.95); });
       put(`vídeo ${sdFmt(r.fit.vw)} × ${sdFmt(r.fit.vh)}${Math.abs(r.fit.st) > 0.0005 ? ` · ${r.fit.st > 0 ? "esticado +" : "comprimido −"}${sdPct(Math.abs(r.fit.st))}` : ""}${r.fit.ok ? "" : " · não compatível"}`, pt((a + b) / 2, H * 0.1, K), r.fit.ok ? "rgba(168,85,247,0.9)" : "rgba(255,77,77,0.9)", 0.6);
     }
-    put(`${sdFmt(r.Wpx)} × ${sdFmt(SD_MAX_H)} · ${sdRatio(r.Wpx, SD_MAX_H)}`, pt(0.5, H * 1.08, 1), "rgba(94,200,242,0.7)");
+    put(`${sdFmt(r.Wpx)} × ${sdFmt(Hpx)} · ${sdRatio(r.Wpx, Hpx)}`, pt(0.5, H * 1.08, 1), "rgba(94,200,242,0.7)");
     put(`R ${String(Math.round((r.radiusM || 0) * 100) / 100).replace(".", ",")} m`, [0, 0.01, 0], "rgba(255,255,255,0.3)", 0.7);
 
     // centro do enquadramento: meio entre a curva e a corda
     const midZ = -R * (th >= Math.PI ? 0.5 : (1 + Math.cos(th / 2)) / 2);
-    frame(["c", r.Wpx, th].join(), 0, H / 2, midZ, Math.max(R * 2.6, Lw * 0.55, H * 3) + 1);
+    frame(["c", r.Wpx, r.Hpx, th].join(), 0, H / 2, midZ, Math.max(R * 2.6, Lw * 0.55, H * 3) + 1);
   }
 
   return (
@@ -1138,22 +1139,24 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
 };
 
 /* ─────────────────────── Sala semicircular (uma tela curva) ──────────────────── */
-/* A tela é uma faixa só, curvada. Altura → 1080px (escala = 1080 / altura); o
-   comprimento medido AO LONGO da curva vira a largura do vídeo. Cada projetor
-   entrega 1920×1080 com a altura travada, então cobre 1920px de largura; o
-   número de projetores sai do quanto precisa enfileirar para cobrir o arco.
-   Overlap (%): as fatias vizinhas se cruzam e se misturam (blend) — a largura do
-   vídeo diminui exatamente essa porcentagem (10% numa tela de 3.840 = 384 px a
-   menos → 3.456), repartida por igual entre as junções. O número de projetores
-   continua o da tela sem overlap. O ângulo só entra na geometria (raio,
-   abertura, 3D) — não muda o vídeo. */
+/* A tela é uma faixa só, curvada, coberta por projetores de 1920×1080 lado a
+   lado. A timeline tem sempre a proporção da parede (comprimento da curva ÷
+   altura) — é isso que a faz cobrir a tela sem deformar.
+   Sem overlap, a altura vale 1080 px e o comprimento vira a largura; o número
+   de projetores sai de quantos 1920 cabem nela.
+   Overlap (% dos 1920 px de cada projetor): os projetores vizinhos se cruzam
+   nessa faixa (blend), então juntos entregam N×1920 − (N−1)×overlap de largura.
+   Se isso ainda cobre a tela, nada muda (sobra corte nas pontas). Se não cobre,
+   a timeline passa a ter essa largura e a altura desce junto, na proporção da
+   parede — os projetores abrem um pouco mais e sobra uma faixa sem uso em cima
+   e embaixo. O ângulo só entra na geometria (raio, abertura, 3D). */
 const sdM = (n) => (Math.round(n * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const [A, setA]     = React.useState(initial.A ?? "3");      // altura da tela (m)
   const [C, setC]     = React.useState(initial.C ?? "");       // comprimento ao longo da curva (m)
   const [Ang, setAng] = React.useState(initial.Ang ?? "180");  // ângulo do arco (°)
-  const [Bl, setBl]   = React.useState(initial.Bl ?? "0");     // overlap: blend entre as fatias do vídeo (% da largura)
+  const [Bl, setBl]   = React.useState(initial.Bl ?? "0");     // overlap: blend entre projetores vizinhos (% dos 1920 px de cada um)
   const [Un, setUnS]  = React.useState(initial.Un === "px" || initial.Un === "prop" ? initial.Un : "m");   // unidade do comprimento
   const [Vw, setVw]   = React.useState(initial.Vw ?? "");      // vídeo a testar (px)
   const [Vh, setVh]   = React.useState(initial.Vh ?? "");
@@ -1173,30 +1176,31 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
   const blendAsk = Math.max(0, parseFloat(String(Bl).replace(",", ".")) || 0);   // o % digitado (aberto)
 
   const R = React.useMemo(() => {
-    const scale = SD_MAX_H / a;
-    const Wn = Math.round(arc * scale);          // largura "natural": a tela sem overlap nenhum
+    const even = (x) => Math.max(2, Math.round(x / 2) * 2);
+    const Wn = Math.round(arc * SD_MAX_H / a);   // largura com a altura valendo 1080 (sem overlap)
     const N = Math.max(1, Math.ceil(Wn / 1920 - 0.004)); // projetores lado a lado (uns pixels de arredondamento não pedem mais um)
-    // Cada projetor pega a mesma fatia da tela (pw). O que sobra dos 1920px dele
-    // é cortado por igual nas duas bordas — altura sempre 1080.
-    const pw = Math.min(1920, Wn / N);
+    const blend = N > 1 ? Math.min(blendAsk, 50) : 0;    // além da metade, um projetor já cruzaria dois vizinhos
+    const ov = 1920 * blend / 100;               // faixa de blend em cada junção (px)
+    const canvas = N * 1920 - (N - 1) * ov;      // largura que os N projetores entregam juntos
+    const full = canvas >= Wn - 2;               // ainda cobre a tela com a altura em 1080?
+    const Wpx = full ? Wn : even(canvas);
+    const Hpx = full ? SD_MAX_H : even(Wpx * a / arc);
+    const scale = Wpx / arc;
+    // Fatia de cada projetor na timeline. O que sobra dos 1920 é cortado por
+    // igual nas duas bordas; o que sobra dos 1080, em cima e embaixo.
+    const pw = Math.min(1920, (Wpx + (N - 1) * ov) / N);
     const cut = Math.max(0, (1920 - pw) / 2);
-    // Overlap: as fatias se cruzam; o vídeo encolhe `blend`% da largura natural.
-    // Limite da geometria: uma fatia não pode cruzar mais que a metade da vizinha.
-    const maxBlend = N > 1 ? (N - 1) / N * 50 : 0;
-    const blend = Math.min(blendAsk, maxBlend);
-    const less = N > 1 ? Math.round(Wn * blend / 100) : 0;     // px a menos na largura
-    const Wpx = Wn - less;                       // o vídeo a produzir
-    const ov = N > 1 ? less / (N - 1) : 0;       // largura da faixa de blend em cada junção
+    const vcut = (SD_MAX_H - Hpx) / 2;
     const projs = Array.from({ length: N }, (_, i) => i * (pw - ov));
     const theta = angDeg * Math.PI / 180;
     const radiusM = arc / theta;
     const chordM = angDeg >= 360 ? 0 : 2 * radiusM * Math.sin(theta / 2);
     const depthM = radiusM * (1 - Math.cos(theta / 2));   // da abertura até o fundo da curva
-    return { scale, Wn, Wpx, N, ov, less, blend, maxBlend, pw, cut, projs, theta, radiusM, chordM, depthM, projM: pw / scale };
+    return { scale, Wn, Wpx, Hpx, N, ov, blend, full, canvas, pw, cut, vcut, projs, theta, radiusM, chordM, depthM, projM: pw / scale };
   }, [a, arc, angDeg, blendAsk]);
   const blend = R.blend;
-  const fit = sdFit(R.Wpx, SD_MAX_H, Vw, Vh, St);   // vídeo testado contra a tela inteira
-  const bleed = sdBleed(R.Wpx, SD_MAX_H, sdBleedPct(SgP));
+  const fit = sdFit(R.Wpx, R.Hpx, Vw, Vh, St);   // vídeo testado contra a tela inteira
+  const bleed = sdBleed(R.Wpx, R.Hpx, sdBleedPct(SgP));
 
   const [diagW, setDiagW] = React.useState(680);
   const diagRef = React.useRef(null);
@@ -1206,17 +1210,17 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     return () => window.removeEventListener("resize", onR);
   }, []);
   // cabe a tela + o quadro vermelho que passa das pontas (o corte das bordas)
-  const disp = Math.min(150 / SD_MAX_H, (Math.max(diagW, 280) - 40) / Math.max(R.Wpx + 2 * R.cut, 1920));
+  const disp = Math.min(150 / R.Hpx, (Math.max(diagW, 280) - 40) / Math.max(R.Wpx + 2 * R.cut, 1920));
   docRef.current = {
     mode: "curve", raw,   // o que a ficha salva guarda
-    resumo: `vídeo ${sdFmt(R.Wpx)} × ${sdFmt(SD_MAX_H)}  ·  ${R.N} projetor${R.N > 1 ? "es" : ""}`,
+    resumo: `vídeo ${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)}  ·  ${R.N} projetor${R.N > 1 ? "es" : ""}`,
     name: `sala-semicircular${ready ? `-${sdM(arc).replace(",", "_")}x${sdM(a).replace(",", "_")}m` : ""}`,
     title: "Sala semicircular",
     subtitle: `Tela única curva  ·  ${sdM(arc)} m de curva × ${sdM(a)} m de altura`,
     hero: [
-      { lbl: "Vídeo a produzir", val: `${sdFmt(R.Wpx)} × ${sdFmt(SD_MAX_H)}`, unit: "px", sub: R.less ? `com overlap de ${sdPct(blend / 100)}  ·  sem ele seria ${sdFmt(R.Wn)}` : `escala ${R.scale.toFixed(1)} px/m` },
-      { lbl: "Proporção", val: sdRatio(R.Wpx, SD_MAX_H), unit: "", sub: "largura : altura" },
-      { lbl: "Projetores", val: String(R.N), unit: "× 1920×1080", sub: R.N > 1 ? `lado a lado, cada um ${sdFmt(R.pw)} × 1.080` : "um só cobre a tela" },
+      { lbl: "Vídeo a produzir", val: `${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)}`, unit: "px", sub: R.ov > 0 ? `com overlap de ${sdPct(blend / 100)}  ·  escala ${R.scale.toFixed(1)} px/m` : `escala ${R.scale.toFixed(1)} px/m` },
+      { lbl: "Proporção", val: sdRatio(R.Wpx, R.Hpx), unit: "", sub: "largura : altura" },
+      { lbl: "Projetores", val: String(R.N), unit: "× 1920×1080", sub: R.N > 1 ? `lado a lado, cada um ${sdFmt(R.pw)} × ${sdFmt(R.Hpx)}` : "um só cobre a tela" },
     ],
     inputs: [
       ["Altura da tela", `${sdM(a)} m`],
@@ -1225,12 +1229,13 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
       ["Overlap", `${sdPct(blend / 100)}`],
     ],
     details: [
-      ["Cada projetor usa", `${sdFmt(R.pw)} × 1.080 px`, `${sdM(R.projM)} × ${sdM(a)} m`],
+      ["Cada projetor usa", `${sdFmt(R.pw)} × ${sdFmt(R.Hpx)} px`, `${sdM(R.projM)} × ${sdM(a)} m`],
       ["Corte por projetor", `${sdFmt(R.cut)} px em cada borda`, "de 1920 px"],
-      ["Overlap (blend) por junção", R.ov > 0 ? `${sdFmt(R.ov)} px` : "nenhum", R.ov > 0 ? `${sdFmt(R.less)} px a menos na largura` : "fatias encostadas"],
-      ["Proporção", sdRatio(R.Wpx, SD_MAX_H), `${(R.Wpx / SD_MAX_H).toFixed(2).replace(".", ",")}:1`],
+      ...(R.vcut > 0.5 ? [["Sobra vertical por projetor", `${sdFmt(R.vcut)} px em cima e embaixo`, "de 1080 px"]] : []),
+      ["Overlap (blend) por junção", R.ov > 0 ? `${sdFmt(R.ov)} px` : "nenhum", R.ov > 0 ? `${sdPct(blend / 100)} de cada projetor` : "projetores encostados"],
+      ["Proporção", sdRatio(R.Wpx, R.Hpx), `${(R.Wpx / R.Hpx).toFixed(2).replace(".", ",")}:1`],
       ["Raio da curva", `${sdM(R.radiusM)} m`, R.chordM > 0 ? `abertura ${sdM(R.chordM)} m` : "círculo fechado"],
-      ["Área segura", `${sdSafeTxt(R.Wpx)} px`, `${sdM(arc * 0.8)} × ${sdM(a * 0.8)} m`],
+      ["Área segura", `${sdSafeTxt(R.Wpx, R.Hpx)} px`, `${sdM(arc * 0.8)} × ${sdM(a * 0.8)} m`],
       ["Fundo da sala", `${sdM(R.depthM)} m`, "da abertura ao fundo"],
       ...(fit ? [["Vídeo testado", `${sdFmt(fit.vw)} × ${sdFmt(fit.vh)} px`, `${Math.abs(fit.st) > 0.0005 ? `${fit.st > 0 ? "esticado +" : "comprimido −"}${sdPct(Math.abs(fit.st))}  ·  ` : ""}${fit.ok ? "compatível" : "não compatível"}`]] : []),
       ...(Sg ? [[`Sangria (+${sdPct(bleed.f)})`, `${sdFmt(bleed.bw)} × ${sdFmt(bleed.bh)} px`, "conteúdo com borda extra"]] : []),
@@ -1259,7 +1264,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
           <div className="sd-curvein">
             <div className="sd-curvein-u"><span className="sd-altrow-k">Informar a tela em</span><SDUnits un={Un} setUn={setUn} />
               {Un !== "m" && <span className="sd-altrow-n">{Un === "px" ? "Pixels: a largura da tela, com a altura valendo 1080 px." : "Proporção: largura : altura da tela (ex. 32:9 ou 3,56)."}</span>}</div>
-            <label><span className="sd-cellin-lbl">Altura da tela <em>→ vira {SD_MAX_H}px</em></span>
+            <label><span className="sd-cellin-lbl">Altura da tela <em>→ vira {sdFmt(R.Hpx)} px</em></span>
               <span className="sd-input-wrap sd-input-lg"><input type="number" min="0" step="0.01" inputMode="decimal" value={A} placeholder="ex. 4,20" onChange={(e) => setA(e.target.value)} /><b>m</b></span></label>
             <label><span className="sd-cellin-lbl">{Un === "m" ? "Comprimento da curva" : Un === "px" ? "Largura da tela" : "Proporção da tela"} <em>{Un === "m" ? "medido ao longo da tela" : Un === "px" ? "em pixels, sem overlap" : "largura : altura"}</em></span>
               <span className="sd-input-wrap sd-input-lg">{Un === "prop"
@@ -1267,31 +1272,33 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
                 : <input type="number" min="0" step={Un === "px" ? "1" : "0.01"} inputMode="decimal" value={C} placeholder={Un === "px" ? "ex. 3840" : "ex. 12,50"} onChange={(e) => setC(e.target.value)} />}<b>{Un === "prop" ? "∶" : Un}</b></span></label>
             <label><span className="sd-cellin-lbl">Ângulo do arco <em>180° = meio círculo</em></span>
               <span className="sd-input-wrap"><input type="number" min="1" max="360" step="1" inputMode="decimal" value={Ang} onChange={(e) => setAng(e.target.value)} /><b>°</b></span></label>
-            <label><span className="sd-cellin-lbl">Overlap <em>blend entre as metades do vídeo</em></span>
-              <span className="sd-input-wrap"><input type="number" min="0" step="0.5" inputMode="decimal" value={Bl} onChange={(e) => setBl(e.target.value)} /><b>%</b></span></label>
-            <div className={`sd-ovinfo ${R.less ? "on" : ""}`}>
+            <label><span className="sd-cellin-lbl">Overlap <em>blend · % de cada projetor</em></span>
+              <span className="sd-input-wrap"><input type="number" min="0" max="50" step="0.5" inputMode="decimal" value={Bl} onChange={(e) => setBl(e.target.value)} /><b>%</b></span></label>
+            <div className={`sd-ovinfo ${R.ov > 0 ? "on" : ""}`}>
               {R.N < 2 ? <>Overlap só existe com dois ou mais projetores — esta tela cabe em um.</>
-                : R.less ? <><b>−{sdFmt(R.less)} px</b> na largura: <b>{sdFmt(R.Wn)}</b> → <b>{sdFmt(R.Wpx)} × {sdFmt(SD_MAX_H)}</b> ({sdRatio(R.Wpx, SD_MAX_H)}) · faixa de blend de <b>{sdFmt(R.ov)} px</b> {R.N > 2 ? `em cada uma das ${R.N - 1} junções` : "no meio, entre as duas metades"}{blendAsk > R.maxBlend + 1e-9 ? ` · limitado a ${sdPct(R.maxBlend / 100)} (uma fatia não cruza mais que a metade da vizinha)` : ""}</>
-                : <>Sem overlap: as {R.N} fatias encostam uma na outra. Com 10%, a largura cairia para {sdFmt(Math.round(R.Wn * 0.9))} px.</>}
+                : !(R.ov > 0) ? <>Sem overlap: os {R.N} projetores encostam um no outro. Timeline de <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b> ({sdRatio(R.Wpx, R.Hpx)}).</>
+                : R.full ? <>Overlap de <b>{sdPct(blend / 100)}</b> = <b>{sdFmt(R.ov)} px</b> {R.N > 2 ? `em cada uma das ${R.N - 1} junções` : "no meio, entre os dois projetores"}. Os {R.N} projetores ainda cobrem a tela com folga: a timeline segue <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b> ({sdRatio(R.Wpx, R.Hpx)}){R.cut > 0.5 ? <> e sobram {sdFmt(R.cut)} px em cada borda de cada projetor</> : null}.</>
+                : <>Overlap de <b>{sdPct(blend / 100)}</b> = <b>{sdFmt(R.ov)} px</b> {R.N > 2 ? `em cada uma das ${R.N - 1} junções` : "no meio, entre os dois projetores"}. Juntos, os {R.N} projetores entregam {sdFmt(R.canvas)} px de largura; para cobrir a tela de {sdM(arc)} × {sdM(a)} m a timeline é <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b> ({sdRatio(R.Wpx, R.Hpx)}), com {sdFmt(R.vcut)} px sem uso em cima e embaixo de cada projetor. Com {R.N + 1} projetores a altura volta a 1.080 ({sdFmt(R.Wn)} × 1.080).</>}
+              {blendAsk > 50 && R.N > 1 ? <> Limitado a 50%: além disso um projetor cruzaria dois vizinhos.</> : null}
             </div>
           </div>
           {!cM && <span className="sd-badge">{Un === "m" ? "digite o comprimento da curva" : Un === "px" ? "digite a largura da tela" : "digite a proporção da tela"}</span>}
-          <SDProp items={[["Proporção da tela", R.Wpx, SD_MAX_H]]} />
+          <SDProp items={[["Proporção da tela", R.Wpx, R.Hpx]]} />
 
           {/* A tela planificada = o vídeo a produzir, com a faixa de cada projetor */}
           <div className="sd-cell">
-            <div className="sd-flatwrap" style={{ width: R.Wpx * disp, height: SD_MAX_H * disp }}>
+            <div className="sd-flatwrap" style={{ width: R.Wpx * disp, height: R.Hpx * disp }}>
               {/* corte dos projetores: só sobra nas pontas da tela */}
               {R.cut > 0.5 && [`${-R.cut / R.Wpx * 100}%`, "100%"].map((left, i) => (
                 <div key={"c" + i} className={`sd-frame ${i ? "r" : "l"}`} style={{ left, width: `${R.cut / R.Wpx * 100}%` }}>
                   <span><b>−{sdFmt(R.cut)} px</b>1920 − {sdFmt(R.pw)} = {sdFmt(1920 - R.pw)}</span>
                 </div>
               ))}
-              <div className="sd-flat" style={{ width: R.Wpx * disp, height: SD_MAX_H * disp }}>
+              <div className="sd-flat" style={{ width: R.Wpx * disp, height: R.Hpx * disp }}>
               <span className="sd-screen-lbl">Tela curva planificada</span>
-              <div className="sd-safe"><span>área segura {sdSafeTxt(R.Wpx)}</span></div>
+              <div className="sd-safe"><span>área segura {sdSafeTxt(R.Wpx, R.Hpx)}</span></div>
               {R.projs.map((x, i) => (
-                <div key={i} className={`sd-proj ${i % 2 ? "odd" : ""}`} style={{ left: `${x / R.Wpx * 100}%`, width: `${R.pw / R.Wpx * 100}%` }}><span>P{i + 1} · {sdFmt(R.pw)} × 1.080</span></div>
+                <div key={i} className={`sd-proj ${i % 2 ? "odd" : ""}`} style={{ left: `${x / R.Wpx * 100}%`, width: `${R.pw / R.Wpx * 100}%` }}><span>P{i + 1} · {sdFmt(R.pw)} × {sdFmt(R.Hpx)}</span></div>
               ))}
               {junctions.map((j, i) => (
                 <div key={"j" + i} className="sd-blend" style={{ left: `${j.x0 / R.Wpx * 100}%`, width: `${(j.x1 - j.x0) / R.Wpx * 100}%` }}><span>overlap {sdFmt(j.x1 - j.x0)} px</span></div>
@@ -1300,11 +1307,11 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
               {Sg && <div className="sd-bbox" style={{ left: `${-bleed.f * 50}%`, right: `${-bleed.f * 50}%`, top: `${-bleed.f * 50}%`, bottom: `${-bleed.f * 50}%` }}><span>sangria {sdFmt(bleed.bw)} × {sdFmt(bleed.bh)}</span></div>}
               {fit && <div className={`sd-vbox ${fit.ok ? "" : "bad"}`} style={{ left: `${Math.max(-0.02, fit.a) * 100}%`, width: `${(Math.min(1.02, fit.b) - Math.max(-0.02, fit.a)) * 100}%` }}><span>vídeo {sdFmt(fit.vw)} × {sdFmt(fit.vh)}{Math.abs(fit.st) > 0.0005 ? ` · ${fit.st > 0 ? "+" : "−"}${sdPct(Math.abs(fit.st))}` : ""}</span></div>}
             </div>
-            <div className="sd-res"><b>{sdFmt(R.Wpx)} × {sdFmt(SD_MAX_H)} px</b><span className="sd-res-r">{sdRatio(R.Wpx, SD_MAX_H)}</span>
-              <span className="sd-res2">{sdM(arc)} m × {sdM(a)} m · {R.N} projetor{R.N > 1 ? "es" : ""} lado a lado · cada um usa {sdFmt(R.pw)} × 1.080</span></div>
+            <div className="sd-res"><b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)} px</b><span className="sd-res-r">{sdRatio(R.Wpx, R.Hpx)}</span>
+              <span className="sd-res2">{sdM(arc)} m × {sdM(a)} m · {R.N} projetor{R.N > 1 ? "es" : ""} lado a lado · cada um usa {sdFmt(R.pw)} × {sdFmt(R.Hpx)}</span></div>
           </div>
 
-          <SDVideoTest vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} st={St} setSt={setSt} fit={fit} areaLbl={`tela de ${sdFmt(R.Wpx)} × ${sdFmt(SD_MAX_H)} px (${sdRatio(R.Wpx, SD_MAX_H)})`} />
+          <SDVideoTest vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} st={St} setSt={setSt} fit={fit} areaLbl={`tela de ${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)} px (${sdRatio(R.Wpx, R.Hpx)})`} />
           <SDBleed on={Sg} setOn={setSg} pct={SgP} setPct={setSgP} bleed={bleed} areaLbl="tela" />
 
           <div className="sd-topview">
@@ -1324,16 +1331,16 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
 
         <section className="sd-3dsection" ref={preview3dRef} data-html2canvas-ignore="true">
           <div className="sd-3dtitle">Preview 3D — faixa de cada projetor</div>
-          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM, ov: R.ov, bleed: Sg ? bleed.f : 0, fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok, st: fit.st } : null }} />
+          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, Hpx: R.Hpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM, ov: R.ov, bleed: Sg ? bleed.f : 0, fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok, st: fit.st } : null }} />
         </section>
       </div>
 
       <section className="sd-indicators">
-        <div className="sd-ind"><div className="sd-ind-lbl">Vídeo a produzir</div><div className="sd-ind-val">{sdFmt(R.Wpx)}×{sdFmt(SD_MAX_H)}</div><div className="sd-ind-sub">proporção {sdRatio(R.Wpx, SD_MAX_H)}</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Projetores 1920×1080</div><div className="sd-ind-val">{R.N}</div><div className="sd-ind-sub">cada um usa {sdFmt(R.pw)} × 1.080 · {sdM(R.projM)} × {sdM(a)} m</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Proporção da timeline</div><div className="sd-ind-val">{sdRatio(R.Wpx, SD_MAX_H)}</div><div className="sd-ind-sub">timeline {sdFmt(R.Wpx)} × {sdFmt(SD_MAX_H)} px{R.Wpx % 2 ? ` · largura ímpar, use ${sdFmt(R.Wpx + 1)}` : ""}</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Overlap</div><div className="sd-ind-val">{R.less ? `−${sdFmt(R.less)} px` : "nenhum"}</div><div className="sd-ind-sub">{R.less ? `${sdPct(blend / 100)} da largura · blend de ${sdFmt(R.ov)} px por junção · sem overlap ${sdFmt(R.Wn)}` : "fatias encostadas, sem blend"}</div></div>
-        <div className="sd-ind sd-ind-safe"><div className="sd-ind-lbl">Área segura (margem 10%)</div><div className="sd-ind-val">{sdSafeTxt(R.Wpx).replace(/ /g, "")}</div><div className="sd-ind-sub">{sdM(arc * 0.8)} × {sdM(a * 0.8)} m · textos aqui dentro</div></div>
+        <div className="sd-ind"><div className="sd-ind-lbl">Vídeo a produzir</div><div className="sd-ind-val">{sdFmt(R.Wpx)}×{sdFmt(R.Hpx)}</div><div className="sd-ind-sub">proporção {sdRatio(R.Wpx, R.Hpx)}</div></div>
+        <div className="sd-ind"><div className="sd-ind-lbl">Projetores 1920×1080</div><div className="sd-ind-val">{R.N}</div><div className="sd-ind-sub">cada um usa {sdFmt(R.pw)} × {sdFmt(R.Hpx)} · {sdM(R.projM)} × {sdM(a)} m</div></div>
+        <div className="sd-ind"><div className="sd-ind-lbl">Proporção da timeline</div><div className="sd-ind-val">{sdRatio(R.Wpx, R.Hpx)}</div><div className="sd-ind-sub">timeline {sdFmt(R.Wpx)} × {sdFmt(R.Hpx)} px{R.Wpx % 2 ? ` · largura ímpar, use ${sdFmt(R.Wpx + 1)}` : ""}</div></div>
+        <div className="sd-ind"><div className="sd-ind-lbl">Overlap</div><div className="sd-ind-val">{R.ov > 0 ? `${sdFmt(R.ov)} px` : "nenhum"}</div><div className="sd-ind-sub">{R.ov > 0 ? `${sdPct(blend / 100)} de cada projetor · ${R.N - 1} junç${R.N > 2 ? "ões" : "ão"}${R.vcut > 0.5 ? ` · altura ${sdFmt(R.Hpx)} de 1.080` : ""}` : "projetores encostados, sem blend"}</div></div>
+        <div className="sd-ind sd-ind-safe"><div className="sd-ind-lbl">Área segura (margem 10%)</div><div className="sd-ind-val">{sdSafeTxt(R.Wpx, R.Hpx).replace(/ /g, "")}</div><div className="sd-ind-sub">{sdM(arc * 0.8)} × {sdM(a * 0.8)} m · textos aqui dentro</div></div>
         <div className="sd-ind"><div className="sd-ind-lbl">Escala</div><div className="sd-ind-val">{R.scale.toFixed(1)}</div><div className="sd-ind-sub">px/m · raio {sdM(R.radiusM)} m</div></div>
       </section>
     </div>
@@ -1357,8 +1364,8 @@ const sdAccent = () => {
 const SDPdfCurveDiagram = ({ R, fit }) => {
   const ac = sdAccent();
   // cabe a tela + o quadro vermelho de 1920 que passa das pontas (o corte)
-  let sw = 520 * R.Wpx / (R.Wpx + 2 * R.cut), sh = sw * SD_MAX_H / R.Wpx;
-  if (sh > 78) { sh = 78; sw = sh * R.Wpx / SD_MAX_H; }
+  let sw = 520 * R.Wpx / (R.Wpx + 2 * R.cut), sh = sw * R.Hpx / R.Wpx;
+  if (sh > 78) { sh = 78; sw = sh * R.Wpx / R.Hpx; }
   const cutW = R.cut * sw / R.Wpx;
   const pct = (x) => `${x / R.Wpx * 100}%`;
   const junctions = R.projs.slice(1).map((x, i) => ({ x0: x, x1: R.projs[i] + R.pw })).filter((j) => j.x1 > j.x0);
@@ -1382,7 +1389,7 @@ const SDPdfCurveDiagram = ({ R, fit }) => {
         ))}
         <div className="pd-strip" style={{ width: sw, height: sh, background: ac }}>
           {R.projs.map((x, i) => (
-            <div key={i} className={`pd-band ${i % 2 ? "odd" : ""}`} style={{ left: pct(x), width: pct(R.pw) }}><b>P{i + 1}<em>{sdFmt(R.pw)} × 1.080</em></b></div>
+            <div key={i} className={`pd-band ${i % 2 ? "odd" : ""}`} style={{ left: pct(x), width: pct(R.pw) }}><b>P{i + 1}<em>{sdFmt(R.pw)} × {sdFmt(R.Hpx)}</em></b></div>
           ))}
           {junctions.map((j, i) => (
             <svg key={"j" + i} className="pd-blend" style={{ left: pct(j.x0), width: pct(j.x1 - j.x0) }} preserveAspectRatio="none">
@@ -1390,11 +1397,11 @@ const SDPdfCurveDiagram = ({ R, fit }) => {
               <rect width="100%" height="100%" fill={`url(#pdh${i})`} />
             </svg>
           ))}
-          <div className="pd-safe"><span>área segura {sdSafeTxt(R.Wpx)} px</span></div>
+          <div className="pd-safe"><span>área segura {sdSafeTxt(R.Wpx, R.Hpx)} px</span></div>
         </div>
         {fit && <div className={`pd-vbox ${fit.ok ? "" : "bad"}`} style={{ left: `${Math.max(-0.02, fit.a) * 100}%`, width: `${(Math.min(1.02, fit.b) - Math.max(-0.02, fit.a)) * 100}%` }} />}
         </div>
-        <div className="pd-dimh" style={{ height: sh }}><span>{sdFmt(SD_MAX_H)} px</span></div>
+        <div className="pd-dimh" style={{ height: sh }}><span>{sdFmt(R.Hpx)} px</span></div>
       </div>
       <div className="pd-dgfoot">
         <svg width={tvW} height={tvH} viewBox={`${minX - pad} ${minY - pad} ${vw} ${vh}`}>
@@ -1412,7 +1419,7 @@ const SDPdfCurveDiagram = ({ R, fit }) => {
           {R.N > 1 && <div><i style={{ background: "#111114" }} />faixa de cada projetor</div>}
           {fit && <div><i className={`vid ${fit.ok ? "" : "bad"}`} />vídeo testado  ·  {sdFmt(fit.vw)} × {sdFmt(fit.vh)}{fit.ok ? "" : "  ·  não compatível"}</div>}
           {R.cut > 0.5 && <div><i className="cut" />corte dos projetores  ·  {sdFmt(R.cut)} px em cada borda</div>}
-          <div><i className="safe" />área segura  ·  {sdSafeTxt(R.Wpx)} px</div>
+          <div><i className="safe" />área segura  ·  {sdSafeTxt(R.Wpx, R.Hpx)} px</div>
           {junctions.length > 0 && <div><i className="hatch" />overlap (blend)  ·  {sdFmt(R.ov)} px por junção</div>}
           <div><i className="dot" />centro  ·  raio {sdM(R.radiusM)} m</div>
         </div>
