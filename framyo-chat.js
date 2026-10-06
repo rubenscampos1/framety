@@ -57,6 +57,7 @@ function montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaT
                     url: link(m.id, 'arquivo'), capa: visual ? link(m.id, 'capa') : null };
     }
     if (m.comentario) s.comentario = m.comentario;
+    if (m.resposta) s.resposta = m.resposta;
     return s;
   };
   const naoLidas = (c, eu) => c.msgs.filter((m) => m.para === eu && m.seq > (c.lido[eu] || 0)).length;
@@ -72,12 +73,26 @@ function montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaT
              timestamp: Number.isFinite(ts) && c.timestamp != null ? ts : null };
   }
 
-  function gravar(de, para, texto, arquivo, comentario) {
+  // Resposta a uma mensagem da conversa (como no WhatsApp): a nova leva um
+  // retrato curto da original, que continua aparecendo mesmo depois que a
+  // original sair das 500 guardadas.
+  function retrato(c, id) {
+    const o = id ? c.msgs.find((x) => x.id === id) : null;
+    if (!o) return null;
+    const r = { id: o.id, de: o.de, texto: (o.texto || '').slice(0, 200) };
+    if (o.arquivo) r.arquivo = o.arquivo.nome;
+    if (o.comentario) r.comentario = { autor: o.comentario.autor, texto: (o.comentario.texto || '').slice(0, 200), arquivo_nome: o.comentario.arquivo_nome };
+    return r;
+  }
+
+  function gravar(de, para, texto, arquivo, comentario, respostaA) {
     const c = conversa(de, para, true);
     chat().seq += 1;
     const m = { id: 'm_' + crypto.randomBytes(8).toString('hex'), seq: chat().seq, de, para, texto, em: agora() };
     if (arquivo) m.arquivo = arquivo;
     if (comentario) m.comentario = comentario;
+    const resposta = retrato(c, typeof respostaA === 'string' ? respostaA : '');
+    if (resposta) m.resposta = resposta;
     c.msgs.push(m);
     if (c.msgs.length > MAX_MENSAGENS) c.msgs.splice(0, c.msgs.length - MAX_MENSAGENS);
     c.lido[de] = m.seq;                     // quem escreveu já leu até aqui
@@ -118,7 +133,7 @@ function montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaT
     const texto = limpaTexto((req.body || {}).texto, MAX_TEXTO);
     const comentario = lerComentario((req.body || {}).comentario);
     if (!texto && !comentario) throw falha(400, 'Escreva a mensagem.');
-    const m = gravar(req.usuario.id, o.id, texto, null, comentario);
+    const m = gravar(req.usuario.id, o.id, texto, null, comentario, (req.body || {}).resposta_a);
     try { await loja.salvar(); } catch (e) { conversa(m.de, m.para).msgs.pop(); throw e; }
     res.json({ mensagem: publica(m) });
   }));
@@ -164,7 +179,8 @@ function montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaT
       .catch(() => { throw falha(404, 'O arquivo não chegou ao Google Drive. Envie de novo.'); });
     if (!(f.parents || []).includes(pasta)) throw falha(403, 'Esse arquivo não é desta conversa.');
     const m = gravar(req.usuario.id, o.id, limpaTexto(b.texto, MAX_TEXTO),
-                     { drive_id: f.id, nome: f.name, tamanho: Number(f.size) || 0, tipo: f.mimeType || 'application/octet-stream' });
+                     { drive_id: f.id, nome: f.name, tamanho: Number(f.size) || 0, tipo: f.mimeType || 'application/octet-stream' },
+                     null, b.resposta_a);
     try { await loja.salvar(); } catch (e) { conversa(m.de, m.para).msgs.pop(); throw e; }
     res.json({ mensagem: publica(m) });
   }));

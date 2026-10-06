@@ -970,6 +970,30 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     res.json({ ok: true });
   }));
 
+  // Renomear um vídeo, arquivo ou pasta: o nome muda no próprio Frame.io.
+  // Numa pilha de versões o nome que aparece é o da versão atual (ver item()),
+  // então é ela que recebe o nome novo.
+  r.put('/arquivos/:id/nome', autenticar, envolve(async (req, res) => {
+    const conta = fio.conta();
+    const nome = limpaTexto((req.body || {}).nome, 255);
+    if (!nome) throw falha(400, 'Dê um nome.');
+    const tipo = String((req.body || {}).tipo || 'file');
+    let id = req.params.id;
+    if (tipo === 'version_stack') {
+      const pilha = (await fio.api('GET', `/accounts/${conta}/version_stacks/${encodeURIComponent(id)}`)).data;
+      id = pilha.head_version && pilha.head_version.id;
+      if (!id) throw falha(404, 'A pilha de versões está vazia.');
+    }
+    const rota = tipo === 'folder' ? 'folders' : 'files';
+    const f = (await fio.api('PATCH', `/accounts/${conta}/${rota}/${encodeURIComponent(id)}`, { data: { name: nome } })).data;
+    const novo = (f && f.name) || nome;
+    // os avisos já guardados passam a mostrar o nome novo
+    let mudou = false;
+    for (const e of D().eventos) if (e.arquivo_id === id && e.arquivo_nome !== novo) { e.arquivo_nome = novo; mudou = true; }
+    if (mudou) await loja.salvar().catch(() => {});
+    res.json({ id: req.params.id, arquivo_id: id, nome: novo });
+  }));
+
   // Arrastar um vídeo para cima de outro: vira versão nova dele.
   r.post('/empilhar', autenticar, envolve(async (req, res) => {
     const conta = fio.conta();
