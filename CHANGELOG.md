@@ -10,12 +10,12 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
     ficam a central e o chão, em toda a página, no 3D e na ficha em PDF.
   - *Proporção* sempre à vista nas duas salas (forma reduzida, decimal e
     pixels), também nos indicadores e no 3D.
-  - *Overlap* (era "Sobreposição mínima"): % dos 1920 px de cada projetor, e
-    entra na conta principal. A timeline tem sempre a proporção da parede; se
-    os projetores com o overlap não cobrem mais a largura em 1080 de altura,
-    a timeline passa a ser a largura que eles entregam juntos e a altura
-    desce na mesma proporção (8 × 2,25 m com 10% → 3.648 × 1.026, 32×9).
-    Limite de 50%. Links antigos com `blend=` continuam valendo.
+  - *Overlap* (era "Sobreposição mínima"): % da largura total, repartido
+    entre as junções, e entra na conta dos projetores. A timeline não muda
+    (altura sempre 1080, largura = comprimento da curva); quando os
+    projetores não cobrem largura + overlap, entra mais um (8 × 2,25 m com
+    10% → 3.840 × 1.080 com 3 projetores, 192 px por junção). Limite de 50%.
+    Links antigos com `blend=` continuam valendo.
   - *Unidade das medidas*: metros, pixels (largura com a altura em 1080) ou
     proporção (16:9, 1,78). Trocar de unidade converte o que já foi digitado.
   - *Testar um vídeo*: preview com uma imagem de verdade; arrastar as bordas
