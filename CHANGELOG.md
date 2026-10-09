@@ -1357,6 +1357,14 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
   ([sheets.js], [server.js] `/api/os/lookup`, `/api/os/sheet-status`,
   [admin.jsx] `LocucoesPanel`, [api.js] `lookupOs`, `lookupOsWith`)
 
+## Framyo 1.9.1 — servidor — 2026-10-09
+
+- A revisão prioriza o melhor vídeo processado disponível no Frame.io e informa
+  as variantes para o seletor de qualidade do aplicativo. O campo `video` permanece
+  compatível com clientes anteriores; o original fica separado por poder usar
+  codec incompatível. Variantes com a mesma URL não se repetem.
+- Rota validada com Frame.io fictício; bateria específica do cliente/servidor: 21/21.
+
 ## [1.8.0] — No ar no Render (tag `v1.8`) — 2026-08-06
 
 - **Arrastar a imagem para dentro da página (edição):** soltar um arquivo sobre

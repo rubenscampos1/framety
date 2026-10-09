@@ -823,8 +823,9 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     res.json({ itens: achados });
   }));
 
-  // Link para tocar (a versão leve do Frame.io, sem baixar o original) e o
-  // que se sabe do quadro por segundo (para levar o vídeo até um comentário).
+  // Links processados para tocar: melhor qualidade por padrão, com opção leve.
+  // O original continua separado (pode usar codec não suportado no player).
+  // Os metadados permitem posicionar o vídeo no quadro de um comentário.
   r.get('/midia/:id', autenticar, envolve(async (req, res) => {
     const conta = fio.conta();
     const a = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(req.params.id)}` +
@@ -833,9 +834,15 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const link = (m) => m && (m.url || m.inline_url || m.download_url);
     const meta = {};
     for (const m of a.metadata || []) meta[m.field_definition_name] = m.value;
+    const qualidades = [
+      { id: 'alta', nome: 'Melhor disponível', url: link(ml.high_quality) },
+      { id: 'leve', nome: 'Leve', url: link(ml.efficient) },
+      { id: 'previa', nome: 'Prévia 180p', url: link(ml.video_h264_180) },
+    ].filter((q, i, lista) => q.url && !lista.slice(0, i).some((anterior) => anterior.url === q.url));
     res.json({
-      arquivo: item(a), metadados: meta,
-      video: link(ml.efficient) || link(ml.high_quality) || link(ml.video_h264_180) || null,
+      arquivo: item(a), metadados: meta, qualidades,
+      qualidade: qualidades[0] ? qualidades[0].id : null,
+      video: qualidades[0] ? qualidades[0].url : null,
       original: link(ml.original) || null,
     });
   }));
