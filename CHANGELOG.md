@@ -5,6 +5,14 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Aspecty: faixas completas dos projetores em azul.** Bordas, preenchimentos e medidas dos cortes laterais usam azul no 3D, mapa planificado e estilos da ficha; avisos de incompatibilidade do vídeo preservados.
+
+- **Aspecty: curva inicial de 72° e contorno fechado.** Abertura menor ao iniciar uma sala curva, preservando ângulos de links/fichas; outline das sobras transparentes fecha também a aresta externa esquerda.
+
+- **Aspecty: referência estável de 1080 no teste de vídeo.** Trocar a proporção ou usar Original/Preencher altera a largura sem redimensionar a altura aparente da sala. Quadros separados mostram largura, altura e proporção da sala e do original; arquivos com outra altura mostram também a equivalência em 1080. Sobras aparecem transparentes no mapa e nas laterais do 3D, acompanhando a curva, com fade antes de uma volta sobreposta.
+- **Aspecty: organização dos painéis.** Medidas numa faixa superior; mapas, teste e 3D lado a lado no desktop; resultados abaixo. Timeline retangular preservada sob o 3D e campos do chão agrupados com seus rótulos. Controles expandidos podem aumentar a página, sem sobrepor os resultados.
+
+
 - **Framyo: comprovantes estáveis no banco.** Assinatura canônica mantém a proteção após reordenação de chaves JSONB/reinício; formato inválido continua bloqueado. Bateria final de proteção aprovada em 33 cenários isolados.
 
 - **Framyo: preservação de vídeos anteriores no YouTube.** Sincronização limitada a fontes novas após o início da proteção; comprovantes assinados emitidos somente pela sessão de upload própria. DELETE direto, adoção por busca no canal, fusão de vínculos e rollback de versão bloqueados. Exclusão exige os comprovantes das duas cópias, mesma pilha reconsultada no Frame.io, nova fonte posterior e cópia nova pronta/não listada; divergência preserva conteúdo e pede revisão.
