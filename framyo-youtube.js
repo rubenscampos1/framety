@@ -290,7 +290,7 @@ function criarYoutube({ loja, fio }) {
       }
       let verificados = 0;
       for (const r of Object.values(y.registros)) {
-        if (r.conta !== fio.conta() || !permitido(u, r.projeto) || r.tentar_em > Date.now() || (!r.pendente && !r.upload && !r.anteriores.length)) continue;
+        if (r.conta !== fio.conta() || !permitido(u, r.projeto) || r.tentar_em > Date.now() || (!r.pendente && !r.upload && !r.anteriores.length && (!r.atual || r.atual.processado))) continue;
         if (++verificados > 4) break;
         try {
           if (r.upload?.lease && r.upload.lease.ate > Date.now()) continue;
@@ -301,7 +301,7 @@ function criarYoutube({ loja, fio }) {
           if (r.atual && r.atual.arquivo !== d.arquivo && !(Date.parse(d.criado_em) > Date.parse(comprovante(r.atual).origem_criada_em)))
             throw erro(409, 'A cabeça da pilha voltou a uma versão anterior. Novo envio e exclusões bloqueados.');
           if (r.atual?.arquivo === d.arquivo && !r.upload) {
-            await renomear(r); await limpar(r); delete r.erro; r.pendente = !!r.anteriores.length; await loja.salvar(); r.tentar_em = Date.now() + 60000; continue;
+            await renomear(r); await limpar(r); delete r.erro; r.pendente = !r.atual.processado || !!r.anteriores.length; await loja.salvar(); r.tentar_em = Date.now() + 60000; continue;
           }
           if (r.upload && r.upload.protocolo !== 2) throw erro(409, 'Upload anterior à proteção atual. Retomada bloqueada.');
           if (r.upload?.sessao) {

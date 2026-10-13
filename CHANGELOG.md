@@ -5,6 +5,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Framyo: acompanhar o processamento YouTube até concluir.** Primeiro envio continua pendente até a cópia não listada ficar processada, mesmo sem versão antiga para limpar; registros já transferidos também são revisitados.
+
 - **Aspecty: dimensões próximas e destacadas.** Altura, largura central e profundidade das laterais reunidas acima dos mapas, com equivalências em pixels; unidades e sala simples preservadas.
 
 - **Framyo: conclusão de comentários com links.** Recupera o intervalo de link fora do limite informado pelo Frame.io sem alterar texto, URL ou anotações.
