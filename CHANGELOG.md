@@ -5,6 +5,12 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Aspecty: dimensões próximas e destacadas.** Altura, largura central e profundidade das laterais reunidas acima dos mapas, com equivalências em pixels; unidades e sala simples preservadas.
+
+- **Framyo: conclusão de comentários com links.** Recupera o intervalo de link fora do limite informado pelo Frame.io sem alterar texto, URL ou anotações.
+
+- **Framyo: envio YouTube de novas versões.** Trabalhador identifica o cliente no download para evitar bloqueio 403 do CDN; eventos com ID de pilha resolvem a versão atual e mantêm a numeração real.
+
 - **Aspecty: faixas completas dos projetores em azul.** Bordas, preenchimentos e medidas dos cortes laterais usam azul no 3D, mapa planificado e estilos da ficha; avisos de incompatibilidade do vídeo preservados.
 
 - **Aspecty: curva inicial de 72° e contorno fechado.** Abertura menor ao iniciar uma sala curva, preservando ângulos de links/fichas; outline das sobras transparentes fecha também a aresta externa esquerda.

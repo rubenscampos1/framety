@@ -98,10 +98,19 @@ function criarYoutube({ loja, fio }) {
   }
   async function descrever(id) {
     const prefix = `/accounts/${enc(fio.conta())}`;
-    let f = (await fio.api('GET', `${prefix}/files/${enc(id)}?include=media_links.original`)).data;
+    let f, stack = null;
+    try { f = (await fio.api('GET', `${prefix}/files/${enc(id)}?include=media_links.original`)).data; }
+    catch (ex) {
+      // file.versioned pode informar o ID da pilha, em vez do arquivo novo.
+      if (![400, 404, 422].includes(ex.status)) throw ex;
+      try { stack = (await fio.api('GET', `${prefix}/version_stacks/${enc(id)}`)).data; }
+      catch { throw ex; }
+      if (!stack?.head_version?.id) throw erro(409, 'Aguardando a pilha do Frame.io estabilizar.');
+      f = (await fio.api('GET', `${prefix}/files/${enc(stack.head_version.id)}?include=media_links.original`)).data;
+    }
     if (!f || !(/^video\//.test(f.media_type || '') || /\.(mp4|mov|mxf|m4v|avi|mkv|webm)$/i.test(f.name || ''))) return null;
-    let stack = null, filhos = [f];
-    if (f.parent_id) {
+    let filhos = [f];
+    if (!stack && f.parent_id) {
       try { stack = (await fio.api('GET', `${prefix}/version_stacks/${enc(f.parent_id)}`)).data; }
       catch (e) { if (e.status !== 404) throw e; }
     }

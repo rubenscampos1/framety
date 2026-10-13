@@ -954,7 +954,7 @@ const SDScreen = ({ lbl, wpx, hpx, dispW, dispH, accent, dimLabel, un = "m", inp
       <span className="sd-screen-lbl">{lbl}</span>
       <div className="sd-safe" />
     </div>
-    <div className="sd-cellin"><span className="sd-cellin-lbl">{dimLabel} <em>({sdUnitLbl(un)})</em></span>{inputEl}</div>
+    {inputEl && <div className="sd-cellin"><span className="sd-cellin-lbl">{dimLabel} <em>({sdUnitLbl(un)})</em></span>{inputEl}</div>}
     <div className="sd-res"><b>{sdFmt(wpx)} × {sdFmt(hpx)} px</b><span className="sd-res-r">{sdRatio(wpx, hpx)}</span></div>
   </div>
 );
@@ -1126,29 +1126,37 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
       <div ref={sheetRef} className="sd-sheet sd-rect">
         <div className="sd-main">
           {/* Telas abertas + inputs ao lado de cada tela */}
-          <section className="sd-measures" aria-label="Medidas da sala">
-            <div className="sd-altrow">
-              <span className="sd-altrow-lbl">Altura de todas as telas <em>→ vira {SD_MAX_H}px</em></span>
-              <span className="sd-input-wrap sd-input-lg"><input type="number" min="0" step="0.01" inputMode="decimal" value={A} placeholder="ex. 3" onChange={(e) => setA(e.target.value)} /><b>m</b></span>
-              {!ready && <span className="sd-badge">comece pela altura</span>}
-              <div className="sd-altrow-2">
-                <span className="sd-altrow-k">Informar as telas em</span><SDUnits un={Un} setUn={setUn} />
+          <section className="sd-measures sd-rect-measures">
+            <div className="sd-room-measures" aria-label="Medidas da sala">
+              <div className="sd-room-measures-h"><b>Dimensões da sala</b>
+                <select className="sd-room-unit" aria-label="Unidade da largura e profundidade" value={Un} onChange={e => setUn(e.target.value)}>
+                  <option value="m">Metros</option><option value="px">Pixels</option><option value="prop">Proporção</option>
+                </select>
                 <label className="sd-check" title="Desativa as duas telas laterais: fica só a central e o chão">
-                  <input type="checkbox" checked={Ss} onChange={(e) => setSs(e.target.checked)} /><b>Sala simples</b><span>sem as telas laterais</span>
+                  <input type="checkbox" checked={Ss} onChange={(e) => setSs(e.target.checked)} /><b>Sala simples</b>
                 </label>
               </div>
-              {Un !== "m" && <div className="sd-altrow-n">{Un === "px" ? "Pixels: a largura de cada tela, com a altura valendo 1080 px." : "Proporção: largura : altura de cada tela (ex. 16:9 ou 1,78)."} A altura em metros acima só serve para as medidas em metros da ficha.</div>}
+              <div className={`sd-room-fields ${Ss ? "simple" : ""}`}>
+                <label className="sd-room-field"><span>Altura <em>todas as telas</em></span>
+                  <span className="sd-input-wrap"><input aria-label="Altura de todas as telas" type="number" min="0" step="0.01" inputMode="decimal" value={A} placeholder="ex. 3" onChange={(e) => setA(e.target.value)} /><b>m</b></span>
+                  <small>Base mestre: {sdFmt(R.H)} px</small></label>
+                <label className="sd-room-field"><span>Largura <em>tela central</em></span>
+                  <SDIn un={Un} value={L} onChange={setL} placeholder={ph(lRes) || "larg."} />
+                  <small>{sdFmt(R.Wc)} × {sdFmt(R.H)} px · {sdRatio(R.Wc,R.H)}</small></label>
+                {!Ss && <label className="sd-room-field"><span>Profundidade <em>laterais iguais</em></span>
+                  <SDIn un={Un} value={P} onChange={setP} placeholder={ph(pRes) || "prof."} />
+                  <small>{sdFmt(R.Ws)} × {sdFmt(R.H)} px · {sdRatio(R.Ws,R.H)}</small></label>}
+              </div>
+              {!ready && <span className="sd-room-help">Comece pela altura; depois informe largura e profundidade.</span>}
+              {Un !== "m" && <span className="sd-room-help">{Un === "px" ? "Largura e profundidade em pixels, na base de 1080 px de altura." : "Largura e profundidade em proporção, como 16:9 ou 1,78."} A altura permanece em metros.</span>}
             </div>
           </section>
           <section className="sd-stage" ref={diagRef}>
             <SDProp items={[[Ss ? "Proporção da tela" : "Proporção da projeção frontal", R.frontTotalW, R.H], ["Proporção da timeline", R.timelineW, R.timelineH]]} />
             <div className="sd-wallrow">
-              {!Ss && <SDScreen lbl="Lateral E" wpx={R.Ws} hpx={R.H} dispW={R.Ws * disp} dispH={R.H * disp} un={Un}
-                        dimLabel="Profundidade" inputEl={<SDIn un={Un} value={P} onChange={setP} placeholder="prof." />} />}
-              <SDScreen lbl="Central" wpx={R.Wc} hpx={R.H} dispW={R.Wc * disp} dispH={R.H * disp} accent un={Un}
-                        dimLabel="Largura" inputEl={<SDIn un={Un} value={L} onChange={setL} placeholder="larg." />} />
-              {!Ss && <SDScreen lbl="Lateral D" wpx={R.Ws} hpx={R.H} dispW={R.Ws * disp} dispH={R.H * disp} un={Un}
-                        dimLabel="Profundidade" inputEl={<SDIn un={Un} value={P} onChange={setP} placeholder="prof." />} />}
+              {!Ss && <SDScreen lbl="Lateral E" wpx={R.Ws} hpx={R.H} dispW={R.Ws * disp} dispH={R.H * disp} un={Un} />}
+              <SDScreen lbl="Central" wpx={R.Wc} hpx={R.H} dispW={R.Wc * disp} dispH={R.H * disp} accent un={Un} />
+              {!Ss && <SDScreen lbl="Lateral D" wpx={R.Ws} hpx={R.H} dispW={R.Ws * disp} dispH={R.H * disp} un={Un} />}
             </div>
 
             {/* Chão — trapézio com medidas próprias */}
@@ -2449,4 +2457,37 @@ const SD_CSS = `
  .sd-rect .sd-prop>div{align-content:center;text-align:center}
  .sd-rect .sd-prop em{font-size:9.5px;line-height:1.4;letter-spacing:.06em}
 }
+
+/* Rectangular room: related dimensions and their pixel equivalents live together. */
+.sd-room-measures{width:100%;box-sizing:border-box;padding:12px;border:1px solid rgba(96,165,250,.4);border-radius:13px;background:linear-gradient(135deg,rgba(59,130,246,.1),rgba(18,22,30,.8))}
+.sd-room-measures-h{display:flex;align-items:center;flex-wrap:wrap;gap:8px;justify-content:space-between;margin-bottom:10px}
+.sd-room-measures-h>b{font-size:12px;font-weight:650;color:#dbeafe}
+.sd-room-measures-h .sd-units{margin:0}
+.sd-room-measures-h .sd-check{padding:4px 8px;font-size:10px}
+.sd-room-measures-h .sd-check b{font-size:10px}
+.sd-room-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.sd-room-fields.simple{grid-template-columns:repeat(2,minmax(0,1fr))}
+.sd-room-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.sd-room-field>span:first-child{font-size:12px;font-weight:600;color:#f4f7fc;line-height:1.3}
+.sd-room-field em{display:block;font-style:normal;font-size:10px;font-weight:400;color:#9caec7;margin-top:2px}
+.sd-room-field .sd-input-wrap{width:100%;box-sizing:border-box;background:rgba(96,165,250,.09);border-color:rgba(96,165,250,.6)}
+.sd-room-field .sd-input-wrap input{min-width:0;width:100%;font-size:20px;font-weight:650;padding:8px}
+.sd-room-field .sd-input-wrap input::placeholder{color:#91a3bd;font-weight:500}
+.sd-room-field .sd-input-wrap b{color:#93c5fd}
+.sd-room-field small{font-size:9.5px;color:#bac9dd;line-height:1.4;font-variant-numeric:tabular-nums}
+.sd-room-help{display:block;margin-top:8px;font-size:10px;line-height:1.4;color:#9caec7}
+@media(max-width:1199px){.sd-room-measures{max-width:760px}.sd-room-fields{gap:10px}}
+@media(max-width:420px){.sd-room-measures{padding:10px}.sd-room-fields{gap:6px}.sd-room-field>span:first-child{font-size:11px}.sd-room-field .sd-input-wrap input{font-size:17px;padding:8px 4px}.sd-room-field small{font-size:9px}}
+
+.sd-room-unit{font:inherit;font-size:11px;color:#dbeafe;background:#192231;border:1px solid rgba(96,165,250,.4);border-radius:8px;padding:6px 8px;outline:none;cursor:pointer}
+.sd-room-unit:focus{border-color:#93c5fd;box-shadow:0 0 0 2px rgba(96,165,250,.15)}
+
+@media(min-width:1200px){
+ .sd-rect-measures .sd-room-measures{display:grid;grid-template-columns:180px minmax(0,660px);justify-content:center;align-items:center;gap:10px 20px;padding:12px 18px}
+ .sd-rect-measures .sd-room-measures-h{flex-direction:column;align-items:flex-start;justify-content:center;gap:7px;margin:0}
+ .sd-rect-measures .sd-room-help{grid-column:2;margin:0}
+ .sd-rect-measures .sd-room-field .sd-input-wrap input{padding:7px 9px}
+ .sd-rect-measures .sd-room-measures{max-width:none}
+}
+@media(max-width:1199px){.sd-rect-measures .sd-room-measures{margin:0 auto}}
 `;

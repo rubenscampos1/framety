@@ -944,8 +944,24 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // Marcar / desmarcar um comentário como concluído (vale no Frame.io também).
   r.put('/comentarios/:id/concluido', autenticar, envolve(async (req, res) => {
     const concluido = !!(req.body || {}).concluido;
-    const c = (await fio.api('PATCH', `/accounts/${fio.conta()}/comments/${encodeURIComponent(req.params.id)}`,
-                             { data: { completed: concluido } })).data || {};
+    const path = `/accounts/${fio.conta()}/comments/${encodeURIComponent(req.params.id)}`;
+    let c;
+    try { c = (await fio.api('PATCH', path, { data: { completed: concluido } })).data || {}; }
+    catch (ex) {
+      // Certos links criados no Frame.io ultrapassam o limite do texto por
+      // espaços finais. Corrigir apenas o intervalo inválido; nunca o conteúdo.
+      const m = /End index: (\d+) is outside the bounds of the text\. Max index: (\d+)/i.exec(ex.message || '');
+      if (![400, 422].includes(ex.status) || !m) throw ex;
+      const original = (await fio.api('GET', path)).data;
+      const max = Number(m[2]);
+      if (!original || typeof original.text !== 'string' || !Array.isArray(original.links) ||
+          !original.links.some(l => l.end_index > max)) throw ex;
+      const links = original.links.map(l => {
+        if (!Number.isInteger(l.start_index) || !Number.isInteger(l.end_index) || l.start_index < 0 || l.start_index >= max) throw ex;
+        return { start_index: l.start_index, end_index: Math.min(l.end_index, max), url: l.url };
+      });
+      c = (await fio.api('PATCH', path, { data: { completed: concluido, text: original.text, links } })).data || {};
+    }
     res.json({ id: req.params.id, concluido: c.completed_at !== undefined ? !!c.completed_at : concluido });
   }));
 
