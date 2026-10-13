@@ -15,6 +15,35 @@ const enc = encodeURIComponent;
 function criarYoutube({ loja, fio }) {
   const D = () => loja.dados;
   const Y = () => D().youtube || (D().youtube = { registros: {}, aliases: {}, entrada: {}, ativo: false });
+  const PERMISSAO_DELETE = Symbol('exclusao-com-comprovante');
+  function seguranca() {
+    const y = Y();
+    if (!y.seguranca) y.seguranca = { versao: 2, inicio: new Date().toISOString(), chave: crypto.randomBytes(32).toString('hex'), comprovantes: {}, exclusoes: {} };
+    const g = y.seguranca;
+    if (g.versao !== 2 || !Number.isFinite(Date.parse(g.inicio)) || !/^[a-f0-9]{64}$/.test(g.chave || '') || !g.comprovantes || !g.exclusoes)
+      throw erro(409, 'Proteção do YouTube inválida. Operação bloqueada para revisão.');
+    return g;
+  }
+  const assinatura = (dados) => crypto.createHmac('sha256', seguranca().chave).update(JSON.stringify(dados)).digest('hex');
+  function comprovante(ref) {
+    const g = seguranca(), p = g.comprovantes[ref?.id];
+    if (!p || typeof p.assinatura !== 'string') throw erro(409, 'Vídeo sem comprovante próprio do Framyo. Preservado.');
+    const esperado = assinatura(p.dados);
+    if (p.assinatura.length !== esperado.length || !crypto.timingSafeEqual(Buffer.from(p.assinatura), Buffer.from(esperado)))
+      throw erro(409, 'Comprovante alterado. Vídeo preservado.');
+    const d = p.dados;
+    if (d.escopo !== g.inicio || d.id !== ref.id || d.arquivo !== ref.arquivo || d.canal !== ref.canal || d.marca !== ref.marca || d.trabalho !== ref.trabalho ||
+        d.conta !== fio.conta() || d.canal !== Y().canal?.id || !(Date.parse(d.origem_criada_em) >= Date.parse(g.inicio)) ||
+        !(Date.parse(d.iniciado_em) >= Date.parse(g.inicio)) || !(Date.parse(d.publicado_em) >= Date.parse(g.inicio)))
+      throw erro(409, 'Comprovante fora do escopo ou vínculo divergente. Vídeo preservado.');
+    return d;
+  }
+  function conferirProprio(v, ref) {
+    const d = comprovante(ref); conferir(v, ref);
+    if (v.snippet.publishedAt !== d.publicado_em || v.status?.privacyStatus !== 'unlisted')
+      throw erro(409, 'Data ou privacidade da cópia mudou. Vídeo preservado.');
+    return d;
+  }
   let fila = Promise.resolve();
   const exclusivo = (fn) => { const p = fila.then(fn); fila = p.catch(() => {}); return p; };
   const credenciais = () => ({ client_id: process.env.YOUTUBE_CLIENT_ID || Y().client_id || process.env.GOOGLE_CLIENT_ID || D().google?.client_id,
@@ -35,7 +64,10 @@ function criarYoutube({ loja, fio }) {
     await loja.salvar();
     return j.access_token;
   }
-  async function api(method, path, body) {
+  async function api(method, path, body, permissao) {
+    method = String(method).toUpperCase();
+    if (method === 'DELETE' && permissao !== PERMISSAO_DELETE)
+      throw erro(409, 'Exclusão direta proibida. É obrigatória a validação completa de substituição.');
     const r = await fetch(API + path, { method, signal: AbortSignal.timeout(25000),
       headers: { Authorization: `Bearer ${await token()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined });
@@ -48,7 +80,7 @@ function criarYoutube({ loja, fio }) {
   const permitido = (u, p) => !!u && (u.admin || (!u.marketing && (!(u.projetos || []).length || u.projetos.includes(p))));
   function estado() {
     const y = Y(), c = credenciais();
-    return { conectado: !!auth().refresh_token, credencial: !!(c.client_id && c.client_secret), ativo: !!y.ativo,
+    return { inicio_escopo: seguranca().inicio, politica_exclusao: 2, conectado: !!auth().refresh_token, credencial: !!(c.client_id && c.client_secret), ativo: !!y.ativo,
       canal: y.canal ? { id: y.canal.id, nome: y.canal.nome } : null, ultimo_trabalhador: y.ultimo_trabalhador || null,
       erros_entrada: Object.values(y.entrada).filter(e => e.erro).map(e => ({ arquivo: e.arquivo, erro: e.erro })),
       pendentes: Object.keys(y.entrada).length + Object.values(y.registros).filter(r => r.pendente || r.upload || r.anteriores.length).length,
@@ -82,29 +114,21 @@ function criarYoutube({ loja, fio }) {
     const numero = filhos.findIndex(x => x.id === f.id) + 1;
     if (!numero) throw erro(409, 'Versão ainda ausente da pilha.');
     return { arquivo: f.id, entidade: stack?.id || f.id, conta: fio.conta(), projeto: f.project_id,
-      nome: f.name, pilha: stack?.id || null, versao: numero, tamanho: Number(f.file_size), tipo: f.media_type || 'application/octet-stream',
+      nome: f.name, criado_em: f.created_at, pilha: stack?.id || null, versao: numero, tamanho: Number(f.file_size), tipo: f.media_type || 'application/octet-stream',
       fonte: f.media_links?.original?.download_url || f.media_links?.original?.url || f.media_links?.original?.inline_url,
       aliases: [stack?.id, ...filhos.map(x => x.id)].filter(Boolean) };
   }
   async function registrar(id) {
     const d = await descrever(id);
-    if (!d) return null;
-    const y = Y(), ids = [...new Set(d.aliases.map(a => y.aliases[chave(a)]).filter(Boolean))]
-      .filter(id => !y.registros[id].desejado?.pilha || y.registros[id].desejado.pilha === d.pilha);
+    if (!d || !(Date.parse(d.criado_em) >= Date.parse(seguranca().inicio))) return null;
+    const y = Y(), ids = [...new Set(d.aliases.map(a => y.aliases[chave(a)]).filter(Boolean))];
+    if (ids.length > 1 || ids.some(id => !y.registros[id] || y.registros[id].desejado?.pilha && y.registros[id].desejado.pilha !== d.pilha))
+      throw erro(409, 'Arquivos de vínculos diferentes foram reunidos. Sincronização bloqueada para revisão; nenhum vídeo será apagado.');
     // A entidade do stack tem precedência; arquivos avulsos migrados viram aliases.
     let r = ids.includes(y.aliases[chave(d.entidade)]) ? y.registros[y.aliases[chave(d.entidade)]] : y.registros[ids[0]];
     if (!r) { r = { id: crypto.randomUUID(), conta: d.conta, anteriores: [] }; y.registros[r.id] = r; }
     if (ids.filter(x => x !== r.id).some(id => y.registros[id].upload || r.upload))
       throw erro(409, 'Aguardando o envio anterior antes de reunir as versões.');
-    for (const rid of ids.filter(x => x !== r.id)) {
-      const outro = y.registros[rid];
-      // Não fundir uma sessão em trânsito: retomá-la antes evita órfãos/duplicatas.
-      if (outro.upload || r.upload) throw erro(409, 'Aguardando o envio anterior antes de reunir as versões.');
-      if (outro.atual) r.anteriores.push(outro.atual);
-      r.anteriores.push(...outro.anteriores);
-      for (const [a, v] of Object.entries(y.aliases)) if (v === rid) y.aliases[a] = r.id;
-      delete y.registros[rid];
-    }
     for (const a of d.aliases) y.aliases[chave(a)] = r.id;
     const { fonte, aliases, ...persistente } = d; // links de origem temporários nunca persistidos
     r.pendente = r.pendente || !r.desejado || JSON.stringify(r.desejado) !== JSON.stringify(persistente);
@@ -121,7 +145,7 @@ function criarYoutube({ loja, fio }) {
   function pronto(v) { return v.status?.privacyStatus === 'unlisted' && (v.processingDetails?.processingStatus === 'succeeded' || v.status?.uploadStatus === 'processed'); }
   async function limpar(r) {
     if (!r.atual || r.atual.arquivo !== r.desejado.arquivo) return;
-    const v = await video(r.atual.id); conferir(v, r.atual);
+    const v = await video(r.atual.id); conferirProprio(v, r.atual);
     if (!pronto(v)) {
       if (['failed','rejected','deleted'].includes(v.status?.uploadStatus) || ['failed','terminated'].includes(v.processingDetails?.processingStatus))
         throw erro(409, 'A nova cópia falhou no processamento do YouTube. A anterior foi preservada.');
@@ -132,17 +156,45 @@ function criarYoutube({ loja, fio }) {
     for (const anterior of [...r.anteriores]) {
       if (anterior.id === r.atual.id) throw erro(409, 'O vídeo atual não pode ser apagado.');
       if (anterior.canal !== Y().canal.id) throw erro(409, 'O vídeo anterior pertence a outro canal.');
+      // Comprovantes dos dois lados são obrigatórios, inclusive quando o antigo sumiu.
+      const anteriorProprio = comprovante(anterior), novoProprio = comprovante(r.atual);
+      if (anteriorProprio.arquivo === novoProprio.arquivo)
+        throw erro(409, 'Reenvio do mesmo arquivo não é nova versão. Cópia anterior preservada.');
       const old = await video(anterior.id);
-      if (old) { conferir(old, anterior); await api('DELETE', `/videos?id=${enc(anterior.id)}`); }
+      if (old) await excluirSubstituida(r, anterior, old);
       r.anteriores = r.anteriores.filter(x => x.id !== anterior.id);
       await loja.salvar();
     }
+  }
+  async function excluirSubstituida(r, anterior, old) {
+    const a = conferirProprio(old, anterior), n = comprovante(r.atual);
+    if (!Y().ativo || !auth().refresh_token || a.id === n.id || a.arquivo === n.arquivo || a.conta !== n.conta || a.projeto !== n.projeto)
+      throw erro(409, 'Substituição não comprovada. Vídeo anterior preservado.');
+    const atual = await descrever(n.arquivo);
+    if (!atual || !atual.pilha || atual.arquivo !== n.arquivo || atual.pilha !== r.desejado.pilha || atual.projeto !== n.projeto ||
+        !atual.aliases.includes(a.arquivo) || a.pilha && a.pilha !== atual.pilha || n.pilha && n.pilha !== atual.pilha)
+      throw erro(409, 'O Frame.io não confirma a mesma pilha e sua versão atual. Vídeo anterior preservado.');
+    const prefix = `/accounts/${enc(fio.conta())}`;
+    const anteriorFonte = (await fio.api('GET', `${prefix}/files/${enc(a.arquivo)}`)).data;
+    if (!anteriorFonte || anteriorFonte.parent_id !== atual.pilha || anteriorFonte.project_id !== a.projeto ||
+        anteriorFonte.created_at !== a.origem_criada_em || atual.criado_em !== n.origem_criada_em ||
+        !(Date.parse(atual.criado_em) > Date.parse(anteriorFonte.created_at)))
+      throw erro(409, 'Origem ou ordem das versões divergente. Vídeo anterior preservado.');
+    const newVideo = await video(n.id); conferirProprio(newVideo, r.atual);
+    if (!pronto(newVideo)) throw erro(409, 'Nova cópia ainda não está pronta. Vídeo anterior preservado.');
+    // Persistir a decisão antes do único caminho que possui a capacidade privada de DELETE.
+    const g = seguranca();
+    g.exclusoes[a.id] = { anterior: a.id, nova: n.id, arquivo_anterior: a.arquivo, arquivo_novo: n.arquivo,
+      pilha: atual.pilha, em: new Date().toISOString(), estado: 'validada' };
+    await loja.salvar();
+    await api('DELETE', `/videos?id=${enc(a.id)}`, undefined, PERMISSAO_DELETE);
+    g.exclusoes[a.id].estado = 'excluida'; await loja.salvar();
   }
   async function renomear(r) {
     if (!r.atual || r.atual.arquivo !== r.desejado.arquivo) return;
     const nome = titulo(r.desejado.nome, r.desejado.versao);
     if (r.atual.titulo === nome) return;
-    const v = await video(r.atual.id); conferir(v, r.atual);
+    const v = await video(r.atual.id); conferirProprio(v, r.atual);
     const snippet = Object.fromEntries(['title','description','tags','categoryId','defaultLanguage']
       .filter(k => v.snippet[k] !== undefined).map(k => [k, v.snippet[k]]));
     snippet.title = nome;
@@ -166,9 +218,25 @@ function criarYoutube({ loja, fio }) {
   }
   async function concluir(r, up, id) {
     const ref = { id, arquivo: up.arquivo, canal: up.canal, marca: marca(r), trabalho: `framyo-job:${up.id}`, titulo: up.titulo };
+    const g = seguranca();
+    if (up.protocolo !== 2 || !up.origem || !(Date.parse(up.iniciado_em) >= Date.parse(g.inicio)) ||
+        !(Date.parse(up.origem.criado_em) >= Date.parse(g.inicio)) || !up.sessao || !sessaoValida(up.sessao))
+      throw erro(409, 'Upload sem origem e sessão próprias verificáveis. Nenhum vínculo foi adotado.');
     const v = await video(id); conferir(v, ref);
+    if (!(Date.parse(v.snippet?.publishedAt) >= Date.parse(g.inicio)) ||
+        !(Date.parse(v.snippet?.publishedAt) >= Math.floor(Date.parse(up.iniciado_em) / 1000) * 1000))
+      throw erro(409, 'Vídeo anterior à sessão de upload. Vínculo recusado.');
     if (v.status?.privacyStatus !== 'unlisted') throw erro(409, 'O YouTube não confirmou a visibilidade não listada. A cópia anterior foi preservada.');
-    // Nunca aceitar id arbitrário do desktop. Ele vem da sessão/playlist autenticada.
+    // A propriedade nasce SOMENTE da resposta da sessão Google iniciada pelo servidor.
+    const dados = { escopo: g.inicio, id, arquivo: up.arquivo, canal: up.canal, marca: ref.marca, trabalho: ref.trabalho,
+      conta: up.origem.conta, projeto: up.origem.projeto, pilha: up.origem.pilha, origem_criada_em: up.origem.criado_em,
+      iniciado_em: up.iniciado_em, publicado_em: v.snippet.publishedAt,
+      sessao_hash: crypto.createHash('sha256').update(up.sessao).digest('hex') };
+    if (g.comprovantes[id]) {
+      const existente = comprovante(ref);
+      if (JSON.stringify(existente) !== JSON.stringify(dados)) throw erro(409, 'ID já registrado em outro upload. Vínculo recusado.');
+    } else g.comprovantes[id] = { dados, assinatura: assinatura(dados) };
+    await loja.salvar();
     if (r.atual && r.atual.id !== id) r.anteriores.push(r.atual);
     r.atual = ref; delete r.upload; delete r.erro;
     await loja.salvar(); // commit da nova referência ANTES de qualquer DELETE
@@ -187,6 +255,7 @@ function criarYoutube({ loja, fio }) {
       }
       return;
     }
+    if (up.protocolo !== 2) throw erro(409, 'Upload anterior à proteção atual. Recuperação bloqueada.');
     if (up.sessao) {
       try {
         const st = await situacao(up);
@@ -194,19 +263,9 @@ function criarYoutube({ loja, fio }) {
         delete up.lease; r.tentar_em = 0; await loja.salvar(); return;
       } catch { /* sessão perdida: procurar SOMENTE pelos marcadores persistidos */ }
     }
-    let page = '', achado = null;
-    for (let n = 0; n < 20; n++) {
-      const list = await api('GET', `/playlistItems?part=contentDetails&maxResults=50&playlistId=${enc(Y().canal.uploads)}&pageToken=${enc(page)}`);
-      const ids = (list.items || []).map(x => x.contentDetails?.videoId).filter(Boolean);
-      const videos = ids.length ? (await api('GET', `/videos?part=snippet,status,processingDetails&id=${enc(ids.join(','))}`)).items || [] : [];
-      const matches = videos.filter(v => v.snippet?.tags?.includes(`framyo-job:${up.id}`));
-      if (matches.length > 1 || achado && matches.length) throw erro(409, 'Mais de uma cópia foi encontrada. Revisão manual necessária.');
-      if (matches.length) achado = matches[0];
-      page = list.nextPageToken;
-      if (!page) { if (achado) return concluir(r, up, achado.id); throw erro(409, 'Nenhuma cópia confirmada no canal. Envio suspenso para evitar duplicação; revise a sessão antes de reenviar.'); }
-    }
-    throw erro(409, 'Recuperação parcial do canal. Nenhum novo envio foi iniciado; revise o canal.');
+    throw erro(409, 'Sessão de upload não confirmada. Recuperação por busca no canal desativada; revisão manual necessária. Nenhum vídeo será adotado ou apagado.');
   }
+
   async function trabalhar(u) {
     return exclusivo(async () => {
       const y = Y();
@@ -229,9 +288,12 @@ function criarYoutube({ loja, fio }) {
           const item = await registrar(r.desejado.arquivo);
           if (!item) continue;
           const d = item.d;
+          if (r.atual && r.atual.arquivo !== d.arquivo && !(Date.parse(d.criado_em) > Date.parse(comprovante(r.atual).origem_criada_em)))
+            throw erro(409, 'A cabeça da pilha voltou a uma versão anterior. Novo envio e exclusões bloqueados.');
           if (r.atual?.arquivo === d.arquivo && !r.upload) {
             await renomear(r); await limpar(r); delete r.erro; r.pendente = !!r.anteriores.length; await loja.salvar(); r.tentar_em = Date.now() + 60000; continue;
           }
+          if (r.upload && r.upload.protocolo !== 2) throw erro(409, 'Upload anterior à proteção atual. Retomada bloqueada.');
           if (r.upload?.sessao) {
             const st = await situacao(r.upload);
             if (st.id) { await concluir(r, r.upload, st.id); continue; }
@@ -239,6 +301,8 @@ function criarYoutube({ loja, fio }) {
           if (!r.upload) {
             if (!d.fonte || !(d.tamanho > 0)) throw erro(409, 'Aguardando original disponível no Frame.io.');
             r.upload = { id: crypto.randomUUID(), arquivo: d.arquivo, tamanho: d.tamanho, tipo: d.tipo,
+              protocolo: 2, iniciado_em: new Date().toISOString(),
+              origem: { conta: d.conta, projeto: d.projeto, pilha: d.pilha, criado_em: d.criado_em },
               titulo: titulo(d.nome, d.versao), canal: y.canal.id };
             await loja.salvar();
           }
