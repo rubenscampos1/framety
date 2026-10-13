@@ -5,6 +5,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Framyo: link do YouTube no player.** Quadro selecionável com copiar/abrir para a versão em exibição, mensagem discreta quando não há cópia e atualização durante a janela aberta. Consulta autenticada limita acesso ao projeto e evita herdar o link de outra versão do stack.
+
 - **Framyo: privacidade das integrações.** Página pública explica dados OAuth, sincronização de vídeos, acesso da equipe, revogação e contato para exclusão; usada no consentimento Google do canal central.
 
 - **Framyo: espelho de aprovação no YouTube.** Autorização de um canal da empresa, fila persistente de novos envios do programa e do site do Frame.io, cópias não listadas com prefixo e versão real do stack, sincronização de títulos e substituição após processamento. Exclusões verificam ID, canal e marcadores do vínculo. Transferência em partes pelo desktop, sem arquivos grandes no servidor do site.

@@ -294,7 +294,14 @@ function criarYoutube({ loja, fio }) {
       return { ok: true };
     });
   }
-  return { Y, auth, estado, exclusivo, credenciais, trocar, api, enfileirar, trabalhar, atualizarLease, recuperar, registrar,
+  function linkArquivo(u, id) {
+    const y = Y(), r = y.registros[y.aliases[chave(id)]];
+    if (!r) return { url: null };
+    if (!permitido(u, r.projeto)) throw erro(403, 'Sem acesso a este projeto.');
+    // A pilha aponta para a cópia atual; uma versão antiga nunca herda o link da nova.
+    return { url: r.atual?.arquivo === id ? `https://youtu.be/${r.atual.id}` : null };
+  }
+  return { Y, auth, estado, linkArquivo, exclusivo, credenciais, trocar, api, enfileirar, trabalhar, atualizarLease, recuperar, registrar,
     async mudou(id) {
       await enfileirar(id);
       if (!Y().ativo || !auth().refresh_token) return;
@@ -312,6 +319,7 @@ function criarYoutube({ loja, fio }) {
 function montarYoutube({ r, loja, fio, autenticar, soAdmin, envolve, pagina, urlPublica, registrarWebhooks }) {
   const yt = criarYoutube({ loja, fio }), retorno = urlPublica + '/api/framyo/youtube/callback';
   r.get('/youtube', autenticar, soAdmin, (req, res) => res.json({ ...yt.estado(), retorno }));
+  r.get('/youtube/arquivos/:id', autenticar, envolve(async (req, res) => res.json(yt.linkArquivo(req.usuario, req.params.id))));
   r.put('/youtube/cliente', autenticar, soAdmin, envolve(async (req, res) => yt.exclusivo(async () => {
     const id = String(req.body.client_id || '').trim(), secret = String(req.body.client_secret || '').trim();
     if (!id.endsWith('.apps.googleusercontent.com') || !secret) throw erro(400, 'Preencha o Client ID e o Client Secret do Google.');
