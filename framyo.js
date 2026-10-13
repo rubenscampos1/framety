@@ -23,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const { montarPosts } = require('./framyo-posts');
 const { montarChat } = require('./framyo-chat');
+const { montarYoutube, EVENTS: EVENTOS_YOUTUBE } = require('./framyo-youtube');
 let chatApi = null;            // montado junto com as rotas; o /eventos consulta o resumo do chat
 
 // As duas variáveis de endereço existem só para os testes (um Frame.io falso).
@@ -32,7 +33,7 @@ const ESCOPOS = 'openid,email,profile,offline_access,additional_info.roles';
 const CLIENT_ID = process.env.FRAMEIO_CLIENT_ID || '066f605842ce4858b5471f0b56513cde';
 const URL_PUBLICA = (process.env.FRAMYO_URL_PUBLICA || 'https://www.framety.com.br').replace(/\/+$/, '');
 const RETORNO = `${URL_PUBLICA}/api/framyo/frameio/callback`;
-const EVENTOS_WEBHOOK = ['comment.created'];
+const EVENTOS_WEBHOOK = ['comment.created', ...EVENTOS_YOUTUBE];
 const MAX_EVENTOS = 3000;             // o feed guarda os últimos N comentários
 const ESPERA_NOME_MS = Number(process.env.FRAMYO_TESTE_ESPERA_NOME_MS) || 4000;   // nova tentativa do nome do revisor
 const SESSAO_DIAS = 90;
@@ -286,7 +287,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     req.usuario = u;
     req.tokenHash = hashToken(t);
     // Marketing: só o calendário. Nada de Frame.io (projetos, vídeos, comentários, links, envios, Início).
-    if (u.marketing && !u.admin && /^\/(projetos|pastas|arquivos|busca|midia|versoes|comentarios|mover|empilhar|pilhas|links|envios|feed|responsaveis|chat)(\/|$)/.test(req.path)) {
+    if (u.marketing && !u.admin && /^\/(projetos|pastas|arquivos|busca|midia|versoes|comentarios|mover|empilhar|pilhas|links|envios|feed|responsaveis|chat|youtube)(\/|$)/.test(req.path)) {
       return res.status(403).json({ erro: 'O acesso de marketing é só o calendário de posts.' });
     }
     // O programa se identifica no User-Agent ("Framyo/1.4.0", no Mac "Framyo/1.7.1 (mac)"):
@@ -614,14 +615,15 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     });
   }
 
-  r.post('/webhook', (req, res) => {
+  r.post('/webhook', envolve(async (req, res) => {
     if (!assinaturaConfere(req)) return res.status(401).json({ erro: 'assinatura inválida' });
-    res.json({ ok: true });                    // responde já; o Frame.io não espera
     const b = req.body || {};
+    await youtube.evento(b); // grava na fila antes do ACK; entrega repetida é idempotente
+    res.json({ ok: true });
     if (b.type === 'comment.created') {
       registrarComentario(b).catch((e) => console.error('[framyo] comentário:', e.message));
     }
-  });
+  }));
 
   // Quem comenta por link de revisão (cliente sem conta) vem sem dono.
   const autorDe = (c) => (c.owner && (c.owner.name || c.owner.email)) || c._nome || (c.owner ? 'Usuário do Frame.io' : 'Revisor externo');
@@ -998,6 +1000,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     let mudou = false;
     for (const e of D().eventos) if (e.arquivo_id === id && e.arquivo_nome !== novo) { e.arquivo_nome = novo; mudou = true; }
     if (mudou) await loja.salvar().catch(() => {});
+    if (tipo !== "folder") await youtube.mudou(id);
     res.json({ id: req.params.id, arquivo_id: id, nome: novo });
   }));
 
@@ -1021,6 +1024,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
         await loja.salvar();
       }
     }
+    await youtube.mudou(novo);
     res.json({ pilha_id: pilha });
   }));
 
@@ -1197,6 +1201,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       projeto_id: a.project_id, projeto_nome: (a.project && a.project.name) || '', view_url: a.view_url });
     if (D().envios.length > 300) D().envios.length = 300;
     await loja.salvar().catch((e) => console.error('[framyo] feed:', e.message));
+    await youtube.enfileirar(novo);
     res.json(resultado);
   }));
 
@@ -1422,6 +1427,9 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   }));
 
   // ── calendário de posts (Google Drive) ──────────────────────────────────────
+  const youtube = montarYoutube({ r, loja, fio, autenticar, soAdmin, envolve, pagina,
+    urlPublica: URL_PUBLICA, registrarWebhooks });
+
   const { google } = montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica: URL_PUBLICA });
 
   // ── chat privado entre os usuários (arquivos no mesmo Google Drive) ─────────

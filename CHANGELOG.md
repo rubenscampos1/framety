@@ -5,6 +5,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Framyo: espelho de aprovação no YouTube.** Autorização de um canal da empresa, fila persistente de novos envios do programa e do site do Frame.io, cópias não listadas com prefixo e versão real do stack, sincronização de títulos e substituição após processamento. Exclusões verificam ID, canal e marcadores do vínculo. Transferência em partes pelo desktop, sem arquivos grandes no servidor do site.
+
 - **Aspecty: sala simples, proporção, overlap, pixels e esticar o vídeo.**
   - *Sala simples* (retangular): uma caixa desativa as duas telas laterais;
     ficam a central e o chão, em toda a página, no 3D e na ficha em PDF.
