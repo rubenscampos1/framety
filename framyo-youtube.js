@@ -24,10 +24,11 @@ function criarYoutube({ loja, fio }) {
       throw erro(409, 'Proteção do YouTube inválida. Operação bloqueada para revisão.');
     return g;
   }
-  const assinatura = (dados) => crypto.createHmac('sha256', seguranca().chave).update(JSON.stringify(dados)).digest('hex');
+  const canonico = dados => JSON.stringify(Object.keys(dados).sort().map(k => [k, dados[k]]));
+  const assinatura = dados => crypto.createHmac('sha256', seguranca().chave).update(canonico(dados)).digest('hex');
   function comprovante(ref) {
     const g = seguranca(), p = g.comprovantes[ref?.id];
-    if (!p || typeof p.assinatura !== 'string') throw erro(409, 'Vídeo sem comprovante próprio do Framyo. Preservado.');
+    if (!p || !p.dados || typeof p.dados !== 'object' || Array.isArray(p.dados) || !/^[a-f0-9]{64}$/.test(p.assinatura || '')) throw erro(409, 'Vídeo sem comprovante próprio do Framyo. Preservado.');
     const esperado = assinatura(p.dados);
     if (p.assinatura.length !== esperado.length || !crypto.timingSafeEqual(Buffer.from(p.assinatura), Buffer.from(esperado)))
       throw erro(409, 'Comprovante alterado. Vídeo preservado.');
@@ -80,7 +81,7 @@ function criarYoutube({ loja, fio }) {
   const permitido = (u, p) => !!u && (u.admin || (!u.marketing && (!(u.projetos || []).length || u.projetos.includes(p))));
   function estado() {
     const y = Y(), c = credenciais();
-    return { inicio_escopo: seguranca().inicio, politica_exclusao: 2, conectado: !!auth().refresh_token, credencial: !!(c.client_id && c.client_secret), ativo: !!y.ativo,
+    return { inicio_escopo: seguranca().inicio, politica_exclusao: 2, comprovante_formato: 'hmac-sha256-canonico-v1', conectado: !!auth().refresh_token, credencial: !!(c.client_id && c.client_secret), ativo: !!y.ativo,
       canal: y.canal ? { id: y.canal.id, nome: y.canal.nome } : null, ultimo_trabalhador: y.ultimo_trabalhador || null,
       erros_entrada: Object.values(y.entrada).filter(e => e.erro).map(e => ({ arquivo: e.arquivo, erro: e.erro })),
       pendentes: Object.keys(y.entrada).length + Object.values(y.registros).filter(r => r.pendente || r.upload || r.anteriores.length).length,
@@ -234,7 +235,7 @@ function criarYoutube({ loja, fio }) {
       sessao_hash: crypto.createHash('sha256').update(up.sessao).digest('hex') };
     if (g.comprovantes[id]) {
       const existente = comprovante(ref);
-      if (JSON.stringify(existente) !== JSON.stringify(dados)) throw erro(409, 'ID já registrado em outro upload. Vínculo recusado.');
+      if (canonico(existente) !== canonico(dados)) throw erro(409, 'ID já registrado em outro upload. Vínculo recusado.');
     } else g.comprovantes[id] = { dados, assinatura: assinatura(dados) };
     await loja.salvar();
     if (r.atual && r.atual.id !== id) r.anteriores.push(r.atual);

@@ -5,6 +5,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Framyo: comprovantes estáveis no banco.** Assinatura canônica mantém a proteção após reordenação de chaves JSONB/reinício; formato inválido continua bloqueado. Bateria final de proteção aprovada em 33 cenários isolados.
+
 - **Framyo: preservação de vídeos anteriores no YouTube.** Sincronização limitada a fontes novas após o início da proteção; comprovantes assinados emitidos somente pela sessão de upload própria. DELETE direto, adoção por busca no canal, fusão de vínculos e rollback de versão bloqueados. Exclusão exige os comprovantes das duas cópias, mesma pilha reconsultada no Frame.io, nova fonte posterior e cópia nova pronta/não listada; divergência preserva conteúdo e pede revisão.
 
 - **Framyo: link do YouTube no player.** Quadro selecionável com copiar/abrir para a versão em exibição, mensagem discreta quando não há cópia e atualização durante a janela aberta. Consulta autenticada limita acesso ao projeto e evita herdar o link de outra versão do stack.
