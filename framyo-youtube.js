@@ -17,8 +17,8 @@ function criarYoutube({ loja, fio }) {
   const Y = () => D().youtube || (D().youtube = { registros: {}, aliases: {}, entrada: {}, ativo: false });
   let fila = Promise.resolve();
   const exclusivo = (fn) => { const p = fila.then(fn); fila = p.catch(() => {}); return p; };
-  const credenciais = () => ({ client_id: process.env.GOOGLE_CLIENT_ID || Y().client_id || D().google?.client_id,
-    client_secret: process.env.GOOGLE_CLIENT_SECRET || Y().client_secret || D().google?.client_secret });
+  const credenciais = () => ({ client_id: process.env.YOUTUBE_CLIENT_ID || Y().client_id || process.env.GOOGLE_CLIENT_ID || D().google?.client_id,
+    client_secret: process.env.YOUTUBE_CLIENT_SECRET || Y().client_secret || process.env.GOOGLE_CLIENT_SECRET || D().google?.client_secret });
   const auth = () => Y().auth || {};
   async function trocar(params) {
     const r = await fetch(OAUTH + '/token', { method: 'POST', signal: AbortSignal.timeout(20000),
