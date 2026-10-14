@@ -5,6 +5,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **FramePlus: link do YouTube quase instantâneo.** O trabalhador do FramePlus espera tarefa no servidor e é acordado no instante em que um envio entra na fila (antes consultava a cada 20 s). Tentativas temporárias recuam de 3 s até 60 s (antes, 60 s fixos). O link aparece assim que o YouTube confirma o envio. Proteções de exclusão inalteradas (40/40).
+
 - **FramePlus: apagar versão nunca leva a pilha inteira.** Um DELETE direto num arquivo empilhado podia apagar a pilha toda no Frame.io (todas as versões e o item nos links de revisão). Agora o servidor tira a versão da pilha, confere que a pilha e as outras versões continuam, e só então apaga o arquivo solto. Recusa apagar pilha, pasta ou a última versão; qualquer dúvida interrompe antes de apagar. Vale também para programas antigos.
 
 - **Framyo agora se chama FramePlus.** Mensagens do servidor, páginas de “conectado” e a política de privacidade passam a exibir FramePlus. Rotas `/api/framyo`, tabela `framyo_store`, User-Agent `Framyo/x.y.z`, nome do webhook do Frame.io e marcadores/comprovantes do YouTube continuam com o identificador antigo, para os programas instalados seguirem funcionando. Endereço da política mantido (`framyo-privacidade.html`), pois está cadastrado no Google.
