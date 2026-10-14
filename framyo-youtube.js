@@ -2,6 +2,7 @@
 // Estado durável na loja exclusiva do Framyo. Nunca procurar/deletar por título.
 'use strict';
 const crypto = require('node:crypto');
+const { EventEmitter } = require('node:events');
 const API = process.env.FRAMYO_TESTE_YOUTUBE_API || 'https://www.googleapis.com/youtube/v3';
 const UPLOAD = process.env.FRAMYO_TESTE_YOUTUBE_UPLOAD || 'https://www.googleapis.com/upload/youtube/v3/videos';
 const OAUTH = process.env.FRAMYO_TESTE_GOOGLE_OAUTH || 'https://oauth2.googleapis.com';
@@ -16,6 +17,7 @@ function criarYoutube({ loja, fio }) {
   const D = () => loja.dados;
   const Y = () => D().youtube || (D().youtube = { registros: {}, aliases: {}, entrada: {}, ativo: false });
   const PERMISSAO_DELETE = Symbol('exclusao-com-comprovante');
+  const avisos = new EventEmitter(); avisos.setMaxListeners(0);
   function seguranca() {
     const y = Y();
     if (!y.seguranca) y.seguranca = { versao: 2, inicio: new Date().toISOString(), chave: crypto.randomBytes(32).toString('hex'), comprovantes: {}, exclusoes: {} };
@@ -116,6 +118,7 @@ function criarYoutube({ loja, fio }) {
       y.canal = { id: canal.id, nome: canal.snippet.title, uploads: canal.contentDetails.relatedPlaylists.uploads };
       y.destino_id = destino || canal.id; y.auth = novaAuth; y.ativo = true;
       await loja.salvar();
+      avisos.emit("canal");
     } catch (ex) { D().youtube = anterior; throw ex; }
   }
   async function enfileirar(id) {
@@ -277,8 +280,11 @@ function criarYoutube({ loja, fio }) {
     } else g.comprovantes[id] = { dados, assinatura: assinatura(dados) };
     await loja.salvar();
     if (r.atual && r.atual.id !== id) r.anteriores.push(r.atual);
+    const arquivoAnterior = r.atual?.arquivo;
     r.atual = ref; delete r.upload; delete r.erro;
     await loja.salvar(); // commit da nova referência ANTES de qualquer DELETE
+    avisos.emit("arquivo:" + up.arquivo);
+    if (arquivoAnterior && arquivoAnterior !== up.arquivo) avisos.emit("arquivo:" + arquivoAnterior);
     await renomear(r); await limpar(r);
   }
   async function recuperar(r) {
@@ -290,6 +296,7 @@ function criarYoutube({ loja, fio }) {
         if (!v || ['failed','rejected','deleted'].includes(v.status?.uploadStatus) || ['failed','terminated'].includes(v.processingDetails?.processingStatus)) {
           r.anteriores.push(r.atual); r.atual = null; r.pendente = true;
           await loja.salvar();
+          avisos.emit("arquivo:" + r.desejado.arquivo);
         }
       }
       return;
@@ -404,7 +411,25 @@ function criarYoutube({ loja, fio }) {
     // A pilha aponta para a cópia atual; uma versão antiga nunca herda o link da nova.
     return { url: r.atual?.arquivo === id ? `https://youtu.be/${r.atual.id}` : null };
   }
-  return { Y, auth, estado, linkArquivo, exclusivo, credenciais, trocar, api, ativarCanal, enfileirar, trabalhar, atualizarLease, recuperar, registrar,
+  async function aguardarLink(u, id, atual, signal) {
+    const primeiro = linkArquivo(u, id);
+    if ((primeiro.url || '') !== atual || signal.aborted) return primeiro;
+    await new Promise(resolve => {
+      const evento = 'arquivo:' + id;
+      let timer;
+      const terminar = () => {
+        clearTimeout(timer); avisos.removeListener(evento, terminar); avisos.removeListener('canal', terminar);
+        signal.removeEventListener('abort', terminar); resolve();
+      };
+      avisos.once(evento, terminar); avisos.once('canal', terminar);
+      signal.addEventListener('abort', terminar, { once: true });
+      timer = setTimeout(terminar, 25000); timer.unref?.();
+      if (signal.aborted) terminar();
+    });
+    // Revalidar projeto/arquivo após acordar; respostas nunca atravessam versões.
+    return linkArquivo(u, id);
+  }
+  return { Y, auth, estado, linkArquivo, aguardarLink, exclusivo, credenciais, trocar, api, ativarCanal, enfileirar, trabalhar, atualizarLease, recuperar, registrar,
     async mudou(id) {
       await enfileirar(id);
       if (!Y().ativo || !auth().refresh_token) return;
@@ -422,7 +447,17 @@ function criarYoutube({ loja, fio }) {
 function montarYoutube({ r, loja, fio, autenticar, soAdmin, envolve, pagina, urlPublica, registrarWebhooks }) {
   const yt = criarYoutube({ loja, fio }), retorno = urlPublica + '/api/framyo/youtube/callback';
   r.get('/youtube', autenticar, soAdmin, (req, res) => res.json({ ...yt.estado(), retorno }));
-  r.get('/youtube/arquivos/:id', autenticar, envolve(async (req, res) => res.json(yt.linkArquivo(req.usuario, req.params.id))));
+  r.get('/youtube/arquivos/:id', autenticar, envolve(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const cancelamento = new AbortController(), cancelar = () => cancelamento.abort();
+    res.once('close', cancelar);
+    try {
+      const link = req.query.aguardar === '1'
+        ? await yt.aguardarLink(req.usuario, req.params.id, String(req.query.atual || ''), cancelamento.signal)
+        : yt.linkArquivo(req.usuario, req.params.id);
+      if (!res.destroyed) res.json(req.query.acompanhar === '1' ? { ...link, acompanhamento: true } : link);
+    } finally { res.removeListener('close', cancelar); }
+  }));
   r.put('/youtube/cliente', autenticar, soAdmin, envolve(async (req, res) => yt.exclusivo(async () => {
     const id = String(req.body.client_id || '').trim(), secret = String(req.body.client_secret || '').trim();
     if (!id.endsWith('.apps.googleusercontent.com') || !secret) throw erro(400, 'Preencha o Client ID e o Client Secret do Google.');
