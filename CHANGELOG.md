@@ -5,6 +5,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Framyo: troca de canal YouTube com destino exato.** OAuth confere o ID escolhido antes de ativar; vínculos e comprovantes anteriores ficam arquivados, sem excluir vídeos. Somente fontes posteriores à ativação entram no novo destino; histórico e pendências anteriores não são reenviados. A conexão fica fixada ao canal confirmado.
+
 - **Framyo: acompanhar o processamento YouTube até concluir.** Primeiro envio continua pendente até a cópia não listada ficar processada, mesmo sem versão antiga para limpar; registros já transferidos também são revisitados.
 
 - **Aspecty: dimensões próximas e destacadas.** Altura, largura central e profundidade das laterais reunidas acima dos mapas, com equivalências em pixels; unidades e sala simples preservadas.

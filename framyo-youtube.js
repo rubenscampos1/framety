@@ -82,12 +82,41 @@ function criarYoutube({ loja, fio }) {
   function estado() {
     const y = Y(), c = credenciais();
     return { inicio_escopo: seguranca().inicio, politica_exclusao: 2, comprovante_formato: 'hmac-sha256-canonico-v1', conectado: !!auth().refresh_token, credencial: !!(c.client_id && c.client_secret), ativo: !!y.ativo,
+      troca_canal_segura: 1, destino_id: y.destino_id || null, canais_arquivados: (y.historico_canais || []).length,
       canal: y.canal ? { id: y.canal.id, nome: y.canal.nome } : null, ultimo_trabalhador: y.ultimo_trabalhador || null,
       erros_entrada: Object.values(y.entrada).filter(e => e.erro).map(e => ({ arquivo: e.arquivo, erro: e.erro })),
       pendentes: Object.keys(y.entrada).length + Object.values(y.registros).filter(r => r.pendente || r.upload || r.anteriores.length).length,
       registros: Object.values(y.registros).map(r => ({ id: r.id, nome: r.desejado?.nome, versao: r.desejado?.versao,
         url: r.atual ? `https://youtu.be/${r.atual.id}` : null, sincronizado: !!r.atual?.processado && r.atual.arquivo === r.desejado?.arquivo && r.atual.titulo === titulo(r.desejado.nome, r.desejado.versao),
         erro: r.erro || null, limpeza_pendente: r.anteriores.length, enviando: !!r.upload, projeto: r.projeto })) };
+  }
+  async function ativarCanal(canal, novaAuth, pending) {
+    const y = Y(), destino = pending.canal_esperado || y.destino_id;
+    if (destino && canal.id !== destino) throw erro(409, 'O canal autorizado não corresponde ao destino escolhido. Sincronização preservada e não ativada.');
+    if (pending.canal_esperado && (y.canal?.id || null) !== pending.canal_origem)
+      throw erro(409, 'O canal mudou durante a autorização. Inicie a conexão novamente.');
+    const mudou = y.canal && y.canal.id !== canal.id;
+    if (mudou && !pending.canal_esperado && Object.keys(y.registros).length)
+      throw erro(409, 'Há vídeos vinculados ao canal anterior. Escolha explicitamente o novo destino.');
+    if (mudou && (y.ativo || Object.values(y.registros).some(r => r.upload?.lease?.ate > Date.now())))
+      throw erro(409, 'Pause os envios e aguarde o trabalhador antes de trocar o canal.');
+    const anterior = structuredClone(y);
+    try {
+      if (mudou) {
+        seguranca();
+        const arquivo = { em: new Date().toISOString(), canal: y.canal, registros: y.registros,
+          aliases: y.aliases, entrada: y.entrada, seguranca: y.seguranca };
+        y.historico_canais = [...(y.historico_canais || []), structuredClone(arquivo)];
+        // Novo destino recebe somente fontes criadas após esta ativação.
+        // Histórico e pendências anteriores ficam arquivados, sem reenvio.
+        y.registros = {}; y.aliases = {}; y.entrada = {};
+        y.seguranca = { versao: 2, inicio: new Date().toISOString(), chave: crypto.randomBytes(32).toString('hex'), comprovantes: {}, exclusoes: {} };
+        delete y.ultimo_trabalhador;
+      }
+      y.canal = { id: canal.id, nome: canal.snippet.title, uploads: canal.contentDetails.relatedPlaylists.uploads };
+      y.destino_id = destino || canal.id; y.auth = novaAuth; y.ativo = true;
+      await loja.salvar();
+    } catch (ex) { D().youtube = anterior; throw ex; }
   }
   async function enfileirar(id) {
     return exclusivo(async () => {
@@ -375,7 +404,7 @@ function criarYoutube({ loja, fio }) {
     // A pilha aponta para a cópia atual; uma versão antiga nunca herda o link da nova.
     return { url: r.atual?.arquivo === id ? `https://youtu.be/${r.atual.id}` : null };
   }
-  return { Y, auth, estado, linkArquivo, exclusivo, credenciais, trocar, api, enfileirar, trabalhar, atualizarLease, recuperar, registrar,
+  return { Y, auth, estado, linkArquivo, exclusivo, credenciais, trocar, api, ativarCanal, enfileirar, trabalhar, atualizarLease, recuperar, registrar,
     async mudou(id) {
       await enfileirar(id);
       if (!Y().ativo || !auth().refresh_token) return;
@@ -402,8 +431,12 @@ function montarYoutube({ r, loja, fio, autenticar, soAdmin, envolve, pagina, url
   })));
   r.post('/youtube/iniciar', autenticar, soAdmin, envolve(async (req, res) => yt.exclusivo(async () => {
     if (!yt.estado().credencial) throw erro(409, 'Cadastre as credenciais Google primeiro.');
+    const destino = String(req.body?.canal_id || '').trim();
+    if (destino && !/^UC[A-Za-z0-9_-]{22}$/.test(destino)) throw erro(400, 'Informe o ID exato do canal YouTube.');
+    if (destino && yt.Y().canal?.id !== destino && yt.Y().ativo) throw erro(409, 'Pause a sincronização antes de escolher outro canal.');
     const state = 'yt' + crypto.randomBytes(24).toString('hex');
-    loja.dados.oauth_estados[state] = { youtube: true, criado_em: new Date().toISOString(), por: req.usuario.id };
+    loja.dados.oauth_estados[state] = { youtube: true, criado_em: new Date().toISOString(), por: req.usuario.id,
+      ...(destino ? { canal_esperado: destino, canal_origem: yt.Y().canal?.id || null } : {}) };
     await loja.salvar();
     res.json({ url: AUTH + '?' + new URLSearchParams({ client_id: yt.credenciais().client_id, redirect_uri: retorno,
       response_type: 'code', scope: SCOPE, access_type: 'offline', prompt: 'consent', state }) });
@@ -417,15 +450,14 @@ function montarYoutube({ r, loja, fio, autenticar, soAdmin, envolve, pagina, url
     const j = await yt.trocar({ grant_type: 'authorization_code', code: String(code), redirect_uri: retorno });
     if (!j.refresh_token || !String(j.scope || '').split(' ').includes(SCOPE)) throw erro(409, 'Autorize o acesso de gerenciamento de vídeos do YouTube.');
     const previous = yt.Y().auth;
-    yt.Y().auth = { access_token: j.access_token, refresh_token: j.refresh_token, expira_em: Date.now() + (j.expires_in || 3600) * 1000 };
+    const novaAuth = { access_token: j.access_token, refresh_token: j.refresh_token, expira_em: Date.now() + (j.expires_in || 3600) * 1000 };
+    let canais;
+    yt.Y().auth = novaAuth;
     try {
-      const c = (await yt.api('GET', '/channels?part=snippet,contentDetails&mine=true')).items;
-      if (c?.length !== 1) throw erro(409, 'Selecione exatamente um canal ao autorizar.');
-      if (yt.Y().canal && yt.Y().canal.id !== c[0].id && Object.keys(yt.Y().registros).length)
-        throw erro(409, 'Há vídeos vinculados ao canal anterior. Conecte o mesmo canal para preservar os vínculos.');
-      yt.Y().canal = { id: c[0].id, nome: c[0].snippet.title, uploads: c[0].contentDetails.relatedPlaylists.uploads };
-    } catch (ex) { yt.Y().auth = previous; throw ex; }
-    yt.Y().ativo = true; await loja.salvar();
+      canais = (await yt.api('GET', '/channels?part=snippet,contentDetails&mine=true')).items;
+      if (canais?.length !== 1) throw erro(409, 'Selecione exatamente um canal ao autorizar.');
+    } finally { if (previous === undefined) delete yt.Y().auth; else yt.Y().auth = previous; }
+    await yt.ativarCanal(canais[0], novaAuth, pending);
     try { await registrarWebhooks(); }
     catch { return res.send(pagina('YouTube conectado', 'Canal autorizado. Em Admin › Frame.io, reative os avisos para receber os envios feitos no site.')); }
     res.send(pagina('YouTube conectado', 'Os novos vídeos serão enviados como não listados. Pode voltar ao Framyo.'));
