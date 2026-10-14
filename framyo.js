@@ -24,6 +24,7 @@ const path = require('path');
 const { montarPosts } = require('./framyo-posts');
 const { montarChat } = require('./framyo-chat');
 const { montarYoutube, EVENTS: EVENTOS_YOUTUBE } = require('./framyo-youtube');
+const { apagarVersao } = require('./framyo-apagar');
 let chatApi = null;            // montado junto com as rotas; o /eventos consulta o resumo do chat
 
 // As duas variáveis de endereço existem só para os testes (um Frame.io falso).
@@ -1055,10 +1056,13 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     res.json({ ok: true, pasta_id: pilha.parent_id });
   }));
 
-  // Apagar um vídeo (ou versão) no Frame.io. Só admin — não tem volta pelo Framyo.
+  // Apagar UMA versão no Frame.io. Só admin. Nunca manda DELETE num arquivo que
+  // ainda está numa pilha (o Frame.io pode levar a pilha inteira e o item dos
+  // links de revisão): tira da pilha, confere e só então apaga — ver framyo-apagar.js.
+  // Vale também para programas antigos, que não mandam ?pilha=.
   r.delete('/arquivos/:id', autenticar, soAdmin, envolve(async (req, res) => {
-    await fio.api('DELETE', `/accounts/${fio.conta()}/files/${encodeURIComponent(req.params.id)}`);
-    res.json({ ok: true });
+    const pilha = req.query && req.query.pilha ? String(req.query.pilha) : null;
+    res.json(await apagarVersao({ api: fio.api, tudo: fio.tudo, conta: fio.conta(), id: String(req.params.id), pilhaEsperada: pilha }));
   }));
 
   // ── links de revisão (shares) ───────────────────────────────────────────────
