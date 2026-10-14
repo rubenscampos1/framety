@@ -124,9 +124,19 @@ function criarYoutube({ loja, fio }) {
   async function enfileirar(id) {
     return exclusivo(async () => {
       if (!Y().ativo || !id) return;
-      Y().entrada[chave(id)] = { arquivo: String(id), conta: fio.conta(), em: Date.now(), tentar_em: Date.now() + 3000 };
+      Y().entrada[chave(id)] = { arquivo: String(id), conta: fio.conta(), em: Date.now(), tentar_em: Date.now() };
       await loja.salvar();
+      avisos.emit("trabalho");                  // acorda na hora o FramePlus que está esperando tarefa
     });
+  }
+  // Nova tentativa logo, e mais espaçada se o problema persistir: 3, 6, 12, 24, 48, 60 s.
+  const recuo = (x) => Math.min(60000, 3000 * 2 ** Math.min(5, (x.falhas = (x.falhas || 0) + 1) - 1));
+  // Quando vale a pena olhar a fila de novo (para a espera longa do trabalhador).
+  function proximaTentativa() {
+    const y = Y(), agora = Date.now();
+    const datas = [...Object.values(y.entrada).map(e => e.tentar_em || 0),
+      ...Object.values(y.registros).filter(r => r.pendente || r.upload || r.anteriores.length || (r.atual && !r.atual.processado)).map(r => r.tentar_em || 0)];
+    return datas.length ? Math.max(0, Math.min(...datas) - agora) : Infinity;
   }
   async function descrever(id) {
     const prefix = `/accounts/${enc(fio.conta())}`;
@@ -282,8 +292,9 @@ function criarYoutube({ loja, fio }) {
     if (r.atual && r.atual.id !== id) r.anteriores.push(r.atual);
     const arquivoAnterior = r.atual?.arquivo;
     r.atual = ref; delete r.upload; delete r.erro;
+    r.falhas = 0;
     await loja.salvar(); // commit da nova referência ANTES de qualquer DELETE
-    avisos.emit("arquivo:" + up.arquivo);
+    avisos.emit("arquivo:" + up.arquivo);   // o link aparece no FramePlus neste instante
     if (arquivoAnterior && arquivoAnterior !== up.arquivo) avisos.emit("arquivo:" + arquivoAnterior);
     await renomear(r); await limpar(r);
   }
@@ -321,7 +332,7 @@ function criarYoutube({ loja, fio }) {
       for (const [key, e] of Object.entries(y.entrada).filter(([, e]) => e.conta === fio.conta() && e.tentar_em <= Date.now()).slice(0, 3)) {
         if (e.conta !== fio.conta() || e.tentar_em > Date.now()) continue;
         try { await registrar(e.arquivo); delete y.entrada[key]; }
-        catch (ex) { e.erro = ex.message; e.tentar_em = Date.now() + 60000; }
+        catch (ex) { e.erro = ex.message; e.tentar_em = Date.now() + recuo(e); }
         await loja.salvar();
       }
       let verificados = 0;
@@ -337,7 +348,7 @@ function criarYoutube({ loja, fio }) {
           if (r.atual && r.atual.arquivo !== d.arquivo && !(Date.parse(d.criado_em) > Date.parse(comprovante(r.atual).origem_criada_em)))
             throw erro(409, 'A cabeça da pilha voltou a uma versão anterior. Novo envio e exclusões bloqueados.');
           if (r.atual?.arquivo === d.arquivo && !r.upload) {
-            await renomear(r); await limpar(r); delete r.erro; r.pendente = !r.atual.processado || !!r.anteriores.length; await loja.salvar(); r.tentar_em = Date.now() + 60000; continue;
+            await renomear(r); await limpar(r); delete r.erro; r.pendente = !r.atual.processado || !!r.anteriores.length; await loja.salvar(); r.tentar_em = Date.now() + recuo(r); continue;
           }
           if (r.upload && r.upload.protocolo !== 2) throw erro(409, 'Upload anterior à proteção atual. Retomada bloqueada.');
           if (r.upload?.sessao) {
@@ -372,9 +383,10 @@ function criarYoutube({ loja, fio }) {
           up.lease = { id: crypto.randomUUID(), usuario: u.id, ate: Date.now() + 600000 };
           delete r.erro;
           await loja.salvar();
+          r.falhas = 0;
           return { tarefa: { registro: r.id, trabalho: up.id, lease: up.lease.id, sessao: up.sessao, fonte: source.fonte,
             tamanho: up.tamanho, tipo: up.tipo, offset: st.offset } };
-        } catch (ex) { r.erro = ex.message; r.tentar_em = Date.now() + 60000; await loja.salvar(); }
+        } catch (ex) { r.erro = ex.message; r.tentar_em = Date.now() + recuo(r); await loja.salvar(); }
       }
       return {};
     });
@@ -429,7 +441,23 @@ function criarYoutube({ loja, fio }) {
     // Revalidar projeto/arquivo após acordar; respostas nunca atravessam versões.
     return linkArquivo(u, id);
   }
-  return { Y, auth, estado, linkArquivo, aguardarLink, exclusivo, credenciais, trocar, api, ativarCanal, enfileirar, trabalhar, atualizarLease, recuperar, registrar,
+  async function trabalharEsperando(u, signal, maxMs = 20000) {
+    const r = await trabalhar(u);
+    if (r.tarefa || signal.aborted) return r;
+    const ms = Math.min(maxMs, proximaTentativa());
+    if (ms > 0) {
+      await new Promise(resolve => {
+        let timer;
+        const fim = () => { clearTimeout(timer); avisos.removeListener('trabalho', fim); signal.removeEventListener('abort', fim); resolve(); };
+        avisos.once('trabalho', fim);
+        signal.addEventListener('abort', fim, { once: true });
+        timer = setTimeout(fim, ms); timer.unref?.();
+      });
+    }
+    if (signal.aborted) return {};
+    return { ...(await trabalhar(u)), espera: 1 };
+  }
+  return { Y, auth, estado, linkArquivo, aguardarLink, exclusivo, credenciais, trocar, api, ativarCanal, enfileirar, trabalhar, trabalharEsperando, atualizarLease, recuperar, registrar,
     async mudou(id) {
       await enfileirar(id);
       if (!Y().ativo || !auth().refresh_token) return;
@@ -500,7 +528,12 @@ function montarYoutube({ r, loja, fio, autenticar, soAdmin, envolve, pagina, url
   r.post('/youtube/desconectar', autenticar, soAdmin, envolve(async (req, res) => yt.exclusivo(async () => {
     yt.Y().ativo = false; delete yt.Y().auth; await loja.salvar(); res.json({ ok: true });
   })));
-  r.post('/youtube/trabalho', autenticar, envolve(async (req, res) => res.json(await yt.trabalhar(req.usuario))));
+  // Sem tarefa, a resposta espera (até 20 s) o próximo envio entrar na fila: o FramePlus começa a transferir na hora.
+  r.post('/youtube/trabalho', autenticar, envolve(async (req, res) => {
+    const controle = new AbortController();
+    res.on('close', () => controle.abort());
+    res.json(await yt.trabalharEsperando(req.usuario, controle.signal));
+  }));
   r.post('/youtube/registros/:id/lease', autenticar, envolve(async (req, res) => res.json(await yt.atualizarLease(req.usuario, req.params.id, req.body || {}))));
   r.post('/youtube/registros/:id/recuperar', autenticar, soAdmin, envolve(async (req, res) => yt.exclusivo(async () => {
     const registro = yt.Y().registros[req.params.id];
