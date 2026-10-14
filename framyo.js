@@ -157,7 +157,7 @@ function criarLoja({ pool, arquivo }) {
     pronto: () => (pronto = pronto || carregar().catch((e) => {
       pronto = null;
       console.error('[framyo] erro ao carregar:', e.message);
-      throw Object.assign(new Error('O banco do Framyo não respondeu. Tente de novo em instantes.'), { status: 503 });
+      throw Object.assign(new Error('O banco do FramePlus não respondeu. Tente de novo em instantes.'), { status: 503 });
     })),
     get dados() { return dados; },
     salvar,
@@ -263,7 +263,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
 
   const envolve = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch((e) => {
     if (!e.status) console.error('[framyo]', req.method, req.path, e);
-    res.status(e.status || 500).json({ erro: e.status ? e.message : 'Erro interno no servidor do Framyo.' });
+    res.status(e.status || 500).json({ erro: e.status ? e.message : 'Erro interno no servidor do FramePlus.' });
   });
   const falha = (status, msg) => Object.assign(new Error(msg), { status });
 
@@ -331,7 +331,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // Primeiro admin: só enquanto não há nenhum usuário, e só com a senha do
   // console do Framety — ninguém de fora "adota" o Framyo depois do deploy.
   r.post('/configurar', envolve(async (req, res) => {
-    if (D().usuarios.length) throw falha(409, 'O Framyo já foi configurado.');
+    if (D().usuarios.length) throw falha(409, 'O FramePlus já foi configurado.');
     if (!limiteDeLogin(req.ip)) throw falha(429, 'Muitas tentativas. Espere 15 minutos.');
     if (!senhaDoConsoleConfere(String((req.body || {}).senha_framety || ''))) { errou(req.ip); throw falha(403, 'Senha do console do Framety incorreta.'); }
     const u = novoUsuario(req.body || {}, true);
@@ -525,7 +525,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       body: new URLSearchParams({ grant_type: 'authorization_code', client_id: CLIENT_ID, client_secret: s, code: 'framyo-conferencia' }),
     }).then((x) => x.json()).catch(() => null);
     if (r && r.error === 'invalid_client') {
-      throw falha(400, 'A Adobe recusou este Client Secret. Confira se ele é do projeto do Framyo (Client ID ' + CLIENT_ID.slice(0, 6) +
+      throw falha(400, 'A Adobe recusou este Client Secret. Confira se ele é do projeto do Framyo/FramePlus (Client ID ' + CLIENT_ID.slice(0, 6) +
         '…) e se foi copiado inteiro' + (s.startsWith('p8e-') ? '.' : ' — os da Adobe costumam começar com “p8e-”.'));
     }
     D().client_secret = s;
@@ -536,7 +536,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   function pagina(titulo, texto) {
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>Framyo</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0a0a0b;color:#ececee;font:15px/1.5 Segoe UI,system-ui,sans-serif">
+<title>FramePlus</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0a0a0b;color:#ececee;font:15px/1.5 Segoe UI,system-ui,sans-serif">
 <main style="max-width:440px;padding:24px;text-align:center"><h1 style="font-size:22px;margin:0 0 10px">${esc(titulo)}</h1>
 <p style="color:#9a9aa1;margin:0">${esc(texto)}</p></main></body></html>`;
   }
@@ -545,7 +545,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const { code, state, error, error_description: desc } = req.query;
     const pendente = state && D().oauth_estados[state];
     if (error) return res.status(400).send(pagina('Não foi possível conectar', desc || String(error)));
-    if (!code || !pendente) return res.status(400).send(pagina('Link expirado', 'Volte ao Framyo e clique em “Conectar Frame.io” de novo.'));
+    if (!code || !pendente) return res.status(400).send(pagina('Link expirado', 'Volte ao FramePlus e clique em “Conectar Frame.io” de novo.'));
     delete D().oauth_estados[state];
     try {
       const j = await fio.trocarToken({ grant_type: 'authorization_code', code: String(code) });
@@ -558,12 +558,12 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       D().frameio.conectado_em = agora();
       await loja.salvar();
       await registrarWebhooks();
-      res.send(pagina('Frame.io conectado', `Conta “${contas[0].display_name}”. Pode fechar esta aba e voltar ao Framyo.`));
+      res.send(pagina('Frame.io conectado', `Conta “${contas[0].display_name}”. Pode fechar esta aba e voltar ao FramePlus.`));
     } catch (e) {
       console.error('[framyo] callback:', e.message);
       await loja.salvar();
       const msg = /client_secret/i.test(e.message)
-        ? 'A Adobe recusou o Client Secret cadastrado. No Framyo, abra Admin > Frame.io e troque pelo Client Secret certo.'
+        ? 'A Adobe recusou o Client Secret cadastrado. No FramePlus, abra Admin > Frame.io e troque pelo Client Secret certo.'
         : e.message;
       res.status(502).send(pagina('Não foi possível conectar', msg));
     }
@@ -1396,7 +1396,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
 
   // só nos testes (sem Cloudinary): serve a parte guardada na memória
   r.get('/atualizacao/local/:versao/:n', (req, res) => {
-    if (process.env.CLOUDINARY_URL) return res.status(404).json({ erro: 'Rota do Framyo não existe.' });
+    if (process.env.CLOUDINARY_URL) return res.status(404).json({ erro: 'Rota do FramePlus não existe.' });
     const p = (partesLocais.get(req.params.versao + (TIPOS_EXTRA.includes(req.query.tipo) ? '|' + req.query.tipo : '')) || [])[Number(req.params.n)];
     if (!p) return res.status(404).json({ erro: 'Parte não existe.' });
     res.setHeader('Content-Type', 'application/octet-stream');
@@ -1429,7 +1429,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const pacote = conferir('pacote', 'pacote');
     const mac = conferir('mac', 'pacote de Mac');
     const anterior = D().atualizacao;
-    D().atualizacao = { versao, nome: limpaTexto(b.nome, 120) || `Framyo Setup ${versao}.exe`, tamanho, sha256: b.sha256,
+    D().atualizacao = { versao, nome: limpaTexto(b.nome, 120) || `FramePlus Setup ${versao}.exe`, tamanho, sha256: b.sha256,
                         notas: limpaTexto(b.notas, 2000), partes, pacote, mac, publicado_em: agora(), por: req.usuario.id };
     delete D().atualizacao_envio;
     await loja.salvar();
@@ -1451,7 +1451,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // ── chat privado entre os usuários (arquivos no mesmo Google Drive) ─────────
   chatApi = montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaTexto, google });
 
-  r.use((req, res) => res.status(404).json({ erro: 'Rota do Framyo não existe.' }));
+  r.use((req, res) => res.status(404).json({ erro: 'Rota do FramePlus não existe.' }));
   r.use((err, req, res, next) => {        // JSON quebrado e afins: fica aqui dentro
     res.status(err.status || 400).json({ erro: err.type === 'entity.parse.failed' ? 'JSON inválido.' : err.status === 503 ? err.message : 'Pedido inválido.' });
   });

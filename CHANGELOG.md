@@ -5,6 +5,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Framyo agora se chama FramePlus.** Mensagens do servidor, páginas de “conectado” e a política de privacidade passam a exibir FramePlus. Rotas `/api/framyo`, tabela `framyo_store`, User-Agent `Framyo/x.y.z`, nome do webhook do Frame.io e marcadores/comprovantes do YouTube continuam com o identificador antigo, para os programas instalados seguirem funcionando. Endereço da política mantido (`framyo-privacidade.html`), pois está cadastrado no Google.
+
 - **Framyo: link YouTube acompanha a confirmação do envio.** A tela aguarda a mudança do arquivo no servidor e atualiza o quadro assim que a cópia não listada é confirmada, sem a espera fixa de 15 segundos. Acompanhamento funciona entre computadores, preserva seleção e ignora respostas de versões já fechadas; consultas sem cache e fallback para servidor antigo.
 
 - **Framyo: troca de canal YouTube com destino exato.** OAuth confere o ID escolhido antes de ativar; vínculos e comprovantes anteriores ficam arquivados, sem excluir vídeos. Somente fontes posteriores à ativação entram no novo destino; histórico e pendências anteriores não são reenviados. A conexão fica fixada ao canal confirmado.

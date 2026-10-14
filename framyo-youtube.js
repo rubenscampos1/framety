@@ -30,7 +30,7 @@ function criarYoutube({ loja, fio }) {
   const assinatura = dados => crypto.createHmac('sha256', seguranca().chave).update(canonico(dados)).digest('hex');
   function comprovante(ref) {
     const g = seguranca(), p = g.comprovantes[ref?.id];
-    if (!p || !p.dados || typeof p.dados !== 'object' || Array.isArray(p.dados) || !/^[a-f0-9]{64}$/.test(p.assinatura || '')) throw erro(409, 'Vídeo sem comprovante próprio do Framyo. Preservado.');
+    if (!p || !p.dados || typeof p.dados !== 'object' || Array.isArray(p.dados) || !/^[a-f0-9]{64}$/.test(p.assinatura || '')) throw erro(409, 'Vídeo sem comprovante próprio do FramePlus. Preservado.');
     const esperado = assinatura(p.dados);
     if (p.assinatura.length !== esperado.length || !crypto.timingSafeEqual(Buffer.from(p.assinatura), Buffer.from(esperado)))
       throw erro(409, 'Comprovante alterado. Vídeo preservado.');
@@ -388,7 +388,7 @@ function criarYoutube({ loja, fio }) {
     if (!Y().ativo || !auth().refresh_token) throw erro(409, 'A sincronização foi pausada.');
     const r = Y().registros[rid], up = r?.upload;
     if (!r || !permitido(u, r.projeto) || !up || up.id !== body.trabalho || up.lease?.id !== body.lease || up.lease.usuario !== u.id || up.lease.ate < Date.now())
-      throw erro(409, 'Este envio foi retomado por outro Framyo.');
+      throw erro(409, 'Este envio foi retomado por outro FramePlus.');
     return { r, up };
   }
   async function atualizarLease(u, rid, body) {
@@ -399,7 +399,7 @@ function criarYoutube({ loja, fio }) {
         const st = await situacao(up);
         if (!st.id) throw erro(409, 'O YouTube ainda não confirmou todos os bytes.');
         await concluir(r, up, st.id);
-      } else if (body.erro) { r.erro = 'Transferência interrompida. O Framyo tentará retomar.'; delete up.lease; r.tentar_em = Date.now() + 30000; }
+      } else if (body.erro) { r.erro = 'Transferência interrompida. O FramePlus tentará retomar.'; delete up.lease; r.tentar_em = Date.now() + 30000; }
       await loja.salvar();
       return { ok: true };
     });
@@ -479,7 +479,7 @@ function montarYoutube({ r, loja, fio, autenticar, soAdmin, envolve, pagina, url
   r.get('/youtube/callback', envolve(async (req, res) => yt.exclusivo(async () => {
     const { state, code, error } = req.query, pending = loja.dados.oauth_estados[state];
     if (!pending?.youtube || Date.parse(pending.criado_em) < Date.now() - 600000 || !loja.dados.usuarios.some(u => u.id === pending.por && u.admin && u.ativo !== false))
-      return res.status(400).send(pagina('Link expirado', 'Volte ao Framyo e conecte o YouTube novamente.'));
+      return res.status(400).send(pagina('Link expirado', 'Volte ao FramePlus e conecte o YouTube novamente.'));
     delete loja.dados.oauth_estados[state]; await loja.salvar();
     if (error || !code) return res.status(400).send(pagina('YouTube não conectado', 'A autorização foi cancelada.'));
     const j = await yt.trocar({ grant_type: 'authorization_code', code: String(code), redirect_uri: retorno });
@@ -495,7 +495,7 @@ function montarYoutube({ r, loja, fio, autenticar, soAdmin, envolve, pagina, url
     await yt.ativarCanal(canais[0], novaAuth, pending);
     try { await registrarWebhooks(); }
     catch { return res.send(pagina('YouTube conectado', 'Canal autorizado. Em Admin › Frame.io, reative os avisos para receber os envios feitos no site.')); }
-    res.send(pagina('YouTube conectado', 'Os novos vídeos serão enviados como não listados. Pode voltar ao Framyo.'));
+    res.send(pagina('YouTube conectado', 'Os novos vídeos serão enviados como não listados. Pode voltar ao FramePlus.'));
   })));
   r.post('/youtube/desconectar', autenticar, soAdmin, envolve(async (req, res) => yt.exclusivo(async () => {
     yt.Y().ativo = false; delete yt.Y().auth; await loja.salvar(); res.json({ ok: true });

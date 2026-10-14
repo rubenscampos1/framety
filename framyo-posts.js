@@ -430,7 +430,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     const { code, state, error } = req.query;
     const pendente = state && D().oauth_estados[state];
     if (error) return res.status(400).send(pagina('Não foi possível conectar o Google', String(error) === 'access_denied' ? 'O acesso foi negado.' : String(error)));
-    if (!code || !pendente || !pendente.google) return res.status(400).send(pagina('Link expirado', 'Volte ao Framyo e clique em “Conectar Google” de novo.'));
+    if (!code || !pendente || !pendente.google) return res.status(400).send(pagina('Link expirado', 'Volte ao FramePlus e clique em “Conectar Google” de novo.'));
     delete D().oauth_estados[state];
     try {
       const j = await g.trocar({ grant_type: 'authorization_code', code: String(code), redirect_uri: retorno });
@@ -440,7 +440,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
       g.G().email = (eu.user && eu.user.emailAddress) || null;
       g.G().cache_pastas = {};
       await loja.salvar();
-      res.send(pagina('Google conectado', `Conta ${g.G().email || ''}. Pode fechar esta aba e voltar ao Framyo.`));
+      res.send(pagina('Google conectado', `Conta ${g.G().email || ''}. Pode fechar esta aba e voltar ao FramePlus.`));
     } catch (e) {
       await loja.salvar();
       res.status(502).send(pagina('Não foi possível conectar o Google', e.message));
