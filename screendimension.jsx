@@ -1,10 +1,10 @@
 /* screendimension.jsx — Aspecty, configurador de sala imersiva (/screendimension)
-   Ferramenta pura (sem banco). Regra base: a ALTURA da projeção é sempre 1080px;
-   a partir dela (escala = 1080 / altura_em_metros) calculamos a largura em pixels
+   Ferramenta pura (sem banco). Regra base: a ALTURA padrão da projeção é 1080px, com substituição opcional;
+   a partir dela (escala = altura_final_px / altura_em_metros) calculamos a largura em pixels
    de cada projeção. O chão tem medidas próprias (base/topo/profundidade) e pode
    descolar das paredes, gerando formatos que não fecham uma caixa perfeita.       */
 
-const SD_MAX_H      = 1080;   // altura de projeção fixa (px)
+const SD_MAX_H      = 1080;   // altura de projeção padrão (px)
 /* Margem de proteção: 10% de cada borda de cada tela (esquerda, direita, topo e
    base) — sobra uma área segura de 80% × 80%. Só marca a área onde
    concentrar textos e conteúdo importante — não entra em nenhuma conta. */
@@ -14,7 +14,7 @@ const SD_SAFE_HEX = "#FFB547", SD_SAFE_3D = 0xFFB547;
    (/screendimension/semicircular?altura=3.67&curva=9.18…). Cada número novo
    reescreve o endereço (sem recarregar), e quem abre o link recebe a sala com os
    mesmos valores. Nomes legíveis no link; os internos ficam no código. */
-const SD_URL_KEYS = { A: "altura", L: "largura", P: "profundidade", fBaseM: "chao_base", fDepM: "chao_prof", C: "curva", Ang: "angulo", Bl: "overlap" };
+const SD_URL_KEYS = { A: "altura", L: "largura", P: "profundidade", fBaseM: "chao_base", fDepM: "chao_prof", C: "curva", Ang: "angulo", Bl: "overlap", Hp: "altura_px", Hf: "altura_final_px" };
 const sdCleanVal = (v) => String(v ?? "").replace(/[^0-9.,:]/g, "").slice(0, 14);   // ":" entra nas proporções (16:9)
 const sdCleanSigned = (v) => String(v ?? "").replace(/[^0-9.,-]/g, "").slice(0, 8);
 const sdUrlFor = (mode, raw) => {
@@ -285,26 +285,52 @@ const sdRatioNum = (v) => {
   if (m) { const x = parseFloat(m[1]), y = parseFloat(m[2]); return x > 0 && y > 0 ? x / y : null; }
   const n = parseFloat(t); return isFinite(n) && n > 0 ? n : null;
 };
-const sdLen = (v, un, a) => {
-  if (un === "px") { const n = sdNum(v); return n ? n * a / SD_MAX_H : null; }
+// hp: a altura em pixels que corresponde a `a` metros (padrão 1080; na sala
+// semicircular o modo Pixels pede largura × altura, ex. 3840 × 1080).
+const sdLen = (v, un, a, hp = SD_MAX_H) => {
+  if (un === "px") { const n = sdNum(v); return n ? n * a / hp : null; }
   if (un === "prop") { const r = sdRatioNum(v); return r ? r * a : null; }
   return sdNum(v);
 };
 // metros → o texto do campo na unidade nova (ao trocar de unidade, o que já estava digitado é convertido)
-const sdToUnit = (m, un, a) => {
+const sdToUnit = (m, un, a, hp = SD_MAX_H) => {
   if (!m) return "";
-  if (un === "px") return String(Math.round(m * SD_MAX_H / a));
+  if (un === "px") return String(Math.round(m * hp / a));
   if (un === "prop") {
     const w = Math.round(m * SD_MAX_H / a), g = (x, y) => (y ? g(y, x % y) : x), d = g(w, SD_MAX_H) || 1;
     return w / d <= 64 && SD_MAX_H / d <= 64 ? `${w / d}:${SD_MAX_H / d}` : String(Math.round(m / a * 1000) / 1000);
   }
-  return String(Math.round(m * 100) / 100);
+  return String(Math.round(m * 1000) / 1000);   // 3 casas: 2 viravam 3.841 px ao voltar de 3.840
 };
 const sdUnitLbl = (un) => (un === "px" ? "px" : un === "prop" ? "larg:alt" : "m");
 const SDUnits = ({ un, setUn }) => (
   <div className="sd-units" title="Como você quer informar as telas">
     {SD_UNITS.map(([id, lbl]) => <button key={id} type="button" className={un === id ? "on" : ""} onClick={() => un !== id && setUn(id)}>{lbl}</button>)}
   </div>
+);
+// Altura de saída, independente da altura de entrada do modo Pixels (Hp).
+const sdOutputHeight = (v) => { const n = sdNum(v); return Number.isInteger(n) && n >= 1 && n <= 16384 ? n : SD_MAX_H; };
+const SDHeightOverride = ({ enabled, setEnabled, value, setValue }) => (
+  <div className="sd-height-override">
+    <label className="sdx-check"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /><span>Forçar altura em pixels</span></label>
+    {enabled && <>
+      <label className="sd-campo"><span className="sd-campo-l">Altura final</span><span className="sd-input-wrap"><input aria-label="Altura final em pixels" type="number" min="1" max="16384" step="1" inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} /><b>px</b></span></label>
+      <div className="sdx-dica">A largura acompanha proporcionalmente. As medidas em metros são preservadas.</div>
+      {(!sdNum(value) || sdNum(value) !== sdOutputHeight(value)) && <div className="sdx-dica">Informe um inteiro entre 1 e 16384 px. Enquanto o valor for inválido, a base é 1080 px.</div>}
+    </>}
+  </div>
+);
+/* Campo de medida enxuto: rótulo curto, dica opcional e a unidade dentro da caixa. */
+const SDCampo = ({ lbl, dica, un, value, onChange, ph, step = "0.01", texto, grande, max }) => (
+  <label className={`sd-campo ${grande ? "grande" : ""}`}>
+    <span className="sd-campo-l">{lbl}{dica && <em>{dica}</em>}</span>
+    <span className="sd-input-wrap">
+      {texto
+        ? <input type="text" inputMode="text" value={value} placeholder={ph} onChange={(e) => onChange(e.target.value)} />
+        : <input type="number" min="0" max={max} step={step} inputMode="decimal" value={value} placeholder={ph} onChange={(e) => onChange(e.target.value)} />}
+      <b>{un}</b>
+    </span>
+  </label>
 );
 /* Proporção sempre à vista: a forma reduzida (32×9), a decimal e os pixels. */
 const SDProp = ({ items }) => (
@@ -443,7 +469,10 @@ const sdLoadScript = (src) => new Promise((resolve, reject) => {
 /* Recebe as medidas em metros das paredes e do chão + os rótulos em px. Desenha a
    sala e coloca uma etiqueta de resolução (sprite) no centro de cada superfície —
    ela acompanha a rotação e fica sempre legível. */
-const SDPreview3D = ({ res, initView }) => {
+const sdVista3D = (res) => (res && res.curve ? { theta: 0, phi: 1.2 } : { theta: -0.6, phi: 1.12 });
+// vista: "3d" (padrão, de três quartos) ou "frente" (de frente para a tela);
+// vistaN muda a cada clique, para o mesmo botão poder reenquadrar de novo.
+const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
   const mountRef = React.useRef(null);
   const three    = React.useRef({});
   const [ready, setReady] = React.useState(false);
@@ -472,7 +501,10 @@ const SDPreview3D = ({ res, initView }) => {
 
         const roomGroup = new THREE.Group();
         scene.add(roomGroup);
-        const ctl = { theta: -0.6, phi: 1.12, dist: 10, target: new THREE.Vector3(0, 0, 0) };
+        // Sala curva abre de frente e um pouco de cima (como o layout pedido); a
+        // retangular segue em três quartos, para as paredes laterais aparecerem.
+        const v0 = sdVista3D(propsRef.current.res);
+        const ctl = { theta: v0.theta, phi: v0.phi, dist: 10, target: new THREE.Vector3(0, 0, 0) };
         three.current = { THREE, scene, camera, renderer, roomGroup, ctl, mount };
         buildRoom();
         // ficha salva reaberta: volta ao ângulo em que o 3D estava
@@ -482,11 +514,19 @@ const SDPreview3D = ({ res, initView }) => {
         // Um dedo (ou o mouse) gira; dois dedos fazem pinça = zoom. Cada ponteiro é
         // rastreado pelo id — antes os dois dedos disputavam a mesma posição e a
         // rotação pulava de um para o outro.
+        // Botão direito (ou do meio, ou Shift + arrastar) move o enquadramento.
         const pts = new Map();
         let pinch0 = 0, dist0 = 0;
         const gap = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+        const lado = new THREE.Vector3(), cima = new THREE.Vector3();
+        const mover = (dx, dy) => {
+          lado.setFromMatrixColumn(camera.matrix, 0); cima.setFromMatrixColumn(camera.matrix, 1);
+          const k = ctl.dist * 0.0016;
+          ctl.target.addScaledVector(lado, -dx * k).addScaledVector(cima, dy * k);
+        };
+        const semMenu = (e) => e.preventDefault();
         const down = (e) => {
-          pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          pts.set(e.pointerId, { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.button === 1 || e.shiftKey });
           try { e.target.setPointerCapture?.(e.pointerId); } catch (_) {}
           if (pts.size === 2) { pinch0 = gap(); dist0 = ctl.dist; }
           renderer.domElement.style.cursor = "grabbing";
@@ -496,7 +536,9 @@ const SDPreview3D = ({ res, initView }) => {
           if (!p) return;
           const dx = e.clientX - p.x, dy = e.clientY - p.y;
           p.x = e.clientX; p.y = e.clientY;
-          if (pts.size === 1) {
+          if (pts.size === 1 && p.pan) {
+            mover(dx, dy);
+          } else if (pts.size === 1) {
             ctl.theta -= dx * 0.008;
             ctl.phi = Math.max(0.15, Math.min(Math.PI - 0.15, ctl.phi - dy * 0.008));
           } else if (pts.size === 2 && pinch0 > 0) {
@@ -516,8 +558,12 @@ const SDPreview3D = ({ res, initView }) => {
         window.addEventListener("pointerup", up);
         window.addEventListener("pointercancel", up);
         renderer.domElement.addEventListener("wheel", wheel, { passive: false });
-        const onResize = () => { if (!mount) return; const nw = mount.clientWidth, nh = mount.clientHeight || 300; camera.aspect = nw / nh; camera.updateProjectionMatrix(); renderer.setSize(nw, nh); };
+        renderer.domElement.addEventListener("contextmenu", semMenu);
+        const onResize = () => { if (!mount || !mount.clientWidth) return; const nw = mount.clientWidth, nh = mount.clientHeight || 300; camera.aspect = nw / nh; camera.updateProjectionMatrix(); renderer.setSize(nw, nh); };
         window.addEventListener("resize", onResize);
+        // o painel do 3D muda de tamanho sem a janela mudar (layout, abas): acompanha
+        const observador = window.ResizeObserver ? new ResizeObserver(onResize) : null;
+        observador?.observe(mount);
 
         let raf;
         const loop = () => {
@@ -553,6 +599,8 @@ const SDPreview3D = ({ res, initView }) => {
 
         three.current.cleanup = () => {
           cancelAnimationFrame(raf);
+          observador?.disconnect();
+          renderer.domElement.removeEventListener("contextmenu", semMenu);
           window.removeEventListener("resize", onResize);
           window.removeEventListener("pointerup", up);
           window.removeEventListener("pointercancel", up);
@@ -568,6 +616,15 @@ const SDPreview3D = ({ res, initView }) => {
   }, []);
 
   React.useEffect(() => { if (three.current.THREE) buildRoom(); }, [JSON.stringify(res)]);
+  // Botões 3D / Vista frontal: volta ao enquadramento da sala no ângulo escolhido.
+  React.useEffect(() => {
+    const t = three.current;
+    if (!vistaN || !t.ctl) return;
+    if (vista === "frente") { t.ctl.theta = 0; t.ctl.phi = Math.PI / 2 - 0.05; }
+    else { const v0 = sdVista3D(res); t.ctl.theta = v0.theta; t.ctl.phi = v0.phi; }
+    if (t.frameTarget) t.ctl.target.copy(t.frameTarget);
+    if (t.frameDist) t.ctl.dist = t.frameDist;
+  }, [vista, vistaN]);
 
   function makeLabel(THREE, text, base, tone) {
     const cv = document.createElement("canvas");
@@ -642,10 +699,12 @@ const SDPreview3D = ({ res, initView }) => {
   // a câmera só volta ao enquadramento padrão quando a forma da sala muda (e não a cada arrasto do vídeo)
   function frame(key, x, y, z, dist) {
     const t = three.current;
+    dist *= 0.85;                       // painel central maior: a sala começa um pouco mais perto
     t.ctl.target.set(x, y, z);
     // quadro estreito (coluna alta): afasta para a sala caber na largura
     const asp = t.mount ? t.mount.clientWidth / (t.mount.clientHeight || 300) : 1.6;
     if (t.shapeKey !== key) { t.shapeKey = key; t.ctl.dist = dist * Math.max(1, 1.05 / Math.max(0.4, asp)); }
+    t.frameTarget = t.ctl.target.clone(); t.frameDist = dist * Math.max(1, 1.05 / Math.max(0.4, asp));   // para os botões de vista
   }
 
   function buildRoom() {
@@ -887,8 +946,9 @@ const SDPreview3D = ({ res, initView }) => {
         if (u0 > 0) poly([pt(u0, 0, 0.999), pt(u0, H, 0.999)], 0xffffff, 0.6);
         if (u1 < 1) poly([pt(u1, 0, 0.999), pt(u1, H, 0.999)], 0xffffff, 0.6);
       }
-      put(`P${i + 1} · ${sdFmt(Math.min(pw, r.Wpx))} × ${sdFmt(Hpx)}`, pt((u0 + u1) / 2, H / 2, 0.97), "rgba(255,255,255,0.45)", 0.8);
+      put(`${r.rows > 1 ? "Coluna" : "P"}${i + 1} · ${sdFmt(Math.min(pw, r.Wpx))} × ${sdFmt(Hpx)}${r.rows > 1 ? ` · ${r.rows} linhas` : ""}`, pt((u0 + u1) / 2, H / 2, 0.97), "rgba(255,255,255,0.45)", 0.8);
     });
+    for (let y = 1080; y < Hpx; y += 1080) poly(arcPts(0,1,y*W,0.999),0xffffff,0.45);
     // overlap: a faixa onde duas fatias vizinhas se misturam (blend), em âmbar
     if (projs.length > 1 && (r.ov || 0) > 0.5) projs.slice(1).forEach((x) => {
       const u0 = x / r.Wpx, u1 = Math.min(1, (x + r.ov) / r.Wpx);
@@ -934,7 +994,11 @@ const SDPreview3D = ({ res, initView }) => {
 
     // centro do enquadramento: meio entre a curva e a corda
     const midZ = -R * (th >= Math.PI ? 0.5 : (1 + Math.cos(th / 2)) / 2);
-    frame(["c", r.Wpx, r.Hpx, th].join(), 0, H / 2, midZ, Math.max(R * 2.6, Lw * 0.55, H * 3) + 1);
+    // Enquadra pela largura visível da curva (a corda; o diâmetro a partir de 180°).
+    // Antes era o raio × 2,6: com pouca curvatura (ex. 43°) o raio é enorme e a
+    // tela ficava minúscula no meio do quadro.
+    const larguraVisivel = th >= Math.PI ? 2 * R : 2 * R * Math.sin(th / 2);
+    frame(["c", r.Wpx, r.Hpx, th].join(), 0, H / 2, midZ, Math.max(larguraVisivel * 1.2, Lw * 0.55, H * 3) + 1);
   }
 
   return (
@@ -1013,8 +1077,150 @@ const SDTimelineBleed = ({ R, f }) => {
   );
 };
 
+/* ─────────────────────── Layout em painéis (15/10/2026) ──────────────────────── */
+/* Configurações à esquerda, visualização no centro (abas por cima do 3D, que fica
+   sempre montado: o PDF fotografa ele e a ficha salva espera ele carregar),
+   resultados à direita e o resumo do projeto embaixo. */
+const SDI = ({ n, s = 16 }) => {
+  const d = {
+    curva: <path d="M3 17c2.5-6 15.5-6 18 0M6 17c2-3.5 10-3.5 12 0" />,
+    ret: <><rect x="3.5" y="6" width="17" height="12" rx="1.5" /><path d="M8.5 6v12" /></>,
+    config: <><circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" /></>,
+    reset: <><path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4v4.5h4.5" /></>,
+    share: <><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" /><path d="M5 13v6h14v-6" /></>,
+    pasta: <><path d="M3.5 6.5h6l2 2h9v10h-17z" /><path d="M8 13h8" /></>,
+    pdf: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4M9 13h6M9 16.5h6" /></>,
+    res: <><path d="M4 18 9 9l4 6 3-4 4 7" /><path d="M4 18h16" /></>,
+    proj: <><rect x="3.5" y="8" width="17" height="9" rx="2" /><circle cx="15.5" cy="12.5" r="2.4" /><path d="M7 21h10" /></>,
+    escudo: <path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z" />,
+    corte: <><path d="M6 3v13h13" /><path d="M3 6h13v13" /></>,
+    filme: <><rect x="3.5" y="5.5" width="17" height="13" rx="1.5" /><path d="M3.5 9.5h17M3.5 14.5h17M8 5.5v13M16 5.5v13" /></>,
+    escala: <><path d="M4 16 16 4l4 4L8 20z" /><path d="M8 12l1.5 1.5M11 9l1.5 1.5M14 6l1.5 1.5" /></>,
+    alerta: <><path d="M12 3 2.5 20h19z" /><path d="M12 10v4.5M12 17.2v.3" /></>,
+    ok: <><circle cx="12" cy="12" r="9" /><path d="m8 12.5 2.7 2.7L16.5 9.5" /></>,
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5.5M12 7.8v.3" /></>,
+    mao: <><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4a1.5 1.5 0 0 1 3 0v7M14 11V5.5a1.5 1.5 0 0 1 3 0V14c0 4-2.5 7-6 7s-5-2-6.5-5L4 13.5a1.5 1.5 0 0 1 2.5-1.6L8 14" /></>,
+    mouse: <><rect x="6.5" y="3" width="11" height="18" rx="5.5" /><path d="M12 7v3.5" /></>,
+    giro: <><path d="M20 12a8 8 0 1 1-2.3-5.7" /><path d="M20 4.5v4h-4" /></>,
+    seta: <path d="M5 12h14M14 7l5 5-5 5" />,
+    elo: <><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>,
+  }[n];
+  return <svg className="sdx-ic" width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>;
+};
+// Forma da tela pela proporção, como se fala no dia a dia.
+const sdForma = (w, h) => { const r = w / h; return Math.abs(r - 1) < 0.02 ? "Quadrado" : r < 1 ? "Vertical" : r <= 1.85 ? "Widescreen" : "Panorâmico"; };
+const SD_ABAS = [["vis", "Visualização"], ["video", "Vídeo na tela"], ["comp", "Comparação"], ["tec", "Parâmetros técnicos"]];
+
+/* Linha "Dimensões calculadas" / parâmetros: rótulo e valor. */
+const SDLinhas = ({ rows }) => (
+  <div className="sdx-linhas">{rows.map(([k, v, s], i) => <div key={i}><span>{k}</span><b>{v}{s ? <small>{s}</small> : null}</b></div>)}</div>
+);
+
+/* Comparação lado a lado: a tela da sala e o vídeo original na mesma altura. */
+const SDComparacao = ({ fit, tela, rotuloTela }) => {
+  if (!fit) return <div className="sdx-vazio"><SDI n="filme" s={28} /><b>Nenhum vídeo para comparar</b><span>Informe a largura e a altura do vídeo original em Configurações.</span></div>;
+  const larg = Math.max(fit.aw, fit.sw), k = Math.min(560 / larg, 150 / fit.ah);
+  return (
+    <div className="sdx-comp">
+      <div className="sdx-comp-g" style={{ width: larg * k, height: fit.ah * k }}>
+        <div className="sdx-comp-tela" style={{ width: fit.aw * k, left: (larg - fit.aw) / 2 * k }}><span>{rotuloTela}</span></div>
+        <div className={`sdx-comp-video ${fit.ok ? "" : "bad"}`} style={{ width: fit.sw * k, left: (larg - fit.sw) / 2 * k }}><span>vídeo original</span></div>
+      </div>
+      <div className="sdx-comp-n">
+        <div><em>{rotuloTela}</em><b>{sdFmt(tela[0])} × {sdFmt(tela[1])}</b><span>{sdRatio(tela[0], tela[1])} · {sdForma(tela[0], tela[1])}</span></div>
+        <div><em>Vídeo original</em><b>{sdFmt(fit.vw)} × {sdFmt(fit.vh)}</b><span>{sdRatio(fit.vw, fit.vh)} · {sdForma(fit.vw, fit.vh)}{fit.vh !== fit.ah ? ` · na altura da tela: ${sdFmt(fit.sw)} × ${sdFmt(fit.ah)}` : ""}</span></div>
+      </div>
+      <div className={`sd-vfit ${fit.ok ? "ok" : "bad"}`}>{fit.ok ? "✓ " : "⚠ "}{fit.msg}</div>
+    </div>
+  );
+};
+
+/* Vídeo testado: só os campos (a prévia esticável fica na aba Vídeo na tela). */
+const SDVideoCampos = ({ vw, vh, setVw, setVh, setSt, fit, tela }) => (
+  <div className="sdx-sec">
+    <div className="sdx-sec-h"><span>Vídeo original</span>{(vw || vh) && <button type="button" className="sdx-link" onClick={() => { setVw(""); setVh(""); setSt(""); }}>limpar</button>}</div>
+    <div className="sdx-par">
+      <SDCampo lbl="Largura" un="px" step="1" value={vw} onChange={setVw} ph="3840" />
+      <span className="sdx-par-s"><SDI n="seta" s={14} /></span>
+      <SDCampo lbl="Altura" un="px" step="1" value={vh} onChange={setVh} ph="1080" />
+    </div>
+    {fit && !fit.exact && <div className={`sdx-aviso ${fit.ok ? "" : "bad"}`}><SDI n="alerta" s={15} /><div><b>Proporção diferente da tela</b>
+      O vídeo é {sdFmt(fit.vw)} × {sdFmt(fit.vh)} ({sdRatio(fit.vw, fit.vh)}), mas a tela usa {sdFmt(tela[0])} × {sdFmt(tela[1])} ({sdRatio(tela[0], tela[1])}).</div></div>}
+    {fit && fit.exact && <div className="sdx-aviso ok"><SDI n="ok" s={15} /><div><b>Mesma proporção da tela</b>Encaixa sem cortar nem esticar.</div></div>}
+  </div>
+);
+
+/* Cartão de compatibilidade (coluna de resultados). */
+const SDCompat = ({ fit }) => {
+  if (!fit) return <div className="sdx-card sdx-compat neutro"><SDI n="filme" s={18} /><div><b>Teste um vídeo</b><span>Informe o vídeo original nas configurações para saber se ele encaixa.</span></div></div>;
+  const pct = Math.abs(fit.st) > 0.0005 ? Math.abs(fit.st) : fit.diff;
+  return (
+    <div className={`sdx-card sdx-compat ${fit.ok ? "ok" : "bad"}`}>
+      <SDI n={fit.ok ? "ok" : "alerta"} s={18} />
+      <div><b>{fit.ok ? (fit.exact && Math.abs(fit.st) < 0.0005 ? "Vídeo compatível" : "Compatível com ajuste") : "Vídeo não compatível"}</b><span>{fit.msg.replace(/^Vídeo não compatível:\s*/, "").replace(/^./, (c) => c.toUpperCase())}</span></div>
+      {!fit.exact || Math.abs(fit.st) > 0.0005 ? <em>{sdPct(pct)}</em> : null}
+    </div>
+  );
+};
+
+const SDShell = ({ mode, setMode, onReset, config, results, resumo, mapa, video, comp, tecnico, preview3dRef, render3d, sheetRef }) => {
+  const [aba, setAba] = React.useState("vis");
+  const [vista, setVista] = React.useState("3d");      // "2d" | "3d" | "frente"
+  const [vistaN, setVistaN] = React.useState(0);
+  const escolher = (v) => { setAba("vis"); setVista(v); if (v !== "2d") setVistaN((n) => n + 1); };
+  const camada = aba === "vis" ? (vista === "2d" ? mapa : null) : aba === "video" ? video : aba === "comp" ? comp : tecnico;
+  return (
+    <div ref={sheetRef} className="sdx">
+      <aside className="sdx-config" aria-label="Configurações">
+        <div className="sdx-ph"><b><SDI n="config" />Configurações</b><button type="button" className="sdx-link" onClick={onReset} title="Volta as medidas ao padrão"><SDI n="reset" s={14} />Resetar</button></div>
+        <div className="sdx-sec">
+          <div className="sdx-sec-h"><span>Tipo de sala</span></div>
+          <div className="sdx-tipo">
+            {SD_MODES.slice().reverse().map((m) => (
+              <button key={m.id} type="button" className={mode === m.id ? "on" : ""} onClick={() => mode !== m.id && setMode(m.id)}>
+                <SDI n={m.id === "curve" ? "curva" : "ret"} />{m.id === "curve" ? "Semicircular" : "Retangular"}</button>
+            ))}
+          </div>
+        </div>
+        {config}
+      </aside>
+
+      <main className="sdx-centro">
+        <div className="sdx-ctop">
+          <nav className="sdx-abas">{SD_ABAS.map(([id, lbl]) => <button key={id} type="button" className={aba === id ? "on" : ""} onClick={() => setAba(id)}>{lbl}</button>)}</nav>
+          <nav className="sdx-vistas" aria-label="Vista">
+            {[["2d", "2D"], ["3d", "3D"], ["frente", "Vista frontal"]].map(([id, lbl]) => (
+              <button key={id} type="button" className={aba === "vis" && vista === id ? "on" : ""} onClick={() => escolher(id)}>{lbl}</button>
+            ))}
+          </nav>
+        </div>
+        <div className="sdx-view">
+          <section className="sdx-3d" ref={preview3dRef} data-html2canvas-ignore="true">{render3d(vista === "2d" ? "3d" : vista, vistaN)}</section>
+          {camada && <div className="sdx-camada">{camada}</div>}
+          {!camada && <div className="sdx-dicas"><span><SDI n="mao" s={14} />Arraste para girar</span><span><SDI n="mouse" s={14} />Scroll para zoom</span><span><SDI n="giro" s={14} />Botão direito para mover</span></div>}
+        </div>
+      </main>
+
+      <aside className="sdx-res" aria-label="Resultados">
+        <div className="sdx-ph"><b><SDI n="res" />Resultados</b></div>
+        {results}
+      </aside>
+
+      <section className="sdx-resumo" aria-label="Resumo do projeto">
+        <div className="sdx-resumo-t"><SDI n="pasta" s={18} /><b>Resumo do projeto</b></div>
+        {resumo.map((it, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <span className="sdx-resumo-s"><SDI n="seta" s={14} /></span>}
+            <div className={`sdx-resumo-i ${it.tom || ""}`}><SDI n={it.ic} s={18} /><div><em>{it.lbl}</em><b>{it.val}</b><span>{it.sub}</span></div></div>
+          </React.Fragment>
+        ))}
+      </section>
+    </div>
+  );
+};
+
 /* ─────────────────────── Sala retangular (3 paredes + chão) ──────────────────── */
-const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
+const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMode }) => {
   const [A, setA] = React.useState(initial.A ?? "3");        // altura / pé-direito (m) — escala (já vem preenchida)
   const [L, setL] = React.useState(initial.L ?? "");        // largura frontal
   const [P, setP] = React.useState(initial.P ?? "");        // profundidade das laterais
@@ -1027,9 +1233,13 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const [St, setSt] = React.useState(initial.St ?? "");     // esticamento do vídeo testado (%)
   const [Sg, setSg] = React.useState(!!initial.Sg);            // margem extra de sangria (liga/desliga)
   const [SgP, setSgP] = React.useState(initial.Sg || "10");    // quantos % a mais
+  const [Hf, setHf] = React.useState(initial.Hf ?? "1080");
+  const [forceHeight, setForceHeight] = React.useState(!!initial.Hf);
+  const hFinal = forceHeight ? sdOutputHeight(Hf) : SD_MAX_H;
+  const hfRaw = forceHeight ? String(hFinal) : "";
   const sgRaw = Sg ? String(sdBleedPct(SgP)) : "";
-  const raw = { A, L, P, fBaseM, fDepM, Vw, Vh, St, Sg: sgRaw, Un: Un === "m" ? "" : Un, Ss: Ss ? "1" : "" };
-  React.useEffect(() => sdSyncUrl("rect", raw), [A, L, P, fBaseM, fDepM, Vw, Vh, St, sgRaw, Un, Ss]);
+  const raw = { Hf: hfRaw, A, L, P, fBaseM, fDepM, Vw, Vh, St, Sg: sgRaw, Un: Un === "m" ? "" : Un, Ss: Ss ? "1" : "" };
+  React.useEffect(() => sdSyncUrl("rect", raw), [A, L, P, fBaseM, fDepM, Vw, Vh, St, sgRaw, Un, Ss, hfRaw]);
   // topo do chão = largura da tela central (sempre travados) → usa L
   const a = sdNum(A) || 3;                      // altura sempre tem valor (padrão 3) — nunca congela
   const ready = !!sdNum(A);                     // só pra saber se o usuário já digitou
@@ -1046,7 +1256,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   const depRes  = len(fDepM)  || pRes;
 
   const R = React.useMemo(() => {
-    const scale = SD_MAX_H / a;
+    const scale = hFinal / a;
     const Wc = Math.round(lRes * scale);
     const Ws = Ss ? 0 : Math.round(pRes * scale);          // sala simples: sem telas laterais
     const fTop  = Math.round(topRes * scale);
@@ -1057,9 +1267,9 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
     const fDepth = Math.round(depRes * scale);
     const frontTotalW = Ws * 2 + Wc;
     const timelineW = Math.max(frontTotalW, fBase, fTop);
-    const timelineH = SD_MAX_H + fDepth;
-    return { Wc, Ws, H: SD_MAX_H, fTop, fBase, fDepth, frontTotalW, timelineW, timelineH, scale, simple: Ss, isDefault: false };
-  }, [a, lRes, pRes, baseRes, depRes, Ss]);
+    const timelineH = hFinal + fDepth;
+    return { Wc, Ws, H: hFinal, fTop, fBase, fDepth, frontTotalW, timelineW, timelineH, scale, simple: Ss, isDefault: false };
+  }, [a, lRes, pRes, baseRes, depRes, Ss, hFinal]);
 
   // o que vai para a ficha em PDF
   const projCount = (w, h) => Math.max(1, Math.ceil(w / 1920)) * Math.max(1, Math.ceil(h / 1080));
@@ -1083,6 +1293,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
     ],
     inputs: [
       ["Altura das paredes", `${sdM(a)} m`],
+      ...(forceHeight ? [["Altura final forçada", `${sdFmt(R.H)} px · proporção preservada`]] : []),
       ["Largura central", typed(L, lRes, "padrão 16:9")],
       ...(Ss ? [["Telas laterais", "desativadas  ·  sala simples"]] : [["Profundidade das laterais", typed(P, pRes, "padrão 16:9")]]),
       ["Chão · base", typed(fBaseM, baseRes, "= largura")],
@@ -1095,7 +1306,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
       ["Chão", `${sdFmt(Math.max(R.fBase, R.fTop))} × ${sdFmt(R.fDepth)} px`, sdFloorRows(R.fDepth).length > 1 ? `faixas ${sdFloorRows(R.fDepth).map(sdFmt).join(" + ")}` : (R.fBase !== R.fTop ? "com máscara" : sdRatio(R.fBase, R.fDepth))],
       ["Área segura · central", `${sdSafeTxt(R.Wc, R.H)} px`, "margem de 10%"],
       ...(Ss ? [] : [["Área segura · laterais", `${sdSafeTxt(R.Ws, R.H)} px`, "margem de 10%"]]),
-      ["Escala", `${R.scale.toFixed(1)} px/m`, "altura → 1080 px"],
+      ["Escala", `${R.scale.toFixed(1)} px/m`, `altura → ${sdFmt(R.H)} px`],
       ...(fit ? [["Vídeo testado", `${sdFmt(fit.vw)} × ${sdFmt(fit.vh)} px`, `${Math.abs(fit.st) > 0.0005 ? `${fit.st > 0 ? "esticado +" : "comprimido −"}${sdPct(Math.abs(fit.st))}  ·  ` : ""}${fit.ok ? "compatível" : "não compatível"}`]] : []),
       ...(Sg ? [[`Sangria (+${sdPct(bleed.f)})`, `${sdFmt(bleed.bw)} × ${sdFmt(bleed.bh)} px`, "timeline com borda extra"]] : []),
     ],
@@ -1104,15 +1315,18 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   };
 
   // escala do diagrama pra caber na coluna
+  // o mapa 2D só existe com a aba aberta: mede quando ele aparece e quando muda de tamanho
   const [diagW, setDiagW] = React.useState(680);
-  const diagRef = React.useRef(null);
+  const [diagEl, diagRef] = React.useState(null);
   React.useEffect(() => {
-    const onR = () => diagRef.current && setDiagW(diagRef.current.clientWidth);
-    onR(); window.addEventListener("resize", onR);
-    return () => window.removeEventListener("resize", onR);
-  }, []);
+    if (!diagEl) return;
+    const onR = () => diagEl.clientWidth && setDiagW(diagEl.clientWidth);
+    onR();
+    const ro = window.ResizeObserver ? new ResizeObserver(onR) : null; ro?.observe(diagEl);
+    return () => ro?.disconnect();
+  }, [diagEl]);
   const maxRowPx = Math.max(R.frontTotalW, R.fBase, R.fTop, 1);
-  const disp = Math.min(112 / SD_MAX_H, (Math.max(diagW, 280) - 26) / maxRowPx);
+  const disp = Math.min(112 / R.H, (Math.max(diagW, 280) - 26) / maxRowPx);
   const floorMax = Math.max(R.fBase, R.fTop) || 1;
   const floorClip = (() => {
     const mx = floorMax;
@@ -1122,89 +1336,136 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
   })();
   const ph = (m) => (ready ? sdToUnit(m, Un, a) : "");
 
-  return (
-      <div ref={sheetRef} className="sd-sheet sd-rect">
-        <div className="sd-main">
-          {/* Telas abertas + inputs ao lado de cada tela */}
-          <section className="sd-measures sd-rect-measures">
-            <div className="sd-room-measures" aria-label="Medidas da sala">
-              <div className="sd-room-measures-h"><b>Dimensões da sala</b>
-                <select className="sd-room-unit" aria-label="Unidade da largura e profundidade" value={Un} onChange={e => setUn(e.target.value)}>
-                  <option value="m">Metros</option><option value="px">Pixels</option><option value="prop">Proporção</option>
-                </select>
-                <label className="sd-check" title="Desativa as duas telas laterais: fica só a central e o chão">
-                  <input type="checkbox" checked={Ss} onChange={(e) => setSs(e.target.checked)} /><b>Sala simples</b>
-                </label>
-              </div>
-              <div className={`sd-room-fields ${Ss ? "simple" : ""}`}>
-                <label className="sd-room-field"><span>Altura <em>todas as telas</em></span>
-                  <span className="sd-input-wrap"><input aria-label="Altura de todas as telas" type="number" min="0" step="0.01" inputMode="decimal" value={A} placeholder="ex. 3" onChange={(e) => setA(e.target.value)} /><b>m</b></span>
-                  <small>Base mestre: {sdFmt(R.H)} px</small></label>
-                <label className="sd-room-field"><span>Largura <em>tela central</em></span>
-                  <SDIn un={Un} value={L} onChange={setL} placeholder={ph(lRes) || "larg."} />
-                  <small>{sdFmt(R.Wc)} × {sdFmt(R.H)} px · {sdRatio(R.Wc,R.H)}</small></label>
-                {!Ss && <label className="sd-room-field"><span>Profundidade <em>laterais iguais</em></span>
-                  <SDIn un={Un} value={P} onChange={setP} placeholder={ph(pRes) || "prof."} />
-                  <small>{sdFmt(R.Ws)} × {sdFmt(R.H)} px · {sdRatio(R.Ws,R.H)}</small></label>}
-              </div>
-              {!ready && <span className="sd-room-help">Comece pela altura; depois informe largura e profundidade.</span>}
-              {Un !== "m" && <span className="sd-room-help">{Un === "px" ? "Largura e profundidade em pixels, na base de 1080 px de altura." : "Largura e profundidade em proporção, como 16:9 ou 1,78."} A altura permanece em metros.</span>}
-            </div>
-          </section>
-          <section className="sd-stage" ref={diagRef}>
-            <SDProp items={[[Ss ? "Proporção da tela" : "Proporção da projeção frontal", R.frontTotalW, R.H], ["Proporção da timeline", R.timelineW, R.timelineH]]} />
-            <div className="sd-wallrow">
-              {!Ss && <SDScreen lbl="Lateral E" wpx={R.Ws} hpx={R.H} dispW={R.Ws * disp} dispH={R.H * disp} un={Un} />}
-              <SDScreen lbl="Central" wpx={R.Wc} hpx={R.H} dispW={R.Wc * disp} dispH={R.H * disp} accent un={Un} />
-              {!Ss && <SDScreen lbl="Lateral D" wpx={R.Ws} hpx={R.H} dispW={R.Ws * disp} dispH={R.H * disp} un={Un} />}
-            </div>
-
-            {/* Chão — trapézio com medidas próprias */}
-            <div className="sd-cell sd-cell-floor">
-              <div className={`sd-floorbox ${R.fBase !== R.fTop ? "trap" : ""}`} style={{ width: floorMax * disp, height: R.fDepth * disp }}>
-                <div className="sd-floor" style={{ clipPath: floorClip, WebkitClipPath: floorClip }}>
-                  <span className="sd-screen-lbl">Chão</span>
-                </div>
-                {R.fBase !== R.fTop && <span className="sd-masknote">vídeo {sdFmt(floorMax)}×{sdFmt(R.fDepth)} · máscara</span>}
-              </div>
-              <div className="sd-cellin sd-cellin-floor">
-                <label className="sd-floor-field"><span className="sd-cellin-lbl">Base <em>({sdUnitLbl(Un)})</em></span><SDIn un={Un} value={fBaseM} onChange={setFBaseM} placeholder={ph(lRes) || "base"} /></label>
-                <label className="sd-floor-field"><span className="sd-cellin-lbl">Topo <em>🔒 = largura</em></span><SDIn un={Un} value={L} onChange={setL} placeholder={ph(lRes) || "topo"} /></label>
-                <label className="sd-floor-field"><span className="sd-cellin-lbl">Prof. <em>({sdUnitLbl(Un)})</em></span><SDIn un={Un} value={fDepM} onChange={setFDepM} placeholder={ph(pRes) || "prof."} /></label>
-              </div>
-              <div className="sd-res"><b>{sdFmt(R.fBase)} × {sdFmt(R.fDepth)} px</b><span className="sd-res-r">{sdRatio(R.fBase, R.fDepth)}</span>
-                <span className="sd-res2">base {sdFmt(R.fBase)} · topo {sdFmt(R.fTop)}</span></div>
-            </div>
-            <div className="sd-safekey"><i />margem de proteção · 10% de cada borda — concentre textos e conteúdo dentro do tracejado</div>
-
-            {ready && (R.Wc > 1920 || R.Ws > 1920) && <div className="sd-note warn">Alguma parede passou de 1920px — precisará de mais de um projetor por parede.</div>}
-          </section>
-
-        <section className="sd-testsection" aria-label="Teste de vídeo e sangria">
-            <SDVideoTest vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} st={St} setSt={setSt} fit={fit} areaLbl={`${Ss ? "tela central" : "projeção frontal"} de ${sdFmt(R.frontTotalW)} × ${sdFmt(R.H)} px (${sdRatio(R.frontTotalW, R.H)}, sem o chão)`} />
-            <SDBleed on={Sg} setOn={setSg} pct={SgP} setPct={setSgP} bleed={bleed} areaLbl="timeline">
-              <SDTimelineBleed R={R} f={bleed.f} />
-            </SDBleed>
-        </section>
-          {/* Preview 3D com resoluções acompanhando a rotação */}
-          <section className="sd-3dsection" ref={preview3dRef} data-html2canvas-ignore="true">
-            <div className="sd-3dtitle">Preview 3D — resoluções acompanham a rotação</div>
-            <SDPreview3D initView={view} res={{ Wc: R.Wc, Ws: R.Ws, H: R.H, fBase: R.fBase, fTop: R.fTop, fDepth: R.fDepth, simple: Ss, front: R.frontTotalW,
-                                              fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok, st: fit.st } : null }} />
-            {fit && <div className="sd-timeline-panel"><b>Timeline · paredes e chão</b><SDTimelineFit R={R} fit={fit} /></div>}
-          </section>
+  const resetar = () => { setUnS("m"); setA("3"); setForceHeight(false); setHf("1080"); setL(""); setP(""); setFBaseM(""); setFDepM(""); setSs(false); setVw(""); setVh(""); setSt(""); setSg(false); setSgP("10"); };
+  const campoUn = (lbl, dica, value, onChange, placeholder) => (
+    <label className="sd-campo"><span className="sd-campo-l">{lbl}{dica && <em>{dica}</em>}</span><SDIn un={Un} value={value} onChange={onChange} placeholder={placeholder} /></label>
+  );
+  const config = (
+    <>
+      <div className="sdx-sec">
+        <div className="sdx-sec-h"><span>Dimensões das paredes</span><SDUnits un={Un} setUn={setUn} /></div>
+        <SDCampo lbl="Altura" dica={`todas as telas · ${sdFmt(R.H)} px`} un="m" value={A} onChange={setA} ph="3" />
+        <div className="sdx-par">
+          {campoUn("Largura", "central", L, setL, ph(lRes) || "larg.")}
+          {!Ss && campoUn("Profundidade", "laterais", P, setP, ph(pRes) || "prof.")}
         </div>
-
-        {/* Indicadores (seguem o cálculo ao vivo) */}
-        <section className="sd-indicators">
-          <div className="sd-ind"><div className="sd-ind-lbl">Tela do meio</div><div className="sd-ind-val">{sdFmt(R.Wc)}×{sdFmt(R.H)}</div><div className="sd-ind-sub">central · proporção {sdRatio(R.Wc, R.H)}</div></div>
-          <div className="sd-ind"><div className="sd-ind-lbl">Telas laterais</div><div className="sd-ind-val">{Ss ? "—" : `${sdFmt(R.Ws)}×${sdFmt(R.H)}`}</div><div className="sd-ind-sub">{Ss ? "desativadas · sala simples" : `cada uma (as duas iguais) · proporção ${sdRatio(R.Ws, R.H)}`}</div></div>
-          <div className="sd-ind"><div className="sd-ind-lbl">Projeção frontal completa</div><div className="sd-ind-val">{sdFmt(R.frontTotalW)}×{sdFmt(R.H)}</div><div className="sd-ind-sub">proporção {sdRatio(R.frontTotalW, R.H)} · {frenteTxt}</div></div>
-          <div className="sd-ind"><div className="sd-ind-lbl">Chão</div><div className="sd-ind-val">{sdFmt(R.fBase)}×{sdFmt(R.fDepth)}</div><div className="sd-ind-sub">base {sdFmt(R.fBase)} · topo {sdFmt(R.fTop)} · {sdRatio(R.fBase, R.fDepth)}</div>{sdFloorRows(R.fDepth).length > 1 && <div className="sd-ind-sub">projetores na prof.: {sdFloorRows(R.fDepth).map(sdFmt).join(" + ")}</div>}</div>
-          <div className="sd-ind sd-ind-safe"><div className="sd-ind-lbl">Área segura (margem 10%)</div><div className="sd-ind-val">{sdSafeTxt(R.Wc, R.H).replace(/ /g, "")}</div><div className="sd-ind-sub">central{Ss ? "" : ` · laterais ${sdSafeTxt(R.Ws, R.H)}`}</div></div>
-          <div className="sd-ind"><div className="sd-ind-lbl">Total (Timeline)</div><div className="sd-ind-val">{sdFmt(R.timelineW)}×{sdFmt(R.timelineH)}</div><div className="sd-ind-sub">proporção {sdRatio(R.timelineW, R.timelineH)} · {ready ? `escala ${R.scale.toFixed(1)} px/m` : "padrão"}</div></div>
-        </section>
+        <SDHeightOverride enabled={forceHeight} setEnabled={setForceHeight} value={Hf} setValue={setHf} />
+        <label className="sdx-check" title="Desativa as duas telas laterais: fica só a central e o chão">
+          <input type="checkbox" checked={Ss} onChange={(e) => setSs(e.target.checked)} /><span>Sala simples <em>sem as telas laterais</em></span>
+        </label>
+        {!ready && <div className="sdx-dica">Comece pela altura; depois largura e profundidade.</div>}
+        {Un !== "m" && <div className="sdx-dica">{Un === "px" ? "Largura e profundidade em pixels na base de entrada de 1080 px." : "Largura e profundidade em proporção (ex. 16:9 ou 1,78)."} A altura continua em metros.</div>}
       </div>
+      <div className="sdx-sec">
+        <div className="sdx-sec-h"><span>Chão</span></div>
+        <div className="sdx-par sdx-tres">
+          {campoUn("Base", "entrada", fBaseM, setFBaseM, ph(lRes) || "base")}
+          {campoUn("Topo", "= largura", L, setL, ph(lRes) || "topo")}
+          {campoUn("Prof.", null, fDepM, setFDepM, ph(pRes) || "prof.")}
+        </div>
+      </div>
+      <div className="sdx-sec sdx-linha">
+        <span>Quantidade de projetores</span>
+        <b className="sdx-num" title="Calculado: paredes e chão, um a cada 1920 × 1080">{nProj}<small>calculado</small></b>
+      </div>
+      <SDVideoCampos vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} setSt={setSt} fit={fit} tela={[R.frontTotalW, R.H]} />
+      <SDBleed on={Sg} setOn={setSg} pct={SgP} setPct={setSgP} bleed={bleed} areaLbl="timeline">
+        <SDTimelineBleed R={R} f={bleed.f} />
+      </SDBleed>
+    </>
+  );
+
+  const corte = fit ? (fit.over > 0.5 ? { val: sdPct((fit.dw - fit.aw) / fit.dw), sub: `${sdFmt(fit.over)} px (cada lado)` } : fit.over < -0.5 ? { val: "faixa vazia", sub: `${sdFmt(-fit.over)} px (cada lado)` } : { val: "nenhum", sub: "preenche a frente" }) : null;
+  const results = (
+    <>
+      <div className="sdx-card sdx-hero">
+        <em>Timeline total</em>
+        <b>{sdFmt(R.timelineW)} × {sdFmt(R.timelineH)}</b>
+        <div className="sdx-chips"><span>{sdRatio(R.timelineW, R.timelineH)}</span><span>paredes + chão</span>{Ss && <span>sala simples</span>}</div>
+      </div>
+      <div className="sdx-card sdx-frente">
+        <em>Projeção frontal</em><b>{sdFmt(R.frontTotalW)} × {sdFmt(R.H)}</b><span>{sdRatio(R.frontTotalW, R.H)} · {frenteTxt}</span>
+      </div>
+      <div className="sdx-card sdx-safe">
+        <div><em>Área segura (margem 10%)</em><b>{sdSafeTxt(R.Wc, R.H).replace(/ /g, "")}</b><span>central{Ss ? "" : ` · laterais ${sdSafeTxt(R.Ws, R.H)}`}</span></div>
+        <i>10%<small>margem</small></i>
+      </div>
+      <div className="sdx-dupla">
+        <div className="sdx-card"><em>Projetores</em><b>{nProj}<SDI n="proj" s={18} /></b><span>{Ss ? "central + chão" : "paredes + chão"}</span></div>
+        <div className="sdx-card"><em>Chão</em><b>{sdFmt(Math.max(R.fBase, R.fTop))}×{sdFmt(R.fDepth)}</b><span>{R.fBase !== R.fTop ? "trapézio · máscara" : sdRatio(R.fBase, R.fDepth)}</span></div>
+      </div>
+      <SDCompat fit={fit} />
+      <div className="sdx-card sdx-calc">
+        <em><SDI n="escala" s={14} />Dimensões calculadas</em>
+        <SDLinhas rows={[
+          ["Tela central", `${sdFmt(R.Wc)} × ${sdFmt(R.H)}`],
+          ["Laterais (cada)", Ss ? "desativadas" : `${sdFmt(R.Ws)} × ${sdFmt(R.H)}`],
+          ["Chão", `${sdFmt(R.fBase)} → ${sdFmt(R.fTop)} × ${sdFmt(R.fDepth)}`],
+          ["Faixas do chão", sdFloorRows(R.fDepth).map(sdFmt).join(" + ")],
+          ["Escala", ready ? `${R.scale.toFixed(1)} px/m` : "padrão"],
+        ]} />
+        {ready && (R.Wc > 1920 || R.Ws > 1920) && <div className="sdx-dica">Alguma parede passou de 1920 px: precisa de mais de um projetor por parede.</div>}
+      </div>
+    </>
+  );
+
+  const resumo = [
+    { ic: "filme", lbl: "Vídeo original", val: fit ? `${sdFmt(fit.vw)} × ${sdFmt(fit.vh)}` : "—", sub: fit ? sdRatio(fit.vw, fit.vh) : "nenhum testado" },
+    { ic: "corte", lbl: "Projeção frontal", val: `${sdFmt(R.frontTotalW)} × ${sdFmt(R.H)}`, sub: sdRatio(R.frontTotalW, R.H) },
+    { ic: "escudo", lbl: "Área segura", val: sdSafeTxt(R.Wc, R.H), sub: "central · 10% de margem", tom: "safe" },
+    { ic: "corte", lbl: "Corte necessário", val: corte ? corte.val : "—", sub: corte ? corte.sub : "sem vídeo testado", tom: fit && !fit.ok ? "bad" : "" },
+    { ic: "proj", lbl: "Projetores", val: String(nProj), sub: Ss ? "central + chão" : "paredes + chão" },
+    { ic: "escala", lbl: "Timeline", val: `${sdFmt(R.timelineW)} × ${sdFmt(R.timelineH)}`, sub: ready ? `escala ${R.scale.toFixed(1)} px/m` : "padrão" },
+  ];
+
+  const mapa = (
+    <div className="sd-stage sdx-mapa" ref={diagRef}>
+      <SDProp items={[[Ss ? "Proporção da tela" : "Projeção frontal", R.frontTotalW, R.H], ["Timeline", R.timelineW, R.timelineH]]} />
+      <div className="sd-wallrow">
+        {!Ss && <SDScreen lbl="Lateral E" wpx={R.Ws} hpx={R.H} dispW={R.Ws * disp} dispH={R.H * disp} un={Un} />}
+        <SDScreen lbl="Central" wpx={R.Wc} hpx={R.H} dispW={R.Wc * disp} dispH={R.H * disp} accent un={Un} />
+        {!Ss && <SDScreen lbl="Lateral D" wpx={R.Ws} hpx={R.H} dispW={R.Ws * disp} dispH={R.H * disp} un={Un} />}
+      </div>
+      <div className="sd-cell sd-cell-floor">
+        <div className={`sd-floorbox ${R.fBase !== R.fTop ? "trap" : ""}`} style={{ width: floorMax * disp, height: R.fDepth * disp }}>
+          <div className="sd-floor" style={{ clipPath: floorClip, WebkitClipPath: floorClip }}>
+            <span className="sd-screen-lbl">Chão</span>
+          </div>
+          {R.fBase !== R.fTop && <span className="sd-masknote">vídeo {sdFmt(floorMax)}×{sdFmt(R.fDepth)} · máscara</span>}
+        </div>
+        <div className="sd-res"><b>{sdFmt(R.fBase)} × {sdFmt(R.fDepth)} px</b><span className="sd-res-r">{sdRatio(R.fBase, R.fDepth)}</span>
+          <span className="sd-res2">base {sdFmt(R.fBase)} · topo {sdFmt(R.fTop)}</span></div>
+      </div>
+      <div className="sd-safekey"><i />área segura · textos dentro do tracejado (10% de cada borda)</div>
+      {fit && <div className="sd-timeline-panel"><b>Timeline · paredes e chão</b><SDTimelineFit R={R} fit={fit} /></div>}
+    </div>
+  );
+
+  const video = fit ? (
+    <div className="sdx-videotela">
+      <div className="sd-video-dimensions" aria-label="Medidas da projeção frontal e do vídeo original">
+        <div><span>{Ss ? "Tela central" : "Projeção frontal"}</span><b>{sdFmt(fit.aw)} × {sdFmt(fit.ah)} <small>px</small></b><em>{sdRatio(fit.aw, fit.ah)} · sem o chão</em></div>
+        <div><span>Vídeo original · sem esticar</span><b>{sdFmt(fit.vw)} × {sdFmt(fit.vh)} <small>px</small></b><em>{sdRatio(fit.vw, fit.vh)} · largura × altura</em>
+          {fit.vh !== fit.ah && <i>Na base {sdFmt(fit.ah)}: {sdFmt(fit.sw)} × {sdFmt(fit.ah)} px</i>}</div>
+      </div>
+      <SDStretch fit={fit} st={St} setSt={setSt} />
+      <div className={`sd-vfit ${fit.ok ? "ok" : "bad"}`}>{fit.ok ? "✓ " : "⚠ "}{fit.msg}</div>
+    </div>
+  ) : <div className="sdx-vazio"><SDI n="filme" s={28} /><b>Teste um vídeo nas paredes</b><span>Informe a largura e a altura do vídeo original em Configurações. O teste vale para as telas frontais (o chão tem conteúdo próprio).</span></div>;
+
+  const tecnico = (
+    <div className="sdx-tec">
+      <div><h4>Medidas informadas</h4><SDLinhas rows={docRef.current.inputs} /></div>
+      <div><h4>Resultado técnico</h4><SDLinhas rows={docRef.current.details} /></div>
+    </div>
+  );
+
+  return (
+    <SDShell mode="rect" setMode={setMode} onReset={resetar} sheetRef={sheetRef} preview3dRef={preview3dRef}
+      config={config} results={results} resumo={resumo} mapa={mapa} video={video} tecnico={tecnico}
+      comp={<SDComparacao fit={fit} tela={[R.frontTotalW, R.H]} rotuloTela={Ss ? "Tela central" : "Projeção frontal"} />}
+      render3d={(vista, vistaN) => <SDPreview3D initView={view} vista={vista} vistaN={vistaN} res={{ Wc: R.Wc, Ws: R.Ws, H: R.H, fBase: R.fBase, fTop: R.fTop, fDepth: R.fDepth, simple: Ss, front: R.frontTotalW,
+                                                fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok, st: fit.st } : null }} />} />
   );
 };
 
@@ -1222,7 +1483,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
 const sdM = (n) => (Math.round(n * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const SD_OV_MAX = 45;   // overlap máximo (%): perto de 50% o número de projetores dispara
-const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => {
+const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMode }) => {
   const [A, setA]     = React.useState(initial.A ?? "3");      // altura da tela (m)
   const [C, setC]     = React.useState(initial.C ?? "");       // comprimento ao longo da curva (m)
   const [Ang, setAng] = React.useState(initial.Ang ?? "72");  // ângulo do arco (°)
@@ -1233,22 +1494,32 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
   const [St, setSt]   = React.useState(initial.St ?? "");      // esticamento do vídeo testado (%)
   const [Sg, setSg]   = React.useState(!!initial.Sg);           // margem extra de sangria (liga/desliga)
   const [SgP, setSgP] = React.useState(initial.Sg || "10");     // quantos % a mais
+  // Modo Pixels: a tela é informada como largura × altura (ex. 3840 × 1080). Antes
+  // só a largura era em px e a altura seguia em metros no mesmo lugar: digitar
+  // 3840 × 1080 virava "altura 3.840 m, largura 1.080 px" e a tela saía 1×1.
+  const [Hp, setHp]   = React.useState(initial.Hp ?? "1080");   // altura da tela em px (modo Pixels)
+  const [Hf, setHf] = React.useState(initial.Hf ?? "1080");
+  const [forceHeight, setForceHeight] = React.useState(!!initial.Hf);
+  const hFinal = forceHeight ? sdOutputHeight(Hf) : SD_MAX_H;
+  const hfRaw = forceHeight ? String(hFinal) : "";
   const sgRaw = Sg ? String(sdBleedPct(SgP)) : "";
-  const raw = { A, C, Ang, Bl, Vw, Vh, St, Sg: sgRaw, Un: Un === "m" ? "" : Un };
-  React.useEffect(() => sdSyncUrl("curve", raw), [A, C, Ang, Bl, Vw, Vh, St, sgRaw, Un]);
+  const hpRaw = Un === "px" && sdNum(Hp) && sdNum(Hp) !== SD_MAX_H ? String(sdNum(Hp)) : "";
+  const raw = { Hf: hfRaw, A, C, Ang, Bl, Vw, Vh, St, Sg: sgRaw, Un: Un === "m" ? "" : Un, Hp: hpRaw };
+  React.useEffect(() => sdSyncUrl("curve", raw), [A, C, Ang, Bl, Vw, Vh, St, sgRaw, Un, hpRaw, hfRaw]);
 
   const a = sdNum(A) || 3;
-  const cM = sdLen(C, Un, a);                    // comprimento da curva em metros (digitado em m, px ou proporção)
-  const setUn = (u) => { setC(sdToUnit(cM, u, a)); setUnS(u); };
+  const hp = sdNum(Hp) || SD_MAX_H;
+  const cM = sdLen(C, Un, a, hp);                // comprimento da curva em metros (digitado em m, px ou proporção)
+  const setUn = (u) => { setC(sdToUnit(cM, u, a, u === "px" ? hp : SD_MAX_H)); setUnS(u); };
   const ready = !!sdNum(A) && !!cM;
   const arc = cM || a * 32 / 9;                  // sem comprimento: duas telas 16:9
   const angDeg = Math.min(360, sdNum(Ang) || 72);
   const blendAsk = Math.max(0, parseFloat(String(Bl).replace(",", ".")) || 0);   // o % digitado (aberto)
 
   const R = React.useMemo(() => {
-    const scale = SD_MAX_H / a;
+    const scale = hFinal / a;
     const Wn = Math.round(arc * scale);          // largura sem overlap: a tela com a altura em 1080
-    const Hpx = SD_MAX_H;
+    const Hpx = hFinal;
     const N0 = Math.max(1, Math.ceil(Wn / 1920 - 0.004)); // projetores sem overlap (uns pixels de arredondamento não pedem mais um)
     const blend = N0 > 1 ? Math.min(blendAsk, SD_OV_MAX) : 0;   // % da largura total
     // Cada junção leva blend/(N−1) da largura e cada fatia tem largura/N: a faixa
@@ -1266,40 +1537,45 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     const radiusM = arc / theta;
     const chordM = angDeg >= 360 ? 0 : 2 * radiusM * Math.sin(theta / 2);
     const depthM = radiusM * (1 - Math.cos(theta / 2));   // da abertura até o fundo da curva
-    return { scale, Wn, Wpx, Hpx, N, N0, ov, less, blend, pw, cut, projs, theta, radiusM, chordM, depthM, projM: pw / scale };
-  }, [a, arc, angDeg, blendAsk]);
+    const rows = Math.max(1, Math.ceil(Hpx / 1080)), totalProj = N * rows;
+    return { rows, totalProj, scale, Wn, Wpx, Hpx, N, N0, ov, less, blend, pw, cut, projs, theta, radiusM, chordM, depthM, projM: pw / scale };
+  }, [a, arc, angDeg, blendAsk, hFinal]);
   const blend = R.blend;
   const fit = sdFit(R.Wpx, R.Hpx, Vw, Vh, St);   // vídeo testado contra a tela inteira
   const bleed = sdBleed(R.Wpx, R.Hpx, sdBleedPct(SgP));
 
+  // o mapa 2D só existe com a aba aberta: mede quando ele aparece e quando muda de tamanho
   const [diagW, setDiagW] = React.useState(680);
-  const diagRef = React.useRef(null);
+  const [diagEl, diagRef] = React.useState(null);
   React.useEffect(() => {
-    const onR = () => diagRef.current && setDiagW(diagRef.current.clientWidth);
-    onR(); window.addEventListener("resize", onR);
-    return () => window.removeEventListener("resize", onR);
-  }, []);
+    if (!diagEl) return;
+    const onR = () => diagEl.clientWidth && setDiagW(diagEl.clientWidth);
+    onR();
+    const ro = window.ResizeObserver ? new ResizeObserver(onR) : null; ro?.observe(diagEl);
+    return () => ro?.disconnect();
+  }, [diagEl]);
   // cabe a tela + o quadro vermelho que passa das pontas (o corte das bordas)
   const disp = Math.min(150 / R.Hpx, (Math.max(diagW, 280) - 40) / Math.max(R.Wpx + 2 * R.cut, 1920));
   docRef.current = {
     mode: "curve", raw,   // o que a ficha salva guarda
-    resumo: `vídeo ${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)}  ·  ${R.N} projetor${R.N > 1 ? "es" : ""}`,
+    resumo: `vídeo ${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)}  ·  ${R.totalProj} projetor${R.totalProj > 1 ? "es" : ""}`,
     name: `sala-semicircular${ready ? `-${sdM(arc).replace(",", "_")}x${sdM(a).replace(",", "_")}m` : ""}`,
     title: "Sala semicircular",
     subtitle: `Tela única curva  ·  ${sdM(arc)} m de curva × ${sdM(a)} m de altura`,
     hero: [
       { lbl: "Vídeo a produzir", val: `${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)}`, unit: "px", sub: R.less ? `com overlap de ${sdPct(blend / 100)}  ·  sem ele seria ${sdFmt(R.Wn)}` : `escala ${R.scale.toFixed(1)} px/m` },
       { lbl: "Proporção", val: sdRatio(R.Wpx, R.Hpx), unit: "", sub: "largura : altura" },
-      { lbl: "Projetores", val: String(R.N), unit: "× 1920×1080", sub: R.N > 1 ? `lado a lado, cada um ${sdFmt(R.pw)} × ${sdFmt(R.Hpx)}${R.N > R.N0 ? `  ·  +${R.N - R.N0} pelo overlap` : ""}` : "um só cobre a tela" },
+      { lbl: "Projetores", val: String(R.totalProj), unit: "× 1920×1080", sub: R.rows > 1 ? `${R.N} colunas × ${R.rows} linhas · sem overlap vertical` : R.N > 1 ? `lado a lado, cada um ${sdFmt(R.pw)} × ${sdFmt(R.Hpx)}${R.N > R.N0 ? `  ·  +${R.N - R.N0} pelo overlap` : ""}` : "um só cobre a tela" },
     ],
     inputs: [
       ["Altura da tela", `${sdM(a)} m`],
-      ["Comprimento da curva", cM ? (Un === "m" ? `${sdM(arc)} m` : `${Un === "px" ? `${sdFmt(sdNum(C))} px` : String(C).trim()}  ·  ${sdM(arc)} m`) : `${sdM(arc)} m  ·  padrão`],
+      ...(forceHeight ? [["Altura final forçada", `${sdFmt(R.Hpx)} px · proporção preservada`]] : []),
+      ["Comprimento da curva", cM ? (Un === "m" ? `${sdM(arc)} m` : `${Un === "px" ? `${sdFmt(sdNum(C))} × ${sdFmt(hp)} px` : String(C).trim()}  ·  ${sdM(arc)} m`) : `${sdM(arc)} m  ·  padrão`],
       ["Ângulo do arco", `${Math.round(angDeg)}°`],
       ["Overlap", `${sdPct(blend / 100)}`],
     ],
     details: [
-      ["Cada projetor usa", `${sdFmt(R.pw)} × ${sdFmt(R.Hpx)} px`, `${sdM(R.projM)} × ${sdM(a)} m`],
+      ["Cada projetor usa", `${sdFmt(R.pw)} × ${sdFmt(Math.min(R.Hpx,1080))} px`, `${sdM(R.projM)} × ${sdM(a * Math.min(R.Hpx,1080) / R.Hpx)} m`],
       ["Corte por projetor", `${sdFmt(R.cut)} px em cada borda`, "de 1920 px"],
       ["Overlap (blend) por junção", R.ov > 0 ? `${sdFmt(R.ov)} px` : "nenhum", R.ov > 0 ? `${sdPct(blend / 100)} da largura  ·  ${sdFmt(R.less)} px a menos no total` : "projetores encostados"],
       ["Proporção", sdRatio(R.Wpx, R.Hpx), `${(R.Wpx / R.Hpx).toFixed(2).replace(".", ",")}:1`],
@@ -1326,97 +1602,163 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view }) => 
     return { vb: `${minX - pad} ${minY - pad} ${vw} ${vh}`, path, ratio: vw / vh };
   })();
 
-  return (
-    <div ref={sheetRef} className="sd-sheet sd-curve">
-      <div className="sd-main">
-        <section className="sd-measures" aria-label="Medidas da sala">
-          <div className="sd-curvein">
-            <div className="sd-curvein-u"><span className="sd-altrow-k">Informar a tela em</span><SDUnits un={Un} setUn={setUn} />
-              {Un !== "m" && <span className="sd-altrow-n">{Un === "px" ? "Pixels: a largura da tela, com a altura valendo 1080 px." : "Proporção: largura : altura da tela (ex. 32:9 ou 3,56)."}</span>}</div>
-            <label><span className="sd-cellin-lbl">Altura da tela <em>→ vira {sdFmt(R.Hpx)} px</em></span>
-              <span className="sd-input-wrap sd-input-lg"><input type="number" min="0" step="0.01" inputMode="decimal" value={A} placeholder="ex. 4,20" onChange={(e) => setA(e.target.value)} /><b>m</b></span></label>
-            <label><span className="sd-cellin-lbl">{Un === "m" ? "Comprimento da curva" : Un === "px" ? "Largura da tela" : "Proporção da tela"} <em>{Un === "m" ? "medido ao longo da tela" : Un === "px" ? "em pixels, sem overlap" : "largura : altura"}</em></span>
-              <span className="sd-input-wrap sd-input-lg">{Un === "prop"
-                ? <input type="text" inputMode="text" value={C} placeholder="ex. 32:9" onChange={(e) => setC(e.target.value)} />
-                : <input type="number" min="0" step={Un === "px" ? "1" : "0.01"} inputMode="decimal" value={C} placeholder={Un === "px" ? "ex. 3840" : "ex. 12,50"} onChange={(e) => setC(e.target.value)} />}<b>{Un === "prop" ? "∶" : Un}</b></span></label>
-            <label><span className="sd-cellin-lbl">Ângulo do arco <em>180° = meio círculo</em></span>
-              <span className="sd-input-wrap"><input type="number" min="1" max="360" step="1" inputMode="decimal" value={Ang} onChange={(e) => setAng(e.target.value)} /><b>°</b></span></label>
-            <label><span className="sd-cellin-lbl">Overlap <em>blend · % da largura total</em></span>
-              <span className="sd-input-wrap"><input type="number" min="0" max={SD_OV_MAX} step="0.5" inputMode="decimal" value={Bl} onChange={(e) => setBl(e.target.value)} /><b>%</b></span></label>
-            <div className={`sd-ovinfo ${R.less ? "on" : ""}`}>
-              {R.N < 2 ? <>Overlap só existe com dois ou mais projetores — esta tela cabe em um.</>
-                : !R.less ? <>Sem overlap: os {R.N} projetores encostam um no outro. Timeline de <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b> ({sdRatio(R.Wpx, R.Hpx)}). Com 10% a largura cairia para {sdFmt(Math.round(R.Wn * 0.9))} px.</>
-                : <>Overlap de <b>{sdPct(blend / 100)}</b> = <b>−{sdFmt(R.less)} px</b> na largura: {sdFmt(R.Wn)} → timeline de <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b> ({sdRatio(R.Wpx, R.Hpx)}) com <b>{R.N} projetores</b> · blend de <b>{sdFmt(R.ov)} px</b> {R.N > 2 ? `em cada uma das ${R.N - 1} junções` : "no meio, entre os dois projetores"}.{R.N > R.N0 ? <> Com {R.N0} projetores o overlap vai até {sdPct((R.N0 - 1) / (2 * R.N0))}; para {sdPct(blend / 100)} entra{R.N - R.N0 > 1 ? "m" : ""} mais {R.N - R.N0}.</> : null}</>}
-              {blendAsk > SD_OV_MAX && R.N0 > 1 ? <> Limitado a {SD_OV_MAX}%.</> : null}
-            </div>
-          </div>
-          {!cM && <span className="sd-badge">{Un === "m" ? "digite o comprimento da curva" : Un === "px" ? "digite a largura da tela" : "digite a proporção da tela"}</span>}
-          </section>
-          <section className="sd-stage" ref={diagRef}>
-          <SDProp items={[["Proporção da tela", R.Wpx, R.Hpx]]} />
-
-          {/* A tela planificada = o vídeo a produzir, com a faixa de cada projetor */}
-          <div className="sd-cell">
-            <div className="sd-flatwrap" style={{ width: R.Wpx * disp, height: R.Hpx * disp }}>
-              {/* corte dos projetores: só sobra nas pontas da tela */}
-              {R.cut > 0.5 && [`${-R.cut / R.Wpx * 100}%`, "100%"].map((left, i) => (
-                <div key={"c" + i} className={`sd-frame ${i ? "r" : "l"}`} style={{ left, width: `${R.cut / R.Wpx * 100}%` }}>
-                  <span><b>−{sdFmt(R.cut)} px</b>1920 − {sdFmt(R.pw)} = {sdFmt(1920 - R.pw)}</span>
-                </div>
-              ))}
-              <div className="sd-flat" style={{ width: R.Wpx * disp, height: R.Hpx * disp }}>
-              <span className="sd-screen-lbl">Tela curva planificada</span>
-              <div className="sd-safe"><span>área segura {sdSafeTxt(R.Wpx, R.Hpx)}</span></div>
-              {R.projs.map((x, i) => (
-                <div key={i} className={`sd-proj ${i % 2 ? "odd" : ""}`} style={{ left: `${x / R.Wpx * 100}%`, width: `${R.pw / R.Wpx * 100}%` }}><span>P{i + 1} · {sdFmt(R.pw)} × {sdFmt(R.Hpx)}</span></div>
-              ))}
-              {junctions.map((j, i) => (
-                <div key={"j" + i} className="sd-blend" style={{ left: `${j.x0 / R.Wpx * 100}%`, width: `${(j.x1 - j.x0) / R.Wpx * 100}%` }}><span>overlap {sdFmt(j.x1 - j.x0)} px</span></div>
-              ))}
-            </div>
-              {Sg && <div className="sd-bbox" style={{ left: `${-bleed.f * 50}%`, right: `${-bleed.f * 50}%`, top: `${-bleed.f * 50}%`, bottom: `${-bleed.f * 50}%` }}><span>sangria {sdFmt(bleed.bw)} × {sdFmt(bleed.bh)}</span></div>}
-              {fit && <div className={`sd-vbox ${fit.ok ? "" : "bad"}`} style={{ left: `${Math.max(-0.02, fit.a) * 100}%`, width: `${(Math.min(1.02, fit.b) - Math.max(-0.02, fit.a)) * 100}%` }}><span>vídeo {sdFmt(fit.vw)} × {sdFmt(fit.vh)}{Math.abs(fit.st) > 0.0005 ? ` · ${fit.st > 0 ? "+" : "−"}${sdPct(Math.abs(fit.st))}` : ""}</span></div>}
-            </div>
-            <div className="sd-res"><b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)} px</b><span className="sd-res-r">{sdRatio(R.Wpx, R.Hpx)}</span>
-              <span className="sd-res2">{sdM(arc)} m × {sdM(a)} m · {R.N} projetor{R.N > 1 ? "es" : ""} lado a lado · cada um usa {sdFmt(R.pw)} × {sdFmt(R.Hpx)}</span></div>
-          </div>
-
-
-
-          <div className="sd-topview">
-            <svg viewBox={top.vb} style={{ width: Math.min(260, 140 * top.ratio), aspectRatio: top.ratio }}>
-              <path d={top.path(0, 1)} fill="none" stroke="#5EC8F2" strokeWidth="0.05" strokeLinecap="round" />
-              {R.N > 1 && R.projs.map((x, i) => (
-                <path key={i} d={top.path(Math.max(0, x / R.Wpx), Math.min(1, (x + R.pw) / R.Wpx))} fill="none"
-                      stroke={i % 2 ? "rgba(255,255,255,.55)" : "rgba(255,255,255,.3)"} strokeWidth="0.03" transform={`scale(${i % 2 ? 0.9 : 0.94})`} />
-              ))}
-              <circle cx="0" cy="0" r="0.035" fill="#fff" opacity=".6" />
-            </svg>
-            <div className="sd-res">vista de cima · raio <b>{sdM(R.radiusM)} m</b>{R.chordM > 0 && <> · abertura <b>{sdM(R.chordM)} m</b></>} · fundo <b>{sdM(R.depthM)} m</b></div>
-          </div>
-          <div className="sd-safekey"><i />margem de proteção · 10% de cada borda — concentre textos e conteúdo dentro do tracejado</div>
-          {ready && R.Wpx < 1920 && <div className="sd-note">A tela cabe em um projetor só — ele entrega 1920px e a tela usa {sdFmt(R.Wpx)}px; o resto do quadro fica preto.</div>}
-        </section>
-
-        <section className="sd-testsection" aria-label="Teste de vídeo e sangria">
-          <SDVideoTest vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} st={St} setSt={setSt} fit={fit} areaLbl={`tela de ${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)} px (${sdRatio(R.Wpx, R.Hpx)})`} />
-          <SDBleed on={Sg} setOn={setSg} pct={SgP} setPct={setSgP} bleed={bleed} areaLbl="tela" />
-        </section>
-        <section className="sd-3dsection" ref={preview3dRef} data-html2canvas-ignore="true">
-          <div className="sd-3dtitle">Preview 3D — faixa de cada projetor</div>
-          <SDPreview3D initView={view} res={{ curve: true, Wpx: R.Wpx, Hpx: R.Hpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM, ov: R.ov, bleed: Sg ? bleed.f : 0, fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok, st: fit.st } : null }} />
-        </section>
+  const resetar = () => { setUnS("m"); setA("3"); setForceHeight(false); setHf("1080"); setC(""); setHp("1080"); setAng("72"); setBl("0"); setVw(""); setVh(""); setSt(""); setSg(false); setSgP("10"); };
+  const angN = Math.min(360, Math.max(1, sdNum(Ang) || 72));
+  const config = (
+    <>
+      <div className="sdx-sec">
+        <div className="sdx-sec-h"><span>Dimensões da tela</span><SDUnits un={Un} setUn={setUn} /></div>
+        <div className="sdx-par">
+          {Un === "px" ? <>
+            <SDCampo lbl="Largura" un="px" step="1" value={C} onChange={setC} ph="3840" />
+            <span className="sdx-par-s"><SDI n="elo" s={14} /></span>
+            <SDCampo lbl="Altura" un="px" step="1" value={Hp} onChange={setHp} ph="1080" />
+          </> : Un === "prop" ? <>
+            <SDCampo texto lbl="Proporção" dica="larg : alt" un="∶" value={C} onChange={setC} ph="32:9" />
+            <SDCampo lbl="Altura real" un="m" value={A} onChange={setA} ph="3" />
+          </> : <>
+            <SDCampo lbl="Comprimento" dica="na curva" un="m" value={C} onChange={setC} ph="12,50" />
+            <span className="sdx-par-s"><SDI n="elo" s={14} /></span>
+            <SDCampo lbl="Altura" un="m" value={A} onChange={setA} ph="4,20" />
+          </>}
+        </div>
+        {Un === "px" && <SDCampo lbl="Altura real" dica="só para as medidas em metros" un="m" value={A} onChange={setA} ph="3" />}
+        <SDHeightOverride enabled={forceHeight} setEnabled={setForceHeight} value={Hf} setValue={setHf} />
+        {!cM && <div className="sdx-dica">{Un === "m" ? "Digite o comprimento da curva." : Un === "px" ? "Digite a largura da tela em pixels." : "Digite a proporção da tela (ex. 32:9)."}</div>}
+        {a > 50 && <div className="sdx-aviso bad"><SDI n="alerta" s={15} /><div><b>Altura de {sdM(a)} m</b>Esse campo é em metros{Un === "px" ? "; os pixels ficam em Largura e Altura" : ""}.</div></div>}
       </div>
+      <div className="sdx-sec">
+        <div className="sdx-sec-h"><span>Ângulo do arco</span></div>
+        <div className="sdx-slider">
+          <input type="range" min="1" max="360" step="1" value={angN} onChange={(e) => setAng(e.target.value)} aria-label="Ângulo do arco" />
+          <span className="sd-input-wrap"><input type="number" min="1" max="360" step="1" value={Ang} onChange={(e) => setAng(e.target.value)} /><b>°</b></span>
+        </div>
+        <div className="sdx-escala"><span>1°</span><span>180° = meio círculo</span><span>360°</span></div>
+      </div>
+      <div className="sdx-sec">
+        <div className="sdx-sec-h"><span>Overlap entre projetores</span></div>
+        <div className="sdx-slider">
+          <input type="range" min="0" max={SD_OV_MAX} step="0.5" value={Math.min(SD_OV_MAX, blendAsk)} onChange={(e) => setBl(e.target.value)} aria-label="Overlap" />
+          <span className="sd-input-wrap"><input type="number" min="0" max={SD_OV_MAX} step="0.5" value={Bl} onChange={(e) => setBl(e.target.value)} /><b>%</b></span>
+        </div>
+        <div className="sdx-escala"><span>0%</span><span>% da largura total</span><span>{SD_OV_MAX}%</span></div>
+        {(R.less > 0 || (blendAsk > 0 && R.N < 2)) && <div className="sdx-dica">{R.N < 2 ? "Overlap só existe com dois ou mais projetores — esta tela cabe em um."
+          : <>{sdFmt(R.Wn)} → <b>{sdFmt(R.Wpx)} px</b> · blend de <b>{sdFmt(R.ov)} px</b> {R.N > 2 ? `em cada uma das ${R.N - 1} junções` : "no meio"}{R.N > R.N0 ? ` · +${R.N - R.N0} projetor${R.N - R.N0 > 1 ? "es" : ""} pelo overlap` : ""}{blendAsk > SD_OV_MAX ? ` · limitado a ${SD_OV_MAX}%` : ""}</>}</div>}
+      </div>
+      <div className="sdx-sec sdx-linha">
+        <span>Quantidade de projetores</span>
+        <b className="sdx-num" title="Calculado pela largura da tela e pelo overlap">{R.totalProj}<small>calculado</small></b>
+      </div>
+      <SDVideoCampos vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} setSt={setSt} fit={fit} tela={[R.Wpx, R.Hpx]} />
+      <SDBleed on={Sg} setOn={setSg} pct={SgP} setPct={setSgP} bleed={bleed} areaLbl="tela" />
+    </>
+  );
 
-      <section className="sd-indicators">
-        <div className="sd-ind"><div className="sd-ind-lbl">Vídeo a produzir</div><div className="sd-ind-val">{sdFmt(R.Wpx)}×{sdFmt(R.Hpx)}</div><div className="sd-ind-sub">proporção {sdRatio(R.Wpx, R.Hpx)}</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Projetores 1920×1080</div><div className="sd-ind-val">{R.N}</div><div className="sd-ind-sub">cada um usa {sdFmt(R.pw)} × {sdFmt(R.Hpx)} · {sdM(R.projM)} × {sdM(a)} m</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Proporção da timeline</div><div className="sd-ind-val">{sdRatio(R.Wpx, R.Hpx)}</div><div className="sd-ind-sub">timeline {sdFmt(R.Wpx)} × {sdFmt(R.Hpx)} px{R.Wpx % 2 ? ` · largura ímpar, use ${sdFmt(R.Wpx + 1)}` : ""}</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Overlap</div><div className="sd-ind-val">{R.less ? `−${sdFmt(R.less)} px` : "nenhum"}</div><div className="sd-ind-sub">{R.less ? `${sdPct(blend / 100)} da largura · blend de ${sdFmt(R.ov)} px por junção · sem overlap ${sdFmt(R.Wn)}` : "projetores encostados, sem blend"}</div></div>
-        <div className="sd-ind sd-ind-safe"><div className="sd-ind-lbl">Área segura (margem 10%)</div><div className="sd-ind-val">{sdSafeTxt(R.Wpx, R.Hpx).replace(/ /g, "")}</div><div className="sd-ind-sub">{sdM(arc * 0.8)} × {sdM(a * 0.8)} m · textos aqui dentro</div></div>
-        <div className="sd-ind"><div className="sd-ind-lbl">Escala</div><div className="sd-ind-val">{R.scale.toFixed(1)}</div><div className="sd-ind-sub">px/m · raio {sdM(R.radiusM)} m</div></div>
-      </section>
+  const corte = fit ? (fit.over > 0.5 ? { val: sdPct((fit.dw - fit.aw) / fit.dw), sub: `${sdFmt(fit.over)} px (cada lado)` } : fit.over < -0.5 ? { val: "faixa vazia", sub: `${sdFmt(-fit.over)} px (cada lado)` } : { val: "nenhum", sub: "preenche a tela" }) : null;
+  const results = (
+    <>
+      <div className="sdx-card sdx-hero">
+        <em>Vídeo a produzir</em>
+        <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b>
+        <div className="sdx-chips"><span>{sdRatio(R.Wpx, R.Hpx)}</span><span>{sdForma(R.Wpx, R.Hpx)}</span>{!ready && <span className="vazio">padrão</span>}</div>
+      </div>
+      <div className="sdx-card sdx-safe">
+        <div><em>Área segura (margem 10%)</em><b>{sdSafeTxt(R.Wpx, R.Hpx).replace(/ /g, "")}</b><span>{sdM(arc * 0.8)} × {sdM(a * 0.8)} m</span></div>
+        <i>10%<small>margem</small></i>
+      </div>
+      <div className="sdx-dupla">
+        <div className="sdx-card"><em>Projetores</em><b>{R.totalProj}<SDI n="proj" s={18} /></b><span>{R.rows > 1 ? `${R.N} colunas × ${R.rows} linhas · sem overlap vertical` : `cada um ${sdFmt(R.pw)} × ${sdFmt(R.Hpx)}`}</span></div>
+        <div className="sdx-card"><em>Overlap</em><b>{sdPct(blend / 100)}</b><span>{R.less ? `−${sdFmt(R.less)} px · ${sdFmt(R.ov)} px/junção` : "projetores encostados"}</span></div>
+      </div>
+      <SDCompat fit={fit} />
+      <div className="sdx-card sdx-calc">
+        <em><SDI n="escala" s={14} />Dimensões calculadas</em>
+        <SDLinhas rows={[
+          ["Raio da sala", `${sdM(R.radiusM)} m`],
+          ["Abertura", R.chordM > 0 ? `${sdM(R.chordM)} m` : "círculo fechado"],
+          ["Fundo", `${sdM(R.depthM)} m`],
+          ["Curva × altura", `${sdM(arc)} × ${sdM(a)} m`],
+          ["Escala", `${R.scale.toFixed(1)} px/m`],
+          ["Corte por projetor", R.cut > 0.5 ? `${sdFmt(R.cut)} px cada borda` : "nenhum"],
+        ]} />
+        {R.Wpx % 2 ? <div className="sdx-dica">Largura ímpar: se o codec reclamar, use {sdFmt(R.Wpx + 1)}.</div> : null}
+      </div>
+    </>
+  );
+
+  const resumo = [
+    { ic: "filme", lbl: "Vídeo original", val: fit ? `${sdFmt(fit.vw)} × ${sdFmt(fit.vh)}` : "—", sub: fit ? sdRatio(fit.vw, fit.vh) : "nenhum testado" },
+    { ic: "corte", lbl: "Vídeo na tela", val: `${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)}`, sub: sdRatio(R.Wpx, R.Hpx) },
+    { ic: "escudo", lbl: "Área segura", val: sdSafeTxt(R.Wpx, R.Hpx), sub: "10% de margem", tom: "safe" },
+    { ic: "corte", lbl: "Corte necessário", val: corte ? corte.val : "—", sub: corte ? corte.sub : "sem vídeo testado", tom: fit && !fit.ok ? "bad" : "" },
+    { ic: "proj", lbl: "Projetores", val: String(R.totalProj), sub: R.less ? `overlap ${sdPct(blend / 100)}` : "sem overlap" },
+    { ic: "escala", lbl: "Escala", val: `${R.scale.toFixed(1)} px/m`, sub: `raio ${sdM(R.radiusM)} m` },
+  ];
+
+  const mapa = (
+    <div className="sd-stage sdx-mapa" ref={diagRef}>
+      <div className="sd-cell">
+        <div className="sd-flatwrap" style={{ width: R.Wpx * disp, height: R.Hpx * disp }}>
+          {R.cut > 0.5 && [`${-R.cut / R.Wpx * 100}%`, "100%"].map((left, i) => (
+            <div key={"c" + i} className={`sd-frame ${i ? "r" : "l"}`} style={{ left, width: `${R.cut / R.Wpx * 100}%` }}>
+              <span><b>−{sdFmt(R.cut)} px</b></span>
+            </div>
+          ))}
+          <div className="sd-flat" style={{ width: R.Wpx * disp, height: R.Hpx * disp }}>
+            <span className="sd-screen-lbl">Tela curva planificada</span>
+            <div className="sd-safe"><span>área segura {sdSafeTxt(R.Wpx, R.Hpx)}</span></div>
+            {R.projs.map((x, i) => (
+              <div key={i} className={`sd-proj ${i % 2 ? "odd" : ""}`} style={{ left: `${x / R.Wpx * 100}%`, width: `${R.pw / R.Wpx * 100}%` }}><span>{R.rows > 1 ? "Coluna " : "P"}{i + 1} · {sdFmt(R.pw)} × {sdFmt(R.Hpx)}{R.rows > 1 ? ` · ${R.rows} linhas` : ""}</span></div>
+            ))}
+            {junctions.map((j, i) => (
+              <div key={"j" + i} className="sd-blend" style={{ left: `${j.x0 / R.Wpx * 100}%`, width: `${(j.x1 - j.x0) / R.Wpx * 100}%` }}><span>overlap {sdFmt(j.x1 - j.x0)} px</span></div>
+            ))}
+          </div>
+          {Sg && <div className="sd-bbox" style={{ left: `${-bleed.f * 50}%`, right: `${-bleed.f * 50}%`, top: `${-bleed.f * 50}%`, bottom: `${-bleed.f * 50}%` }}><span>sangria {sdFmt(bleed.bw)} × {sdFmt(bleed.bh)}</span></div>}
+          {fit && <div className={`sd-vbox ${fit.ok ? "" : "bad"}`} style={{ left: `${Math.max(-0.02, fit.a) * 100}%`, width: `${(Math.min(1.02, fit.b) - Math.max(-0.02, fit.a)) * 100}%` }}><span>vídeo {sdFmt(fit.vw)} × {sdFmt(fit.vh)}{Math.abs(fit.st) > 0.0005 ? ` · ${fit.st > 0 ? "+" : "−"}${sdPct(Math.abs(fit.st))}` : ""}</span></div>}
+        </div>
+        <div className="sd-res">{sdM(arc)} × {sdM(a)} m · cada projetor usa {sdFmt(R.pw)} × {sdFmt(Math.min(R.Hpx,1080))}{R.rows > 1 ? ` · ${R.N} colunas × ${R.rows} linhas` : ""}{R.cut > 0.5 ? <> · faixas azuis: sobra do projetor</> : null}</div>
+      </div>
+      <div className="sd-topview">
+        <svg viewBox={top.vb} style={{ width: Math.min(260, 140 * top.ratio), aspectRatio: top.ratio }}>
+          <path d={top.path(0, 1)} fill="none" stroke="#5EC8F2" strokeWidth="0.05" strokeLinecap="round" />
+          {R.N > 1 && R.projs.map((x, i) => (
+            <path key={i} d={top.path(Math.max(0, x / R.Wpx), Math.min(1, (x + R.pw) / R.Wpx))} fill="none"
+                  stroke={i % 2 ? "rgba(255,255,255,.55)" : "rgba(255,255,255,.3)"} strokeWidth="0.03" transform={`scale(${i % 2 ? 0.9 : 0.94})`} />
+          ))}
+          <circle cx="0" cy="0" r="0.035" fill="#fff" opacity=".6" />
+        </svg>
+        <div className="sd-res">vista de cima · raio <b>{sdM(R.radiusM)} m</b>{R.chordM > 0 && <> · abertura <b>{sdM(R.chordM)} m</b></>} · fundo <b>{sdM(R.depthM)} m</b></div>
+      </div>
+      <div className="sd-safekey"><i />área segura · textos dentro do tracejado (10% de cada borda)</div>
+      {ready && R.Wpx < 1920 && R.rows === 1 && <div className="sd-note">Um projetor só: ele entrega 1920 px e a tela usa {sdFmt(R.Wpx)} px; o resto fica preto.</div>}
     </div>
+  );
+
+  const video = fit ? (
+    <div className="sdx-videotela">
+      <div className="sd-video-dimensions" aria-label="Medidas da sala e do vídeo original">
+        <div><span>Tela da sala</span><b>{sdFmt(fit.aw)} × {sdFmt(fit.ah)} <small>px</small></b><em>{sdRatio(fit.aw, fit.ah)} · largura × altura</em></div>
+        <div><span>Vídeo original · sem esticar</span><b>{sdFmt(fit.vw)} × {sdFmt(fit.vh)} <small>px</small></b><em>{sdRatio(fit.vw, fit.vh)} · largura × altura</em>
+          {fit.vh !== fit.ah && <i>Na base {sdFmt(fit.ah)}: {sdFmt(fit.sw)} × {sdFmt(fit.ah)} px</i>}</div>
+      </div>
+      <SDStretch fit={fit} st={St} setSt={setSt} />
+      <div className={`sd-vfit ${fit.ok ? "ok" : "bad"}`}>{fit.ok ? "✓ " : "⚠ "}{fit.msg}</div>
+    </div>
+  ) : <div className="sdx-vazio"><SDI n="filme" s={28} /><b>Teste um vídeo nesta tela</b><span>Informe a largura e a altura do vídeo original em Configurações. Aqui você vê como ele fica e pode esticar arrastando as bordas.</span></div>;
+
+  const tecnico = (
+    <div className="sdx-tec">
+      <div><h4>Medidas informadas</h4><SDLinhas rows={docRef.current.inputs} /></div>
+      <div><h4>Resultado técnico</h4><SDLinhas rows={docRef.current.details} /></div>
+    </div>
+  );
+
+  return (
+    <SDShell mode="curve" setMode={setMode} onReset={resetar} sheetRef={sheetRef} preview3dRef={preview3dRef}
+      config={config} results={results} resumo={resumo} mapa={mapa} video={video} tecnico={tecnico}
+      comp={<SDComparacao fit={fit} tela={[R.Wpx, R.Hpx]} rotuloTela="Tela da sala" />}
+      render3d={(vista, vistaN) => <SDPreview3D initView={view} vista={vista} vistaN={vistaN} res={{ curve: true, Wpx: R.Wpx, Hpx: R.Hpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM, ov: R.ov, bleed: Sg ? bleed.f : 0, fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok, st: fit.st } : null }} />} />
   );
 };
 
@@ -1462,7 +1804,7 @@ const SDPdfCurveDiagram = ({ R, fit }) => {
         ))}
         <div className="pd-strip" style={{ width: sw, height: sh, background: ac }}>
           {R.projs.map((x, i) => (
-            <div key={i} className={`pd-band ${i % 2 ? "odd" : ""}`} style={{ left: pct(x), width: pct(R.pw) }}><b>P{i + 1}<em>{sdFmt(R.pw)} × {sdFmt(R.Hpx)}</em></b></div>
+            <div key={i} className={`pd-band ${i % 2 ? "odd" : ""}`} style={{ left: pct(x), width: pct(R.pw) }}><b>{R.rows > 1 ? "Coluna " : "P"}{i + 1}<em>{sdFmt(R.pw)} × {sdFmt(R.Hpx)}{R.rows > 1 ? ` · ${R.rows} linhas` : ""}</em></b></div>
           ))}
           {junctions.map((j, i) => (
             <svg key={"j" + i} className="pd-blend" style={{ left: pct(j.x0), width: pct(j.x1 - j.x0) }} preserveAspectRatio="none">
@@ -1596,7 +1938,7 @@ const SDReport = ({ doc, shot }) => {
       </section>
 
       <footer className="pd-foot">
-        <span>A altura da projeção é sempre 1080 px  ·  escala = 1080 ÷ altura em metros  ·  projetores 1920×1080</span>
+        <span>Altura padrão 1080 px, com opção de altura final personalizada · proporção preservada · projetores 1920×1080</span>
         <span>Framety · Grupo Skyline</span>
       </footer>
     </div>
@@ -1964,15 +2306,15 @@ const ScreenDimensionPage = () => {
       <SDParticleWave />
 
       <header className="sd-head">
-        <h1 className="sd-title"><img className="sd-logo" src="/aspecty_logo.svg" alt="Aspecty" /></h1>
+        <h1 className="sd-title"><img className="sd-logo" src="/aspecty_logo.svg" alt="Aspecty" /><span className="sdx-sub">Planejamento de projeção imersiva</span></h1>
         <nav className="sd-tabs">
-          {SD_MODES.map((m) => (
-            <button key={m.id} className={`sd-tab ${mode === m.id ? "on" : ""}`} onClick={() => setMode(m.id)}>{m.label}</button>
+          {SD_MODES.slice().reverse().map((m) => (
+            <button key={m.id} className={`sd-tab ${mode === m.id ? "on" : ""}`} onClick={() => setMode(m.id)}><SDI n={m.id === "curve" ? "curva" : "ret"} />{m.label}</button>
           ))}
         </nav>
-        <button className="sd-btn ghost" onClick={share} title="Copia o link desta sala com as medidas digitadas">Compartilhar</button>
-        <button className="sd-btn ghost" onClick={() => setDrawer(true)}>Fichas salvas</button>
-        <button className="sd-export" onClick={() => setModal(true)} disabled={!!busyMsg}>{busyMsg || "Exportar PDF"}</button>
+        <button className="sd-btn ghost" onClick={share} title="Copia o link desta sala com as medidas digitadas"><SDI n="share" />Compartilhar</button>
+        <button className="sd-btn ghost" onClick={() => setDrawer(true)}><SDI n="pasta" />Fichas salvas</button>
+        <button className="sd-export" onClick={() => setModal(true)} disabled={!!busyMsg}><SDI n="pdf" />{busyMsg || "Exportar PDF"}</button>
       </header>
 
       {current && (
@@ -1982,7 +2324,7 @@ const ScreenDimensionPage = () => {
         </div>
       )}
 
-      <Mode key={`${mode}-${loadKey}`} sheetRef={sheetRef} preview3dRef={preview3dRef} docRef={docRef}
+      <Mode key={`${mode}-${loadKey}`} sheetRef={sheetRef} preview3dRef={preview3dRef} docRef={docRef} setMode={setMode}
             initial={init?.inputs || (urlInit.inputs && urlInit.mode === mode ? urlInit.inputs : undefined)} view={init?.view || undefined} />
 
       {modal && <SDExportModal current={current} onClose={() => setModal(false)} onGo={onExport} />}
@@ -2490,4 +2832,214 @@ const SD_CSS = `
  .sd-rect-measures .sd-room-measures{max-width:none}
 }
 @media(max-width:1199px){.sd-rect-measures .sd-room-measures{margin:0 auto}}
+
+/* ── Sala semicircular, versão limpa (15/10/2026): medidas em dois grupos
+   (Tela = resolução · Sala = geometria), resultado em destaque no topo. ── */
+.sd-cv{ display:flex; flex-wrap:wrap; gap:12px; width:100%; }
+.sd-cv-g{ flex:1 1 320px; min-width:0; display:flex; flex-direction:column; gap:10px; padding:12px 14px 14px;
+  background:rgba(255,255,255,.025); border:1px solid var(--sd-line); border-radius:14px; }
+.sd-cv-tela{ flex-grow:1.2; }
+.sd-cv-h{ display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:30px; }
+.sd-cv-h > b{ font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--sd-mute); font-weight:600; }
+.sd-cv-in{ display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; }
+.sd-cv-x{ font-size:20px; color:var(--sd-mute); padding-bottom:9px; }
+.sd-campo{ display:flex; flex-direction:column; gap:6px; flex:1 1 110px; min-width:0; }
+.sd-campo.grande{ flex-basis:150px; }
+.sd-campo-l{ font-size:12px; color:#d9dce2; font-weight:500; display:flex; align-items:baseline; gap:7px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sd-campo-l em{ font-style:normal; font-size:10px; color:#6f737d; font-weight:400; overflow:hidden; text-overflow:ellipsis; }
+.sd-campo .sd-input-wrap{ width:100%; }
+.sd-campo .sd-input-wrap input{ flex:1; width:auto; min-width:0; text-align:right; font-size:15px; padding:8px 8px 8px 10px; font-variant-numeric:tabular-nums; }
+.sd-campo.grande .sd-input-wrap input{ font-size:20px; font-weight:600; padding:10px 8px 10px 12px; }
+.sd-cv-ov{ margin-top:10px; font-size:11.5px; color:#f0d7b8; text-align:center; padding:7px 10px; border-radius:10px;
+  border:1px solid rgba(255,207,158,.35); background:rgba(255,207,158,.05); }
+.sd-cv-ov b{ color:#fff; font-weight:600; }
+.sd-hero{ width:100%; display:flex; flex-direction:column; align-items:center; gap:6px; padding:6px 0 4px; }
+.sd-hero-k{ font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--sd-mute); }
+.sd-hero-v{ font-size:clamp(26px,3vw,38px); font-weight:650; letter-spacing:-.03em; color:#fff; font-variant-numeric:tabular-nums; line-height:1; }
+.sd-hero-v small{ font-size:.42em; font-weight:500; color:var(--sd-mute); letter-spacing:0; }
+.sd-hero-c{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+.sd-hero-c span{ font-size:11px; color:#dfe2e8; padding:3px 10px; border-radius:999px; border:1px solid var(--sd-line-2); background:rgba(255,255,255,.03); }
+.sd-hero-c span:first-child{ color:#fff; font-weight:600; }
+.sd-hero em{ font-style:normal; font-size:11px; color:#ffcf9e; }
+.sd-hero.vazio .sd-hero-v, .sd-hero.vazio .sd-hero-c{ opacity:.35; }
+.sd-curve .sd-indicators{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+@media (max-width:820px){ .sd-curve .sd-indicators{ grid-template-columns:1fr; } }
+.sd-curve .sd-frame span{ font-size:10px; }
+@media (max-width:520px){ .sd-cv-x{ display:none; } }
+
+/* ══ Layout em painéis (15/10/2026): configurações · visualização · resultados · resumo ══ */
+.sd-page{ --sdx-bg:#05080d; --sdx-panel:rgba(11,16,24,.86); --sdx-line:rgba(120,170,210,.13); --sdx-line2:rgba(120,170,210,.22);
+  --sdx-ac:#46d3e6; --sdx-ac2:rgba(70,211,230,.14); --sdx-ok:#3ddc97; --sdx-bad:#ff5d6c; --sdx-mute:#8792a2; --sdx-text:#e9eef5;
+  --sd-w:1920px; background:var(--sdx-bg); justify-content:flex-start; height:auto !important; min-height:100dvh; padding:12px 18px 14px; gap:10px; }
+.sd-head{ gap:12px; border-bottom:0; padding-bottom:4px; }
+.sd-title{ display:flex; flex-direction:column; gap:2px; }
+.sdx-sub{ font-family:var(--font-sans,'Inter',system-ui,sans-serif); font-size:10.5px; font-weight:500; letter-spacing:.06em; color:var(--sdx-mute); }
+.sd-tabs{ margin-right:auto; background:rgba(255,255,255,.03); border:1px solid var(--sdx-line); padding:4px; border-radius:12px; }
+.sd-tab{ display:inline-flex; align-items:center; gap:8px; border-radius:9px; padding:8px 16px; color:var(--sdx-mute); }
+.sd-tab.on{ background:var(--sdx-ac2); color:#fff; box-shadow:inset 0 0 0 1px rgba(70,211,230,.55); }
+.sd-head .sd-btn.ghost{ display:inline-flex; align-items:center; gap:8px; border-radius:10px; border-color:var(--sdx-line2); }
+.sd-export{ display:inline-flex; align-items:center; gap:8px; background:var(--sdx-ac); color:#03141a; border-radius:10px; box-shadow:0 0 0 1px rgba(70,211,230,.6), 0 8px 28px rgba(70,211,230,.22); }
+.sdx-ic{ flex:none; }
+
+.sdx{ display:grid; grid-template-columns:300px minmax(0,1fr) 300px; grid-template-rows:minmax(560px,calc(100dvh - 210px)) auto; gap:12px; width:100%; max-width:var(--sd-w); margin:0 auto; }
+.sdx-config, .sdx-res, .sdx-centro, .sdx-resumo{ background:var(--sdx-panel); border:1px solid var(--sdx-line); border-radius:16px; min-width:0; min-height:0; }
+.sdx-config, .sdx-res{ overflow:auto; padding:14px; display:flex; flex-direction:column; gap:12px; scrollbar-width:thin; }
+.sdx-ph{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.sdx-ph > b{ display:inline-flex; align-items:center; gap:9px; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#fff; font-weight:700; }
+.sdx-ph > b .sdx-ic{ color:var(--sdx-ac); }
+.sdx-link{ display:inline-flex; align-items:center; gap:6px; background:none; border:0; color:var(--sdx-mute); font:inherit; font-size:11.5px; cursor:pointer; padding:4px 6px; border-radius:6px; }
+.sdx-link:hover{ color:#fff; background:rgba(255,255,255,.05); }
+.sdx-sec{ display:flex; flex-direction:column; gap:9px; padding-top:12px; border-top:1px solid var(--sdx-line); }
+.sdx-sec-h{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.sdx-sec-h > span{ font-size:12px; color:#cfd6e0; font-weight:600; }
+.sdx-sec-h .sd-units button{ padding:4px 8px; font-size:10.5px; }
+.sdx-tipo{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.sdx-tipo button{ display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:10px 8px; border-radius:10px; border:1px solid var(--sdx-line2); background:rgba(255,255,255,.02); color:var(--sdx-mute); font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+.sdx-tipo button.on{ color:#fff; background:var(--sdx-ac2); border-color:rgba(70,211,230,.6); }
+.sdx-par{ display:flex; align-items:flex-end; gap:8px; }
+.sdx-par > .sd-campo{ flex:1 1 0; }
+.sdx-tres > .sd-campo .sd-input-wrap input{ font-size:13px; }
+.sdx-par-s{ color:var(--sdx-mute); padding-bottom:11px; flex:none; }
+.sdx .sd-campo{ gap:5px; }
+.sdx-sec > .sd-campo, .sdx-sec > label, .sdx-sec > div{ flex:none; }
+.sdx .sd-campo-l{ font-size:11px; color:var(--sdx-mute); font-weight:500; }
+.sdx .sd-campo-l em{ font-size:9.5px; }
+.sdx .sd-input-wrap{ background:rgba(255,255,255,.035); border-color:var(--sdx-line2); border-radius:9px; }
+.sdx .sd-campo .sd-input-wrap input, .sdx .sd-input-wrap input{ font-size:15px; font-weight:600; padding:8px 6px 8px 10px; color:#fff; text-align:right; }
+.sdx .sd-input-wrap b{ color:var(--sdx-mute); font-size:11px; font-weight:500; }
+.sdx-slider{ display:flex; align-items:center; gap:10px; }
+.sdx-slider input[type=range]{ flex:1; min-width:0; accent-color:var(--sdx-ac); height:4px; }
+.sdx-slider .sd-input-wrap{ width:92px; flex:none; }
+.sdx-escala{ display:flex; justify-content:space-between; font-size:9.5px; color:#5d6776; margin-top:-4px; }
+.sdx-dica{ font-size:11px; line-height:1.45; color:var(--sdx-mute); }
+.sdx-dica b{ color:#fff; }
+.sdx-linha{ flex-direction:row; align-items:center; justify-content:space-between; }
+.sdx-linha > span{ font-size:12px; color:#cfd6e0; font-weight:600; }
+.sdx-num{ display:inline-flex; align-items:baseline; gap:7px; font-size:20px; color:#fff; padding:4px 12px; border-radius:9px; border:1px solid var(--sdx-line2); background:rgba(255,255,255,.03); }
+.sdx-num small{ font-size:9.5px; color:var(--sdx-mute); font-weight:500; }
+.sdx-check{ display:flex; align-items:center; gap:9px; font-size:12px; color:#cfd6e0; cursor:pointer; }
+.sdx-check input{ accent-color:var(--sdx-ac); width:15px; height:15px; }
+.sdx-check em{ font-style:normal; color:var(--sdx-mute); font-size:10.5px; margin-left:4px; }
+.sdx-aviso{ display:flex; gap:10px; padding:10px 12px; border-radius:11px; font-size:11px; line-height:1.45; color:#f4d7a6; background:rgba(245,166,35,.08); border:1px solid rgba(245,166,35,.45); }
+.sdx-aviso .sdx-ic{ color:#f5a623; margin-top:1px; }
+.sdx-aviso b{ display:block; color:#ffc35c; font-size:11.5px; margin-bottom:2px; }
+.sdx-aviso.bad{ color:#ffd0d4; background:rgba(255,93,108,.08); border-color:rgba(255,93,108,.5); }
+.sdx-aviso.bad .sdx-ic, .sdx-aviso.bad b{ color:#ff7d89; }
+.sdx-aviso.ok{ color:#c9f5df; background:rgba(61,220,151,.07); border-color:rgba(61,220,151,.4); }
+.sdx-aviso.ok .sdx-ic, .sdx-aviso.ok b{ color:var(--sdx-ok); }
+.sdx .sd-bleed{ border-radius:12px; border-color:var(--sdx-line); background:rgba(255,255,255,.02); }
+
+.sdx-centro{ display:flex; flex-direction:column; overflow:hidden; }
+.sdx-ctop{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 12px; border-bottom:1px solid var(--sdx-line); }
+.sdx-abas, .sdx-vistas{ display:inline-flex; gap:3px; padding:3px; border-radius:11px; background:rgba(255,255,255,.03); border:1px solid var(--sdx-line); }
+.sdx-abas button, .sdx-vistas button{ background:none; border:0; color:var(--sdx-mute); font:inherit; font-size:12px; font-weight:600; padding:7px 13px; border-radius:8px; cursor:pointer; white-space:nowrap; }
+.sdx-abas button:hover, .sdx-vistas button:hover{ color:#fff; }
+.sdx-abas button.on, .sdx-vistas button.on{ color:#fff; background:var(--sdx-ac2); box-shadow:inset 0 0 0 1px rgba(70,211,230,.5); }
+.sdx-view{ position:relative; flex:1; min-height:0; }
+.sdx-3d{ position:absolute; inset:0; }
+.sdx-3d .sd-3dwrap{ position:absolute; inset:0; height:auto !important; min-height:0 !important; border:0; border-radius:0; background:radial-gradient(ellipse at 50% 40%, #0d1826 0%, #05080d 70%); }
+.sdx-3d .sd-3dcanvas{ height:100%; min-height:0; }
+.sdx-3d .sd-3dhint{ display:none; }
+.sdx-camada{ position:absolute; inset:0; overflow:auto; background:#05080d; padding:20px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:14px; }
+.sdx-camada > :first-child{ margin-top:auto; }
+.sdx-camada > :last-child{ margin-bottom:auto; }
+.sdx-dicas{ position:absolute; left:50%; bottom:14px; transform:translateX(-50%); display:flex; gap:18px; padding:9px 16px; border-radius:12px; background:rgba(5,8,13,.78); border:1px solid var(--sdx-line); font-size:11px; color:#aeb8c6; pointer-events:none; white-space:nowrap; backdrop-filter:blur(8px); }
+.sdx-dicas span{ display:inline-flex; align-items:center; gap:7px; }
+.sdx-dicas span + span{ padding-left:18px; border-left:1px solid var(--sdx-line2); }
+.sdx-mapa{ background:none !important; border:0 !important; width:100%; padding:0 !important; overflow:visible !important; }
+.sdx-vazio{ display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; max-width:380px; color:var(--sdx-mute); font-size:12px; line-height:1.5; }
+.sdx-vazio .sdx-ic{ color:var(--sdx-ac); opacity:.8; }
+.sdx-vazio b{ color:#fff; font-size:14px; }
+.sdx-videotela{ width:100%; max-width:720px; display:flex; flex-direction:column; gap:12px; align-items:center; }
+.sdx-videotela .sd-video-dimensions{ width:100%; }
+.sdx-comp{ width:100%; max-width:720px; display:flex; flex-direction:column; align-items:center; gap:16px; }
+.sdx-comp-g{ position:relative; }
+.sdx-comp-tela, .sdx-comp-video{ position:absolute; top:0; bottom:0; border-radius:4px; }
+.sdx-comp-tela{ border:2px solid var(--sdx-ac); background:rgba(70,211,230,.08); }
+.sdx-comp-video{ border:2px dashed #b48cff; background:rgba(168,85,247,.08); }
+.sdx-comp-video.bad{ border-color:var(--sdx-bad); background:rgba(255,93,108,.07); }
+.sdx-comp-tela span, .sdx-comp-video span{ position:absolute; font-size:10px; font-weight:600; padding:2px 7px; border-radius:5px; background:rgba(5,8,13,.85); white-space:nowrap; }
+.sdx-comp-tela span{ top:6px; left:6px; color:var(--sdx-ac); }
+.sdx-comp-video span{ bottom:6px; right:6px; color:#c9a8ff; }
+.sdx-comp-n{ display:grid; grid-template-columns:1fr 1fr; gap:10px; width:100%; }
+.sdx-comp-n > div{ display:flex; flex-direction:column; gap:3px; padding:12px 14px; border-radius:12px; border:1px solid var(--sdx-line); background:rgba(255,255,255,.02); }
+.sdx-comp-n em{ font-style:normal; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--sdx-mute); }
+.sdx-comp-n b{ font-size:20px; color:#fff; font-variant-numeric:tabular-nums; }
+.sdx-comp-n span{ font-size:11px; color:var(--sdx-mute); }
+.sdx-tec{ width:100%; max-width:760px; display:grid; grid-template-columns:1fr 1fr; gap:16px; align-self:flex-start; }
+.sdx-tec h4{ margin:0 0 8px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--sdx-ac); }
+
+.sdx-card{ border-radius:13px; border:1px solid var(--sdx-line); background:rgba(255,255,255,.025); padding:12px 14px; display:flex; flex-direction:column; gap:4px; min-width:0; }
+.sdx-card > em, .sdx-card em{ font-style:normal; font-size:10.5px; color:var(--sdx-mute); display:inline-flex; align-items:center; gap:7px; }
+.sdx-card > b{ font-size:22px; color:#fff; font-weight:650; letter-spacing:-.02em; font-variant-numeric:tabular-nums; display:inline-flex; align-items:center; gap:8px; }
+.sdx-card > span{ font-size:11px; color:var(--sdx-mute); }
+.sdx-hero > b{ font-size:30px; }
+.sdx-chips{ display:flex; gap:6px; flex-wrap:wrap; margin-top:3px; }
+.sdx-chips span{ font-size:10.5px; padding:3px 9px; border-radius:7px; background:rgba(255,255,255,.06); color:#dbe3ee; }
+.sdx-chips span.vazio{ color:#ffcf9e; }
+.sdx-safe{ flex-direction:row; align-items:center; justify-content:space-between; border-color:rgba(61,220,151,.28); background:rgba(61,220,151,.04); }
+.sdx-safe > div{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+.sdx-safe b{ font-size:24px; color:var(--sdx-ok); font-weight:650; font-variant-numeric:tabular-nums; }
+.sdx-safe span{ font-size:11px; color:var(--sdx-mute); }
+.sdx-safe > i{ font-style:normal; display:flex; flex-direction:column; align-items:center; padding:8px 10px; border-radius:10px; border:1px solid rgba(61,220,151,.4); color:var(--sdx-ok); font-weight:700; font-size:14px; }
+.sdx-safe > i small{ font-size:9px; font-weight:500; color:#7fcfa9; }
+.sdx-dupla{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.sdx-dupla .sdx-card > b{ font-size:17px; white-space:nowrap; }
+.sdx-dupla .sdx-card{ overflow:hidden; }
+.sdx-dupla .sdx-card > b .sdx-ic{ color:var(--sdx-mute); }
+.sdx-compat{ flex-direction:row; align-items:flex-start; gap:10px; }
+.sdx-compat > div{ display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }
+.sdx-compat > div b{ font-size:13px; color:#fff; }
+.sdx-compat > div span{ font-size:11px; line-height:1.45; color:var(--sdx-mute); }
+.sdx-compat > em{ font-style:normal; font-weight:700; font-size:12px; padding:3px 8px; border-radius:7px; flex:none; }
+.sdx-compat.ok{ border-color:rgba(61,220,151,.4); background:rgba(61,220,151,.05); }
+.sdx-compat.ok > .sdx-ic, .sdx-compat.ok > div b{ color:var(--sdx-ok); }
+.sdx-compat.ok > em{ color:var(--sdx-ok); background:rgba(61,220,151,.12); }
+.sdx-compat.bad{ border-color:rgba(255,93,108,.55); background:rgba(255,93,108,.07); }
+.sdx-compat.bad > .sdx-ic, .sdx-compat.bad > div b{ color:#ff7d89; }
+.sdx-compat.bad > div span{ color:#f2c1c6; }
+.sdx-compat.bad > em{ color:#ff7d89; background:rgba(255,93,108,.14); }
+.sdx-compat.neutro > .sdx-ic{ color:var(--sdx-ac); }
+.sdx-linhas{ display:flex; flex-direction:column; margin-top:4px; }
+.sdx-linhas > div{ display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid rgba(120,170,210,.08); font-size:11.5px; }
+.sdx-linhas > div:last-child{ border-bottom:0; }
+.sdx-linhas span{ color:var(--sdx-mute); }
+.sdx-linhas b{ color:#fff; font-weight:600; text-align:right; font-variant-numeric:tabular-nums; }
+.sdx-linhas b small{ display:block; font-weight:400; color:var(--sdx-mute); font-size:10px; }
+
+.sdx-resumo{ grid-column:1/-1; display:flex; align-items:stretch; gap:8px; padding:12px; overflow-x:auto; scrollbar-width:thin; }
+.sdx-resumo-t{ display:flex; align-items:center; gap:10px; padding:0 10px 0 4px; flex:none; font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; }
+.sdx-resumo-t .sdx-ic{ color:var(--sdx-ac); }
+.sdx-resumo-s{ display:flex; align-items:center; color:#4b5666; flex:none; }
+.sdx-resumo-i{ flex:1 1 0; min-width:150px; display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; border:1px solid var(--sdx-line); background:rgba(255,255,255,.02); }
+.sdx-resumo-i > .sdx-ic{ color:#aeb8c6; }
+.sdx-resumo-i > div{ display:flex; flex-direction:column; min-width:0; }
+.sdx-resumo-i em{ font-style:normal; font-size:10px; color:var(--sdx-mute); }
+.sdx-resumo-i b{ font-size:14px; color:#fff; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.sdx-resumo-i span{ font-size:10px; color:var(--sdx-mute); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sdx-resumo-i.safe{ border-color:rgba(61,220,151,.35); background:rgba(61,220,151,.05); }
+.sdx-resumo-i.safe > .sdx-ic, .sdx-resumo-i.safe b{ color:var(--sdx-ok); }
+.sdx-resumo-i.bad{ border-color:rgba(255,93,108,.45); background:rgba(255,93,108,.06); }
+.sdx-resumo-i.bad > .sdx-ic, .sdx-resumo-i.bad b{ color:#ff7d89; }
+
+@media (max-width:1280px){ .sdx{ grid-template-columns:280px minmax(0,1fr); grid-template-rows:minmax(520px,calc(100dvh - 210px)) auto auto; } .sdx-res{ grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); align-items:start; } .sdx-res > .sdx-ph{ grid-column:1/-1; } }
+@media (max-width:820px){
+  .sdx{ grid-template-columns:minmax(0,1fr); grid-template-rows:auto; }
+  .sdx-centro{ order:-1; }
+  .sdx-view{ flex:none; height:420px; }
+  .sdx-config, .sdx-res{ overflow:visible; }
+  .sdx-dicas{ display:none; }
+  .sdx-ctop{ justify-content:center; }
+  .sdx-abas{ overflow-x:auto; max-width:100%; }
+  .sdx-tec, .sdx-comp-n{ grid-template-columns:1fr; }
+  .sdx-resumo{ flex-direction:column; }
+  .sdx-resumo-s{ display:none; }
+  .sd-tabs{ order:3; width:100%; justify-content:center; }
+}
+
+
+/* Altura final de saída, opcional, após as dimensões físicas. */
+.sd-height-override > .sd-campo{flex:initial}
+.sd-height-override{display:flex;flex-direction:column;gap:9px;padding-top:10px;border-top:1px solid var(--sdx-line,var(--sd-line));width:100%}
+
 `;
