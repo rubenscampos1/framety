@@ -5,6 +5,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **FramePlus: aprovação de posts e lembretes presos à data.** Post novo de quem não é administrador nasce aguardando aprovação (de administrador já nasce aprovado; antigos contam como aprovados). `POST /api/framyo/posts/:id/aprovar` (só administrador) aprova ou desfaz; ao aprovar, quem criou recebe "Seu post foi aprovado" por um canal próprio no `/eventos` (`?posts=N`), que os programas antigos ignoram. Lembretes de postagem passam a ser marcados junto com a data do post que usaram (marcas antigas continuam valendo) e cada envio fica registrado no post para conferência.
+
 - **FramePlus: link do YouTube quase instantâneo.** O trabalhador do FramePlus espera tarefa no servidor e é acordado no instante em que um envio entra na fila (antes consultava a cada 20 s). Tentativas temporárias recuam de 3 s até 60 s (antes, 60 s fixos). O link aparece assim que o YouTube confirma o envio. Proteções de exclusão inalteradas (40/40).
 
 - **FramePlus: apagar versão nunca leva a pilha inteira.** Um DELETE direto num arquivo empilhado podia apagar a pilha toda no Frame.io (todas as versões e o item nos links de revisão). Agora o servidor tira a versão da pilha, confere que a pilha e as outras versões continuam, e só então apaga o arquivo solto. Recusa apagar pilha, pasta ou a última versão; qualquer dúvida interrompe antes de apagar. Vale também para programas antigos.

@@ -214,7 +214,23 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
       arquivos: (p.arquivos || []).map((a) => Object.assign({}, a, a.id ? { capa: linkMidia(p.id, a.id, 'capa'), arquivo: linkMidia(p.id, a.id, 'arquivo') } : {})),
       arquivos_n: p.arquivos_n || 0, enviado, enviado_manual: !!p.enviado_manual,
       verificado_em: p.verificado_em || null,
+      // Aprovação (16/10/2026): posts antigos, sem o campo, contam como aprovados.
+      aprovado: p.aprovado !== false, aprovado_por: p.aprovado ? pessoa(p.aprovado_por) : null, aprovado_em: p.aprovado ? p.aprovado_em || null : null,
+      // Últimos lembretes enviados, com a data do post que cada um usou (para conferir).
+      lembretes: (p.lembretes_log || []).slice(-6),
     };
+  }
+
+  // ── avisos de post (aprovado) — canal próprio, por pessoa ───────────────────
+  // Fica fora da lista de avisos de comentário: os programas antigos mostrariam
+  // qualquer item de lá como "Novo comentário no vídeo". Cada programa guarda o
+  // último nº que já viu e pergunta pelo que veio depois (?posts=N no /eventos).
+  const avisosPosts = () => D().avisos_posts || (D().avisos_posts = []);
+  function avisosPara(u, desde) {
+    const seq = D().seq_posts || 0;
+    if (desde === null || desde === undefined || !u) return { seq, avisos: [] };   // primeira vez: começa do agora
+    return { seq, avisos: avisosPosts().filter((a) => a.para_id === u.id && a.seq > desde).slice(-20)
+      .map((a) => ({ seq: a.seq, tipo: a.tipo, post_id: a.post_id, titulo: a.titulo, data: a.data, formato: a.formato, por: pessoa(a.por_id), em: a.em })) };
   }
 
   // Pasta no Drive: tenta, e guarda o erro no post (o post nunca se perde por causa do Drive).
@@ -296,6 +312,9 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
       criador_id: req.usuario.id, criado_em: agora(), avisos: {},
     });
     p.atualizado_em = agora();
+    // Post de administrador já nasce aprovado; os demais esperam um administrador avaliar.
+    p.aprovado = !!req.usuario.admin;
+    if (p.aprovado) { p.aprovado_por = req.usuario.id; p.aprovado_em = agora(); }
     posts().push(p);
     await pasta(p);
     await salvarOuDesfazer(() => { const i = posts().indexOf(p); if (i >= 0) posts().splice(i, 1); });
@@ -345,6 +364,29 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     res.json({ ok: true });
   }));
 
+  // Aprovar (ou desfazer a aprovação de) um post. Só administradores. Ao aprovar
+  // um post que estava aguardando, quem criou recebe "Seu post foi aprovado".
+  r.post('/posts/:id/aprovar', autenticar, soAdmin, envolve(async (req, res) => {
+    const p = posts().find((x) => x.id === req.params.id);
+    if (!p) throw falha(404, 'Esse post não existe mais.');
+    const sim = (req.body || {}).aprovado !== false;
+    const antes = { aprovado: p.aprovado, aprovado_por: p.aprovado_por, aprovado_em: p.aprovado_em, atualizado_em: p.atualizado_em };
+    const lista = avisosPosts(), tamanho = lista.length, seqAntes = D().seq_posts || 0;
+    const estavaAguardando = p.aprovado === false;
+    p.aprovado = sim;
+    p.aprovado_por = sim ? req.usuario.id : null;
+    p.aprovado_em = sim ? agora() : null;
+    p.atualizado_em = agora();
+    if (sim && estavaAguardando && p.criador_id && p.criador_id !== req.usuario.id) {
+      D().seq_posts = seqAntes + 1;
+      lista.push({ seq: D().seq_posts, para_id: p.criador_id, tipo: 'post_aprovado', post_id: p.id, titulo: p.titulo || (p.descricao || '').slice(0, 80),
+        data: p.data || null, formato: FORMATOS[p.formato], por_id: req.usuario.id, em: agora() });
+      if (lista.length > 500) lista.splice(0, lista.length - 500);
+    }
+    await salvarOuDesfazer(() => { Object.assign(p, antes); lista.length = tamanho; D().seq_posts = seqAntes; });
+    res.json({ post: publico(p) });
+  }));
+
   // Conferir agora a pasta de um post (botão "Atualizar" no Framyo).
   r.post('/posts/:id/conferir', autenticar, envolve(async (req, res) => {
     const p = posts().find((x) => x.id === req.params.id);
@@ -370,25 +412,37 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
       const nome = p.titulo || (p.descricao || '').slice(0, 80);
       const quando = dias === 0 ? 'hoje' : dias === 1 ? 'amanhã' : `em ${dias} dias`;
       const av = p.avisos || (p.avisos = {});
+      // Cada lembrete fica marcado JUNTO com a data do post que ele usou: um
+      // lembrete da data antiga nunca vale para a nova (nem a impede), e cada
+      // envio fica registrado em lembretes_log para conferir depois.
+      const k = (etapa) => `${p.data}|${etapa}`;
+      const marcar = (etapa) => {
+        av[k(etapa)] = agora();
+        const log = p.lembretes_log || (p.lembretes_log = []);
+        log.push({ etapa, data: p.data, para: pessoa(u.id) ? pessoa(u.id).usuario : u.id, em: agora() });
+        if (log.length > 20) log.splice(0, log.length - 20);
+      };
+      // marcas antigas (sem data, de antes de 16/10/2026) valem para a data atual: elas já eram apagadas quando a data mudava
+      const jaFoi = (etapa) => !!(av[k(etapa)] || av[etapa]);
       const base = { post: publico(p), formato: FORMATOS[p.formato], data: p.data };
       if (resp === u.id) {
         if (!enviado) {
           const etapa = dias <= 1 ? '1' : dias <= 3 ? '3' : '7';
-          if (!av[etapa]) {
-            av[etapa] = agora();
+          if (!jaFoi(etapa)) {
+            marcar(etapa);
             saida.push(Object.assign(base, { tipo: 'pendente', etapa, titulo: dias <= 1
               ? `Seu post é ${quando} e o arquivo ainda não foi enviado`
               : `Faltam ${dias} dias para o seu post`, texto: `${FORMATOS[p.formato]} de ${ddmm(p.data)} · ${nome}`,
               rodape: 'Finalize e envie o arquivo na pasta do post no Drive' }));
           }
-        } else if (dias === 1 && !av.ok) {
-          av.ok = agora();
+        } else if (dias === 1 && !jaFoi('ok')) {
+          marcar('ok');
           saida.push(Object.assign(base, { tipo: 'ok', titulo: 'Seu post será postado amanhã, e validado.',
             texto: `${FORMATOS[p.formato]} de ${ddmm(p.data)} · ${nome}`, rodape: 'Nenhuma ação necessária.' }));
         }
       }
-      if (p.criador_id === u.id && resp !== u.id && !enviado && dias <= 1 && !av.criador) {
-        av.criador = agora();
+      if (p.criador_id === u.id && resp !== u.id && !enviado && dias <= 1 && !jaFoi('criador')) {
+        marcar('criador');
         const r2 = pessoa(resp);
         saida.push(Object.assign(base, { tipo: 'atrasado', titulo: `O post de ${quando} de @${r2 ? r2.usuario : '?'} ainda não foi enviado`,
           texto: `${FORMATOS[p.formato]} de ${ddmm(p.data)} · ${nome}`, rodape: 'Você criou este post' }));
@@ -463,7 +517,7 @@ function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pag
     res.json(estadoDrive());
   }));
 
-  return { estadoDrive, google: g };
+  return { estadoDrive, google: g, avisosPara };
 }
 
 module.exports = { montarPosts, idDaPasta, hojeBR, diasAte };

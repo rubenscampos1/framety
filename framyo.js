@@ -26,6 +26,7 @@ const { montarChat } = require('./framyo-chat');
 const { montarYoutube, EVENTS: EVENTOS_YOUTUBE } = require('./framyo-youtube');
 const { apagarVersao } = require('./framyo-apagar');
 let chatApi = null;            // montado junto com as rotas; o /eventos consulta o resumo do chat
+let postsApi = null;           // idem: avisos de post aprovado (?posts=N no /eventos)
 
 // As duas variáveis de endereço existem só para os testes (um Frame.io falso).
 const FRAMEIO = process.env.FRAMYO_TESTE_FRAMEIO || 'https://api.frame.io/v4';
@@ -679,8 +680,11 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     // versao: a última publicada — o programa pergunta a cada 3 s e avisa na hora.
     // chat: total de não lidas e o que chegou depois do nº que este programa já viu (?chat=N)
     const chatVisto = req.query.chat === undefined ? null : Number(req.query.chat) || 0;
+    // posts: avisos de post aprovado, num canal à parte (programas antigos ignoram)
+    const postsVisto = req.query.posts === undefined ? null : Number(req.query.posts) || 0;
     res.json({ seq: D().seq, modo: D().config.notificacoes, eventos, atualizar: forcar,
                chat: chatApi ? chatApi.resumo(u, chatVisto) : null,
+               posts: postsApi ? postsApi.avisosPara(u, postsVisto) : null,
                versao: pub && pub.versao ? { versao: pub.versao, notas: pub.notas || '', tamanho: pub.tamanho } : null });
   }));
 
@@ -1450,7 +1454,8 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   const youtube = montarYoutube({ r, loja, fio, autenticar, soAdmin, envolve, pagina,
     urlPublica: URL_PUBLICA, registrarWebhooks });
 
-  const { google } = montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica: URL_PUBLICA });
+  postsApi = montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica: URL_PUBLICA });
+  const { google } = postsApi;
 
   // ── chat privado entre os usuários (arquivos no mesmo Google Drive) ─────────
   chatApi = montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaTexto, google });
