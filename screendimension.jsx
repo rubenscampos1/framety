@@ -477,8 +477,11 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
   const three    = React.useRef({});
   const [ready, setReady] = React.useState(false);
   const [err, setErr]     = React.useState(false);
+  const [details, setDetails] = React.useState(false);
+  const [safe, setSafe] = React.useState(true);
+  const [labels, setLabels] = React.useState(true);
   const propsRef = React.useRef({});
-  propsRef.current = { res };
+  propsRef.current = { res: { ...res, details, safe, labels } };
 
   React.useEffect(() => {
     let alive = true;
@@ -490,7 +493,7 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
         const w = mount.clientWidth, h = mount.clientHeight || 300;
 
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0a0a0c);
+        scene.background = new THREE.Color(0x0b1422);
         const camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 5000);
         const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -585,7 +588,7 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
           const ow = mount.clientWidth, oh = mount.clientHeight || 300, od = ctl.dist;
           renderer.setPixelRatio(1); renderer.setSize(sw, sh, false);
           camera.aspect = sw / sh; camera.updateProjectionMatrix();
-          ctl.dist = od * 0.64;
+          ctl.dist = fitDistance(sw / sh, ctl.target);
           const s = Math.sin(ctl.phi);
           camera.position.set(ctl.target.x + ctl.dist * s * Math.sin(ctl.theta), ctl.target.y + ctl.dist * Math.cos(ctl.phi), ctl.target.z + ctl.dist * s * Math.cos(ctl.theta));
           camera.lookAt(ctl.target);
@@ -615,7 +618,7 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
     return () => { alive = false; three.current.cleanup?.(); three.current = {}; };
   }, []);
 
-  React.useEffect(() => { if (three.current.THREE) buildRoom(); }, [JSON.stringify(res)]);
+  React.useEffect(() => { if (three.current.THREE) buildRoom(); }, [JSON.stringify(res), details, safe, labels]);
   // Botões 3D / Vista frontal: volta ao enquadramento da sala no ângulo escolhido.
   React.useEffect(() => {
     const t = three.current;
@@ -623,7 +626,7 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
     if (vista === "frente") { t.ctl.theta = 0; t.ctl.phi = Math.PI / 2 - 0.05; }
     else { const v0 = sdVista3D(res); t.ctl.theta = v0.theta; t.ctl.phi = v0.phi; }
     if (t.frameTarget) t.ctl.target.copy(t.frameTarget);
-    if (t.frameDist) t.ctl.dist = t.frameDist;
+    t.frameDist=fitDistance(t.camera.aspect,t.ctl.target);t.ctl.dist=t.frameDist;
   }, [vista, vistaN]);
 
   function makeLabel(THREE, text, base, tone) {
@@ -697,15 +700,17 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
     });
   }
   // a câmera só volta ao enquadramento padrão quando a forma da sala muda (e não a cada arrasto do vídeo)
-  function frame(key, x, y, z, dist) {
-    const t = three.current;
-    dist *= 0.85;                       // painel central maior: a sala começa um pouco mais perto
-    t.ctl.target.set(x, y, z);
-    // quadro estreito (coluna alta): afasta para a sala caber na largura
-    const asp = t.mount ? t.mount.clientWidth / (t.mount.clientHeight || 300) : 1.6;
-    if (t.shapeKey !== key) { t.shapeKey = key; t.ctl.dist = dist * Math.max(1, 1.05 / Math.max(0.4, asp)); }
-    t.frameTarget = t.ctl.target.clone(); t.frameDist = dist * Math.max(1, 1.05 / Math.max(0.4, asp));   // para os botões de vista
+  function fitDistance(aspect, center) {
+    const t=three.current,THREE=t.THREE;if(!THREE||!t.roomGroup.children.length)return 10;
+    const box=new THREE.Box3(),c=center||t.ctl.target;t.roomGroup.updateMatrixWorld(true);
+    t.roomGroup.traverse(o=>{if(o.isMesh&&!o.isSprite&&o.name!=="video-excedente-lateral"&&o.geometry){o.geometry.computeBoundingBox();box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));}});
+    if(box.isEmpty())return 10;
+    const theta=t.ctl.theta,phi=t.ctl.phi,right=new THREE.Vector3(Math.cos(theta),0,-Math.sin(theta)),up=new THREE.Vector3(-Math.cos(phi)*Math.sin(theta),Math.sin(phi),-Math.cos(phi)*Math.cos(theta)),normal=new THREE.Vector3(Math.sin(phi)*Math.sin(theta),Math.cos(phi),Math.sin(phi)*Math.cos(theta));
+    const tan=Math.tan(t.camera.fov*Math.PI/360);let distance=2;
+    for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){const v=new THREE.Vector3(x,y,z).sub(c);distance=Math.max(distance,Math.max(Math.abs(v.dot(right))/(tan*Math.max(.35,aspect)),Math.abs(v.dot(up))/tan)+v.dot(normal));}
+    return distance*1.13;
   }
+  function frame(key,x,y,z,dist){const t=three.current,center=new t.THREE.Vector3(x,y,z),aspect=t.mount.clientWidth/(t.mount.clientHeight||300);t.frameTarget=center;t.frameDist=fitDistance(aspect,center);if(t.shapeKey!==key){t.shapeKey=key;t.ctl.target.copy(center);t.ctl.dist=t.frameDist;}}
 
   function buildRoom() {
     const t = three.current; if (!t.THREE) return;
@@ -751,17 +756,18 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
       grp.add(mesh);
     };
     const line = (p1,p2, color, op) => { const g=new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(new Float32Array([...p1,...p2]),3)); grp.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({color, transparent:true, opacity:op}))); };
-    const put = (txt,x,y,z,tone,sc) => { const s=makeLabel(THREE,txt,base,tone); if(sc)s.scale.multiplyScalar(sc); s.position.set(x,y,z); grp.add(s); };
+    const put = (txt,x,y,z,tone,sc) => { if(r.labels===false)return;const s=makeLabel(THREE,txt,base,tone); if(sc)s.scale.multiplyScalar(sc); s.position.set(x,y,z); grp.add(s); };
 
     // superfícies
-    quad(wlBot, wrBot, [Wc/2,H,zFar], [-Wc/2,H,zFar], accent, 0.32);      // frontal
-    if (!simple) quad(lFar, lNear, add(lNear,UP), add(lFar,UP), blue, 0.32);           // lateral E
-    if (!simple) quad(rFar, rNear, add(rNear,UP), add(rFar,UP), blue, 0.32);           // lateral D
-    quad(flFar, frFar, frNear, flNear, teal, 0.32);                       // piso
+    quad(wlBot, wrBot, [Wc/2,H,zFar], [-Wc/2,H,zFar], accent, 0.64);      // frontal
+    if (!simple) quad(lFar, lNear, add(lNear,UP), add(lFar,UP), blue, 0.5);           // lateral E
+    if (!simple) quad(rFar, rNear, add(rNear,UP), add(rFar,UP), blue, 0.5);           // lateral D
+    quad(flFar, frFar, frNear, flNear, teal, 0.42);                       // piso
 
     // zonas de projetor: cada projetor entrega no máx. 1920px. Aparece quando precisa de +1.
     // `rows` (opcional): faixas [v0, v1] na ordem de numeração; sem ele, divide por igual.
     const zones = (c00,c10,c11,c01, widthPx, heightPx, rows) => {
+      if(!r.details)return;
       const nc = Math.max(1, Math.ceil((widthPx||0)/1920));   // colunas (1920px)
       const nr = rows ? rows.length : Math.max(1, Math.ceil((heightPx||0)/1080));  // linhas (1080px)
       if (nc < 2 && nr < 2) return;
@@ -790,7 +796,7 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
     let acc = 0;
     const fRows = fRowsPx.map((h) => { const v1 = 1 - acc / r.fDepth; acc += h; return [Math.max(0, 1 - acc / r.fDepth), v1]; });
     zones(flFar, frFar, frNear, flNear, r.fBase, r.fDepth, fRows);       // piso
-    if (fRows.length > 1) fRows.forEach(([v0, v1], j) => {
+    if (r.details && fRows.length > 1) fRows.forEach(([v0, v1], j) => {
       const c = bil(flFar, frFar, frNear, flNear, 0.1, (v0 + v1) / 2);
       put(`alt ${sdFmt(fRowsPx[j])}`, c[0], c[1] + 0.01, c[2], "rgba(42,157,143,0.9)", 0.75);
     });
@@ -799,11 +805,12 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
     // com a resolução da área segura pinada logo abaixo da linha de cima
     const S0 = SD_SAFE, S1 = 1 - SD_SAFE;
     const safeV = (c00,c10,c11,c01, wpx) => {
+      if(!r.safe)return;
       const P = (u, v) => bil(c00,c10,c11,c01,u,v);
       const dashed = (a, b, seg) => { for (let i = 0; i < seg; i += 2) line(P(a[0]+(b[0]-a[0])*i/seg, a[1]+(b[1]-a[1])*i/seg), P(a[0]+(b[0]-a[0])*(i+1)/seg, a[1]+(b[1]-a[1])*(i+1)/seg), SD_SAFE_3D, 0.95); };
       dashed([S0,S0],[S0,S1],16); dashed([S1,S0],[S1,S1],16);
       dashed([S0,S0],[S1,S0],22); dashed([S0,S1],[S1,S1],22);
-      if (wpx) { const c = P(0.5, S1 - 0.07); put(`seg ${sdSafeTxt(wpx)}`, c[0],c[1],c[2], "rgba(255,181,71,0.85)", 0.6); }
+      if (wpx && r.details) { const c = P(0.5, S1 - 0.07); put(`seg ${sdSafeTxt(wpx,r.H)}`, c[0],c[1],c[2], "rgba(255,181,71,0.85)", 0.6); }
     };
     safeV(wlBot, wrBot, [Wc/2,H,zFar], [-Wc/2,H,zFar], r.Wc);
     if (!simple) safeV(lFar, lNear, add(lNear,UP), add(lFar,UP), r.Ws);
@@ -892,10 +899,10 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
       grp.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: op })));
     };
     const arcPts = (u0, u1, y, k = 1) => { const n = segs(u0, u1), out = []; for (let i = 0; i <= n; i++) out.push(pt(u0 + (u1 - u0) * i / n, y, k)); return out; };
-    const put = (txt, p, tone, sc) => { const s = makeLabel(THREE, txt, base, tone); if (sc) s.scale.multiplyScalar(sc); s.position.set(p[0], p[1], p[2]); grp.add(s); };
+    const put = (txt, p, tone, sc) => { if(r.labels===false)return; const s = makeLabel(THREE, txt, base, tone); if (sc) s.scale.multiplyScalar(sc); s.position.set(p[0], p[1], p[2]); grp.add(s); };
 
     // a tela
-    strip(0, 1, 0, H, new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
+    strip(0, 1, 0, H, new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.58, side: THREE.DoubleSide }));
     poly(arcPts(0, 1, 0), 0xffffff, 0.7);
     poly(arcPts(0, 1, H), 0xffffff, 0.7);
     poly([pt(0, 0), pt(0, H)], 0xffffff, 0.7);
@@ -909,14 +916,14 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
 
     // margem de proteção: tracejado a 10% de cada borda (pontas, topo e base)
     const S0 = SD_SAFE, S1 = 1 - SD_SAFE;
-    [S0, S1].forEach((u) => {
+    if(r.safe) [S0, S1].forEach((u) => {
       for (let i = Math.round(S0 * 20); i < Math.round(S1 * 20); i += 2) poly([pt(u, H * i / 20, 0.998), pt(u, H * (i + 1) / 20, 0.998)], SD_SAFE_3D, 0.95);
     });
-    [S0, S1].forEach((v) => {
+    if(r.safe) [S0, S1].forEach((v) => {
       const seg = Math.max(20, Math.round(th * 16)) * 2;
       for (let i = 0; i < seg; i += 2) poly([pt(S0 + (S1 - S0) * i / seg, H * v, 0.998), pt(S0 + (S1 - S0) * (i + 1) / seg, H * v, 0.998)], SD_SAFE_3D, 0.95);
     });
-    put(`área segura ${sdSafeTxt(r.Wpx, Hpx)}`, pt(0.5, H * (S1 - 0.08), 0.97), "rgba(255,181,71,0.85)", 0.75);
+    if(r.safe&&r.details) put(`área segura ${sdSafeTxt(r.Wpx, Hpx)}`, pt(0.5, H * (S1 - 0.08), 0.97), "rgba(255,181,71,0.85)", 0.75);
 
     // projetores: o corte dos 1920px aparece em azul só onde ele sobra de
     // fato — nas duas pontas da curva, um pouco atrás da tela (raio maior). Entre
@@ -924,7 +931,7 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
     // projetor usa, com a resolução dela.
     const projs = r.projs || [];
     const pw = r.pw || 1920, cut = r.cut || 0;
-    if (cut > 0.5) {
+    if (r.details && cut > 0.5) {
       const K = 1.018, cu = cut / r.Wpx;
       [[-cu, 0], [1, 1 + cu]].forEach(([a, b]) => {
         strip(a, b, 0, H, new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }), 1, K);
@@ -939,7 +946,7 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
         put(`1920 − ${sdFmt(pw)} = ${sdFmt(1920 - pw)} px`, pt(u, H * 0.42, K * 1.01), "rgba(96,165,250,0.6)", 0.45);
       });
     }
-    projs.forEach((x, i) => {
+    if(r.details) projs.forEach((x, i) => {
       const u0 = Math.max(0, x / r.Wpx), u1 = Math.min(1, (x + pw) / r.Wpx);
       if (projs.length > 1) {
         strip(u0, u1, 0, H, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: i % 2 ? 0.1 : 0.05, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), 2);
@@ -948,9 +955,9 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
       }
       put(`${r.rows > 1 ? "Coluna" : "P"}${i + 1} · ${sdFmt(Math.min(pw, r.Wpx))} × ${sdFmt(Hpx)}${r.rows > 1 ? ` · ${r.rows} linhas` : ""}`, pt((u0 + u1) / 2, H / 2, 0.97), "rgba(255,255,255,0.45)", 0.8);
     });
-    for (let y = 1080; y < Hpx; y += 1080) poly(arcPts(0,1,y*W,0.999),0xffffff,0.45);
+    if(r.details) for (let y = 1080; y < Hpx; y += 1080) poly(arcPts(0,1,y*W,0.999),0xffffff,0.45);
     // overlap: a faixa onde duas fatias vizinhas se misturam (blend), em âmbar
-    if (projs.length > 1 && (r.ov || 0) > 0.5) projs.slice(1).forEach((x) => {
+    if (r.details && projs.length > 1 && (r.ov || 0) > 0.5) projs.slice(1).forEach((x) => {
       const u0 = x / r.Wpx, u1 = Math.min(1, (x + r.ov) / r.Wpx);
       strip(u0, u1, 0, H, new THREE.MeshBasicMaterial({ color: 0xffcf9e, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }), 4, 0.997);
       put(`overlap ${sdFmt(r.ov)} px`, pt((u0 + u1) / 2, H * 0.86, 0.96), "rgba(255,207,158,0.9)", 0.55);
@@ -990,7 +997,7 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
       put(`vídeo ${sdFmt(r.fit.vw)} × ${sdFmt(r.fit.vh)}${Math.abs(r.fit.st) > 0.0005 ? ` · ${r.fit.st > 0 ? "esticado +" : "comprimido −"}${sdPct(Math.abs(r.fit.st))}` : ""}${r.fit.ok ? "" : " · não compatível"}`, pt((a + b) / 2, H * 0.1, K), r.fit.ok ? "rgba(168,85,247,0.9)" : "rgba(255,77,77,0.9)", 0.6);
     }
     put(`${sdFmt(r.Wpx)} × ${sdFmt(Hpx)} · ${sdRatio(r.Wpx, Hpx)}`, pt(0.5, H * 1.08, 1), "rgba(94,200,242,0.7)");
-    put(`R ${String(Math.round((r.radiusM || 0) * 100) / 100).replace(".", ",")} m`, [0, 0.01, 0], "rgba(255,255,255,0.3)", 0.7);
+    if(r.details) put(`R ${String(Math.round((r.radiusM || 0) * 100) / 100).replace(".", ",")} m`, [0, 0.01, 0], "rgba(255,255,255,0.3)", 0.7);
 
     // centro do enquadramento: meio entre a curva e a corda
     const midZ = -R * (th >= Math.PI ? 0.5 : (1 + Math.cos(th / 2)) / 2);
@@ -1006,6 +1013,7 @@ const SDPreview3D = ({ res, initView, vista = "3d", vistaN = 0 }) => {
       <div ref={mountRef} className="sd-3dcanvas" />
       {!ready && !err && <div className="sd-3dmsg">carregando 3D…</div>}
       {err && <div className="sd-3dmsg">não foi possível carregar o 3D (sem conexão?)</div>}
+      <div className="sd-3dlayers" aria-label="Camadas do 3D">{[["Medidas",labels,setLabels],["Projetores",details,setDetails],["Área segura",safe,setSafe]].map(([name,on,set])=><label key={name}><input type="checkbox" checked={on} onChange={e=>set(e.target.checked)}/>{name}</label>)}</div>
       <div className="sd-3dhint">arraste para girar · scroll = zoom</div>
     </div>
   );
@@ -1137,8 +1145,8 @@ const SDComparacao = ({ fit, tela, rotuloTela }) => {
 
 /* Vídeo testado: só os campos (a prévia esticável fica na aba Vídeo na tela). */
 const SDVideoCampos = ({ vw, vh, setVw, setVh, setSt, fit, tela }) => (
-  <div className="sdx-sec">
-    <div className="sdx-sec-h"><span>Vídeo original</span>{(vw || vh) && <button type="button" className="sdx-link" onClick={() => { setVw(""); setVh(""); setSt(""); }}>limpar</button>}</div>
+  <div className="sdx-sec sdx-video-priority">
+    <div className="sdx-sec-h"><span>Testar dimensões do vídeo</span>{(vw || vh) && <button type="button" className="sdx-link" onClick={() => { setVw(""); setVh(""); setSt(""); }}>limpar</button>}</div>
     <div className="sdx-par">
       <SDCampo lbl="Largura" un="px" step="1" value={vw} onChange={setVw} ph="3840" />
       <span className="sdx-par-s"><SDI n="seta" s={14} /></span>
@@ -1281,7 +1289,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMod
   const bleed = sdBleed(R.timelineW, R.timelineH, sdBleedPct(SgP));
   const frenteTxt = Ss ? "só a tela central" : `${sdFmt(R.Ws)} + ${sdFmt(R.Wc)} + ${sdFmt(R.Ws)}`;
   docRef.current = {
-    mode: "rect", raw,   // o que a ficha salva guarda
+    mode: "rect", raw, videoFit: fit,   // o que a ficha salva guarda
     resumo: `timeline ${sdFmt(R.timelineW)} × ${sdFmt(R.timelineH)}  ·  ${nProj} projetores${Ss ? "  ·  sala simples" : ""}`,
     name: `sala-${Ss ? "simples" : "imersiva"}${ready ? `-alt${Math.round(a)}m` : ""}`,
     title: Ss ? "Sala simples" : "Sala retangular",
@@ -1356,6 +1364,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMod
         {!ready && <div className="sdx-dica">Comece pela altura; depois largura e profundidade.</div>}
         {Un !== "m" && <div className="sdx-dica">{Un === "px" ? "Largura e profundidade em pixels na base de entrada de 1080 px." : "Largura e profundidade em proporção (ex. 16:9 ou 1,78)."} A altura continua em metros.</div>}
       </div>
+      <SDVideoCampos vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} setSt={setSt} fit={fit} tela={[R.frontTotalW, R.H]} />
       <div className="sdx-sec">
         <div className="sdx-sec-h"><span>Chão</span></div>
         <div className="sdx-par sdx-tres">
@@ -1368,7 +1377,6 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMod
         <span>Quantidade de projetores</span>
         <b className="sdx-num" title="Calculado: paredes e chão, um a cada 1920 × 1080">{nProj}<small>calculado</small></b>
       </div>
-      <SDVideoCampos vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} setSt={setSt} fit={fit} tela={[R.frontTotalW, R.H]} />
       <SDBleed on={Sg} setOn={setSg} pct={SgP} setPct={setSgP} bleed={bleed} areaLbl="timeline">
         <SDTimelineBleed R={R} f={bleed.f} />
       </SDBleed>
@@ -1557,7 +1565,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMo
   // cabe a tela + o quadro vermelho que passa das pontas (o corte das bordas)
   const disp = Math.min(150 / R.Hpx, (Math.max(diagW, 280) - 40) / Math.max(R.Wpx + 2 * R.cut, 1920));
   docRef.current = {
-    mode: "curve", raw,   // o que a ficha salva guarda
+    mode: "curve", raw, videoFit: fit,   // o que a ficha salva guarda
     resumo: `vídeo ${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)}  ·  ${R.totalProj} projetor${R.totalProj > 1 ? "es" : ""}`,
     name: `sala-semicircular${ready ? `-${sdM(arc).replace(",", "_")}x${sdM(a).replace(",", "_")}m` : ""}`,
     title: "Sala semicircular",
@@ -1627,6 +1635,8 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMo
         {!cM && <div className="sdx-dica">{Un === "m" ? "Digite o comprimento da curva." : Un === "px" ? "Digite a largura da tela em pixels." : "Digite a proporção da tela (ex. 32:9)."}</div>}
         {a > 50 && <div className="sdx-aviso bad"><SDI n="alerta" s={15} /><div><b>Altura de {sdM(a)} m</b>Esse campo é em metros{Un === "px" ? "; os pixels ficam em Largura e Altura" : ""}.</div></div>}
       </div>
+      <SDVideoCampos vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} setSt={setSt} fit={fit} tela={[R.Wpx, R.Hpx]} />
+      <details className="sdx-secondary"><summary>Ajustes da projeção <span>ângulo e overlap</span></summary>
       <div className="sdx-sec">
         <div className="sdx-sec-h"><span>Ângulo do arco</span></div>
         <div className="sdx-slider">
@@ -1645,11 +1655,11 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMo
         {(R.less > 0 || (blendAsk > 0 && R.N < 2)) && <div className="sdx-dica">{R.N < 2 ? "Overlap só existe com dois ou mais projetores — esta tela cabe em um."
           : <>{sdFmt(R.Wn)} → <b>{sdFmt(R.Wpx)} px</b> · blend de <b>{sdFmt(R.ov)} px</b> {R.N > 2 ? `em cada uma das ${R.N - 1} junções` : "no meio"}{R.N > R.N0 ? ` · +${R.N - R.N0} projetor${R.N - R.N0 > 1 ? "es" : ""} pelo overlap` : ""}{blendAsk > SD_OV_MAX ? ` · limitado a ${SD_OV_MAX}%` : ""}</>}</div>}
       </div>
+      </details>
       <div className="sdx-sec sdx-linha">
         <span>Quantidade de projetores</span>
         <b className="sdx-num" title="Calculado pela largura da tela e pelo overlap">{R.totalProj}<small>calculado</small></b>
       </div>
-      <SDVideoCampos vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} setSt={setSt} fit={fit} tela={[R.Wpx, R.Hpx]} />
       <SDBleed on={Sg} setOn={setSg} pct={SgP} setPct={setSgP} bleed={bleed} areaLbl="tela" />
     </>
   );
@@ -1758,7 +1768,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMo
     <SDShell mode="curve" setMode={setMode} onReset={resetar} sheetRef={sheetRef} preview3dRef={preview3dRef}
       config={config} results={results} resumo={resumo} mapa={mapa} video={video} tecnico={tecnico}
       comp={<SDComparacao fit={fit} tela={[R.Wpx, R.Hpx]} rotuloTela="Tela da sala" />}
-      render3d={(vista, vistaN) => <SDPreview3D initView={view} vista={vista} vistaN={vistaN} res={{ curve: true, Wpx: R.Wpx, Hpx: R.Hpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM, ov: R.ov, bleed: Sg ? bleed.f : 0, fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok, st: fit.st } : null }} />} />
+      render3d={(vista, vistaN) => <SDPreview3D initView={view} vista={vista} vistaN={vistaN} res={{ curve: true, rows: R.rows, Wpx: R.Wpx, Hpx: R.Hpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM, ov: R.ov, bleed: Sg ? bleed.f : 0, fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok, st: fit.st } : null }} />} />
   );
 };
 
@@ -1881,69 +1891,47 @@ const SDPdfRectDiagram = ({ R }) => {
 
 const sdClip = (t, n) => { t = String(t || "").trim(); return t.length > n ? t.slice(0, n - 1).trimEnd() + "…" : t; };
 
-const SDReport = ({ doc, shot }) => {
-  const date = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
-  const bw = 468, bh = 234;
-  let iw = bw, ih = bh;
-  if (shot) { const r = shot.w / shot.h; if (r > bw / bh) ih = bw / r; else iw = bh * r; }
-  return (
-    <div className="pd-page">
-      <style>{SD_PDF_CSS}</style>
-      <header className="pd-head">
-        <img className="pd-logo" src="/dual_logo_dark.svg" alt="" />
-        <div className="pd-who">
-          <div><span className="pd-lbl">Cliente</span><b>{sdClip(doc.cliente, 28) || "—"}</b></div>
-          <div><span className="pd-lbl">Projeto</span><b>{sdClip(doc.projeto, 34) || "—"}</b></div>
-        </div>
-        <div className="pd-head-r"><img className="pd-aspecty" src="/aspecty_logo_dark.svg" alt="Aspecty" /><span>Ficha técnica  ·  {date}</span></div>
-      </header>
-
-      <div className="pd-titles">
-        <h1>{doc.title}</h1>
-        <p>{doc.subtitle}</p>
-      </div>
-
-      <section className="pd-hero">
-        {doc.hero.map((h, i) => (
-          <div key={i} className={`pd-stat ${i === 0 ? "main" : ""}`}>
-            <div className="pd-lbl">{h.lbl}</div>
-            <div className="pd-val">{h.val}{h.unit && <em>{h.unit}</em>}</div>
-            <div className="pd-sub">{h.sub}</div>
-          </div>
-        ))}
-      </section>
-
-      <section className="pd-body">
-        <div className="pd-card">
-          <div className="pd-lbl">{doc.diagramTitle}</div>
-          {doc.diagram}
-        </div>
-        <div className="pd-card dark">
-          <div className="pd-lbl">Vista 3D</div>
-          <div className="pd-shot" style={{ width: bw, height: bh }}>
-            {shot ? <img src={shot.src} style={{ width: iw, height: ih }} alt="" /> : <span>3D indisponível</span>}
-          </div>
-        </div>
-      </section>
-
-      <section className="pd-tables">
-        <div className="pd-card">
-          <div className="pd-lbl">Medidas informadas</div>
-          {doc.inputs.map(([k, v], i) => <div key={i} className="pd-row"><span>{k}</span><b>{v}</b></div>)}
-        </div>
-        <div className="pd-card">
-          <div className="pd-lbl">Resultado</div>
-          {doc.details.map(([k, v, x], i) => <div key={i} className="pd-row"><span>{k}</span><b>{v}</b><em>{x}</em></div>)}
-        </div>
-      </section>
-
-      <footer className="pd-foot">
-        <span>Altura padrão 1080 px, com opção de altura final personalizada · proporção preservada · projetores 1920×1080</span>
-        <span>Framety · Grupo Skyline</span>
-      </footer>
-    </div>
-  );
+const SDReportMap = ({ doc }) => {
+  const r=doc.diagram?.props?.R;if(!r)return null;
+  if(doc.mode==='curve'){
+    const width=390,height=Math.max(44,Math.min(118,width*r.Hpx/r.Wpx));
+    const points=Array.from({length:65},(_,i)=>{const f=-r.theta/2+r.theta*i/64;return [Math.sin(f),-Math.cos(f)];});
+    const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys),k=Math.min(270/(maxX-minX||1),65/(maxY-minY||1));
+    const arc=points.map(([x,y],i)=>`${i?'L':'M'}${215+(x-(minX+maxX)/2)*k},${201+(y-(minY+maxY)/2)*k}`).join(' ');
+    return <div className="pdf-map"><svg width="430" height="252" viewBox="0 0 430 252">
+      <rect x="20" y="38" width={width} height={height} rx="5" fill="#18566c" />
+      <text x="215" y="24" textAnchor="middle">Tela curva planificada</text>
+      <text x="215" y={56+height} textAnchor="middle">{sdFmt(r.Wpx)} × {sdFmt(r.Hpx)} px</text>
+      <path d={arc} fill="none" stroke="#18566c" strokeWidth="5" strokeLinecap="round" />
+      <text x="215" y="244" textAnchor="middle">Vista de cima · {Math.round(r.theta*180/Math.PI)}°</text>
+    </svg></div>;
+  }
+  const gap=100,fw=Math.max(r.fBase,r.fTop),total=Math.max(r.frontTotalW+(!r.simple?gap*2:0),fw),k=Math.min(390/total,200/(r.H+r.fDepth+gap));
+  const x0=20+(390-(r.frontTotalW+(!r.simple?gap*2:0))*k)/2,xc=x0+(r.simple?0:(r.Ws+gap)*k),fy=30+(r.H+gap)*k,fx=xc+(r.Wc-fw)*k/2;
+  const wall=(name,x,w)=><g key={name}><rect x={x} y="30" width={w*k} height={r.H*k} rx="3" fill={name==='Central'?'#18566c':'#4d6580'}/><text x={x+w*k/2} y={30+r.H*k/2+4} textAnchor="middle" fill="white">{name}</text></g>;
+  const tl=fx+(fw-r.fTop)*k/2,tr=tl+r.fTop*k,bl=fx+(fw-r.fBase)*k/2,br=bl+r.fBase*k;
+  return <div className="pdf-map"><svg width="430" height="252" viewBox="0 0 430 252">
+    {!r.simple&&wall('E',x0,r.Ws)}{wall('Central',xc,r.Wc)}{!r.simple&&wall('D',xc+(r.Wc+gap)*k,r.Ws)}
+    <polygon points={`${tl},${fy} ${tr},${fy} ${br},${fy+r.fDepth*k} ${bl},${fy+r.fDepth*k}`} fill="#2f746c"/>
+    <text x={fx+fw*k/2} y={fy+r.fDepth*k/2+4} textAnchor="middle" fill="white">Chão</text>
+  </svg></div>;
 };
+const SDReport = ({ doc, shot }) => {
+  const primary=doc.hero[0],projectors=doc.hero.find(h=>h.lbl==='Projetores'),fit=doc.videoFit;
+  const measures=doc.inputs.filter(([k])=>doc.mode==='curve'?['Altura da tela','Comprimento da curva'].includes(k):['Altura das paredes','Largura central','Profundidade das laterais','Chão · base','Chão · profundidade'].includes(k));
+  const extra=doc.details.find(([k])=>k.startsWith('Sangria'));
+  return <div className="pd-page pdf-clean">
+    <style>{SD_PDF_CSS}</style>
+    <header className="pdf-head"><img src="/aspecty_logo_dark.svg" alt="Aspecty"/><span>Ficha de produção · {new Date().toLocaleDateString('pt-BR')}</span><img src="/dual_logo_dark.svg" alt="Framety"/></header>
+    <section className="pdf-ident"><div><small>CLIENTE</small><b>{sdClip(doc.cliente,48)||'—'}</b></div><div><small>PROJETO</small><b>{sdClip(doc.projeto,42)||'—'}</b></div></section>
+    <section className={`pdf-output${extra?" has-bleed":""}`}><div><small>{extra?'RESOLUÇÃO BASE':'RESOLUÇÃO A PRODUZIR'}</small><h1>{primary.val}<em>px</em></h1><span>{doc.title} · proporção {sdRatio(doc.diagram.props.R.Wpx||doc.diagram.props.R.timelineW,doc.diagram.props.R.Hpx||doc.diagram.props.R.timelineH)}</span>{extra&&<p><b>{extra[0]}:</b> {extra[1]}</p>}</div><div className="pdf-projectors"><small>PROJETORES ESTIMADOS</small><b>{projectors?.val||'—'}</b><span>Referência Full HD 1920 × 1080</span></div></section>
+    <section className="pdf-visuals"><div className="pdf-scene"><small>VISUALIZAÇÃO DA PROJEÇÃO</small><div className="pdf-scene-frame">{shot?<img src={shot.src} alt="Vista 3D da projeção"/>:<span>Visualização 3D indisponível</span>}</div></div><div className="pdf-plan"><small>MAPA DAS SUPERFÍCIES</small><SDReportMap doc={doc}/></div></section>
+    <section className="pdf-bottom"><div><h2>Medidas da sala</h2>{measures.map(([label,value])=><div className="pdf-measure" key={label}><span>{label.replace(' das paredes','').replace(' da tela','')}</span><b>{value.split('  ·')[0]}</b></div>)}</div>
+    <div><h2>Teste do vídeo</h2>{fit?<><b className="pdf-video-size">{sdFmt(fit.vw)} × {sdFmt(fit.vh)} px</b><p className={fit.ok?'pdf-ok':'pdf-warning'}>{fit.exact&&Math.abs(fit.st)<.0005?'Encaixa sem cortar nem esticar':fit.ok?'Compatível com ajuste':'Requer revisão do conteúdo'}</p><p>{fit.fills?'Preenche toda a tela.':fit.over>0?`Corte de ${sdFmt(fit.over)} px em cada lado.`:`Faixa de ${sdFmt(-fit.over)} px em cada lado.`}{Math.abs(fit.st)>.0005?` Ajuste horizontal: ${sdPct(fit.st)}.`:''}</p></>:<p>Nenhum vídeo testado.</p>}</div></section>
+    <footer className="pdf-footer"><span>Produzir o arquivo nas dimensões indicadas. Conferir o encaixe na montagem.</span><span>Aspecty · Grupo Skyline</span></footer>
+  </div>;
+};
+
 
 const sdWaitImages = (root) => Promise.all([...root.querySelectorAll("img")].map((img) =>
   img.complete && img.naturalWidth ? Promise.resolve()
@@ -1966,7 +1954,7 @@ async function sdRenderReport(doc, cv3d) {
     try { await document.fonts?.ready; } catch (_) {}
     await sdWaitImages(stage);
     return await window.html2canvas(stage.querySelector(".pd-page"), {
-      backgroundColor: "#f4f3ef", scale: 2, useCORS: true,
+      backgroundColor: "#ffffff", scale: 2, useCORS: true,
       width: SD_PDF_W, height: SD_PDF_H, windowWidth: SD_PDF_W, windowHeight: SD_PDF_H, scrollX: 0, scrollY: 0,
     });
   } finally {
@@ -1981,8 +1969,8 @@ async function sdExportPDF(doc, cv3d) {
   if (!window.jspdf) await sdLoadScript("https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js");
   const canvas = await sdRenderReport(doc, cv3d);
   const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ orientation: "l", unit: "px", format: [SD_PDF_W, SD_PDF_H], compress: true });
-  pdf.addImage(canvas.toDataURL("image/jpeg", 0.94), "JPEG", 0, 0, SD_PDF_W, SD_PDF_H);
+  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
+  pdf.addImage(canvas.toDataURL("image/jpeg", 0.94), "JPEG", 0, 0, 297, 210);
   pdf.setProperties({ title: `${doc.title} — Aspecty`, author: "Framety · Grupo Skyline" });
   const quem = [doc.cliente, doc.projeto].map(sdSlug).filter(Boolean).join("-");
   pdf.save(`${quem ? quem + "-" : ""}${doc.name}.pdf`);
@@ -2071,6 +2059,34 @@ const SD_PDF_CSS = `
 .pd-row em{ font-style:normal; width:140px; white-space:nowrap; text-align:right; color:#8d8a83; font-size:11.5px; }
 .pd-foot{ position:absolute; left:56px; right:56px; bottom:22px; display:flex; justify-content:space-between; padding-top:10px; border-top:1px solid #dcd9d1;
   font-family:'JetBrains Mono', monospace; font-size:9.5px; color:#8d8a83; letter-spacing:.03em; white-space:pre; }
+
+.pdf-clean.pd-page{background:#fff;color:#19252f;padding:34px 44px;font-family:'Inter',Arial,sans-serif;display:block}
+.pdf-head{height:49px;display:flex;align-items:center;gap:24px;border-bottom:1px solid #dde5e9;padding-bottom:16px}
+.pdf-head img:first-child{width:190px;height:28px;object-fit:contain;object-position:left}
+.pdf-head img:last-child{width:110px;height:28px;object-fit:contain}
+.pdf-head span{flex:1;font-size:12px;color:#6b7b86;text-align:right}
+.pdf-ident{display:flex;gap:50px;margin-top:22px;height:50px}
+.pdf-ident>div{min-width:0;display:flex;flex-direction:column;gap:7px;flex:1}
+.pdf-clean small{font-size:10px;font-weight:600;letter-spacing:.13em;color:#71828e}
+.pdf-ident b{font-size:20px;line-height:1.3}
+.pdf-output{height:145px;margin-top:18px;padding:22px 26px;background:#f0f5f7;border:1px solid #e0e9ed;border-radius:12px;display:flex;justify-content:space-between;gap:20px}
+.pdf-output h1{margin:8px 0 8px;font-size:48px;line-height:1.1;letter-spacing:-.04em;white-space:nowrap}
+.pdf-output.has-bleed{padding-top:16px;padding-bottom:16px}.pdf-output.has-bleed h1{font-size:40px;margin:4px 0}.pdf-output.has-bleed p{margin:3px 0}
+.pdf-output h1 em{font-size:17px;font-style:normal;font-weight:400;margin-left:10px;color:#627783;letter-spacing:0}
+.pdf-output span,.pdf-output p{font-size:12px;color:#556b79;margin:5px 0;line-height:1.5}
+.pdf-projectors{min-width:210px;display:flex;flex-direction:column;border-left:1px solid #d6e1e6;padding-left:26px}
+.pdf-projectors>b{font-size:44px;line-height:1.15;margin-top:8px}
+.pdf-visuals{height:310px;display:grid;grid-template-columns:1.55fr 1fr;gap:18px;margin-top:22px}
+.pdf-scene,.pdf-plan{border-radius:12px;border:1px solid #dce5ea;padding:17px 18px;min-width:0}
+.pdf-scene{background:#0b1422;border-color:#0b1422}.pdf-scene>small{color:#b8cad7}
+.pdf-scene-frame{height:246px;margin-top:12px;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:6px;color:#bacad6;font-size:13px}
+.pdf-scene-frame img{display:block;width:100%;height:100%;object-fit:contain}
+.pdf-plan .pdf-map{display:flex;align-items:center;justify-content:center;height:248px}.pdf-map svg{max-width:100%;height:auto}.pdf-map text{font-family:'Inter',Arial,sans-serif;font-size:12px}
+.pdf-bottom{display:grid;grid-template-columns:1.1fr 1fr;gap:38px;margin-top:20px;height:142px}
+.pdf-bottom h2{font-size:15px;line-height:1.4;margin:0 0 11px;font-weight:600}
+.pdf-measure{display:flex;justify-content:space-between;gap:16px;padding:2px 0;font-size:13px;line-height:1.3}.pdf-measure span{color:#6b7b86}.pdf-measure b{font-weight:500;text-align:right}
+.pdf-bottom p{font-size:13px;line-height:1.55;color:#637582;margin:7px 0;max-width:480px}.pdf-video-size{font-size:20px;font-weight:600}.pdf-bottom .pdf-ok{color:#17645b;font-weight:600}.pdf-bottom .pdf-warning{color:#a64029;font-weight:600}
+.pdf-footer{display:flex;justify-content:space-between;border-top:1px solid #e1e7eb;padding-top:12px;font-size:11px;color:#71828e;margin-top:8px}
 `;
 
 /* ─────────────────────────── Página principal ───────────────────────────────── */
@@ -2111,7 +2127,7 @@ const SDLogin = ({ onDone, compact }) => {
 
 /* Caixa do "Exportar PDF": cliente + projeto vão para o topo da ficha, e a ficha
    fica salva no site (se houver login). Com uma ficha aberta, atualiza a mesma. */
-const SDExportModal = ({ current, onClose, onGo }) => {
+const SDExportModal = ({ current, onClose, onGo, onPreview }) => {
   const [cliente, setCliente] = React.useState(current?.cliente || "");
   const [projeto, setProjeto] = React.useState(current?.projeto || "");
   const [logged, setLogged] = React.useState(sdLogged());
@@ -2140,6 +2156,7 @@ const SDExportModal = ({ current, onClose, onGo }) => {
           : <div className="sd-modal-login"><div className="sd-modal-note">Sem login o PDF é baixado, mas não fica salvo no site.</div><SDLogin compact onDone={() => setLogged(true)} /></div>}
         {err && <div className="sd-err">{err}</div>}
         <div className="sd-modal-f">
+          <button type="button" className="sd-btn ghost" disabled={!ok || busy} onClick={()=>onPreview({cliente:cliente.trim(),projeto:projeto.trim()})}>Ver prévia</button>
           {logged && <button type="button" className="sd-btn ghost" disabled={!ok || busy} onClick={() => go(false)}>Só salvar</button>}
           <button type="submit" className="sd-btn" disabled={!ok || busy}>{busy ? "Gerando…" : logged ? "Salvar e baixar PDF" : "Baixar PDF"}</button>
         </div>
@@ -2238,6 +2255,7 @@ const ScreenDimensionPage = () => {
   const [current, setCurrent] = React.useState(null);
   const [loadKey, setLoadKey] = React.useState(0);
   const [modal, setModal] = React.useState(false);
+  const [reportPreview, setReportPreview] = React.useState(null);
   const [drawer, setDrawer] = React.useState(false);
   const [busyMsg, setBusyMsg] = React.useState("");
   const [toast, setToast] = React.useState("");
@@ -2249,6 +2267,7 @@ const ScreenDimensionPage = () => {
   React.useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(""), 4200); return () => clearTimeout(t); }, [toast]);
 
   const canvas3d = () => preview3dRef.current?.querySelector("canvas");
+  const previewReport = (who) => {let shot=null;try{shot=canvas3d()?.__sdSnap?.(1380,620)||null;}catch(_){}setReportPreview({doc:{...docRef.current,...who},shot});};
   const download = async (who) => {
     await sdExportPDF({ ...docRef.current, ...who }, canvas3d());
   };
@@ -2327,10 +2346,11 @@ const ScreenDimensionPage = () => {
       <Mode key={`${mode}-${loadKey}`} sheetRef={sheetRef} preview3dRef={preview3dRef} docRef={docRef} setMode={setMode}
             initial={init?.inputs || (urlInit.inputs && urlInit.mode === mode ? urlInit.inputs : undefined)} view={init?.view || undefined} />
 
-      {modal && <SDExportModal current={current} onClose={() => setModal(false)} onGo={onExport} />}
+      {modal && <SDExportModal current={current} onClose={() => setModal(false)} onGo={onExport} onPreview={previewReport} />}
       {drawer && <SDSavedPanel currentId={current?.id} onClose={() => setDrawer(false)}
                                onOpen={(d) => openRecord(d, false)} onDownload={(d) => openRecord(d, true)}
                                onDeleted={(id) => { if (current?.id === id) closeRecord(); }} />}
+      {reportPreview && <div className="sd-report-review" role="dialog" aria-label="Prévia da ficha PDF"><button type="button" className="sd-btn ghost" onClick={()=>setReportPreview(null)}>Voltar</button><div className="sd-report-review-paper"><SDReport {...reportPreview}/></div></div>}
       {toast && <div className="sd-toast">{toast}</div>}
     </div>
   );
@@ -3041,5 +3061,14 @@ const SD_CSS = `
 /* Altura final de saída, opcional, após as dimensões físicas. */
 .sd-height-override > .sd-campo{flex:initial}
 .sd-height-override{display:flex;flex-direction:column;gap:9px;padding-top:10px;border-top:1px solid var(--sdx-line,var(--sd-line));width:100%}
+
+
+.sdx-secondary{border:1px solid var(--sdx-line);border-radius:10px;padding:10px 12px;color:var(--sdx-mute)}
+.sdx-secondary>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--sdx-text)}.sdx-secondary>summary span{font-size:10px;font-weight:400;color:var(--sdx-mute);display:block;margin:5px 0 0 14px}.sdx-secondary[open]{display:flex;flex-direction:column;gap:16px}.sdx-secondary>.sdx-sec{margin-top:14px}
+.sdx-video-priority{background:linear-gradient(135deg,rgba(70,211,230,.1),rgba(70,211,230,.025));border:1px solid rgba(70,211,230,.3);padding:14px;border-radius:12px}.sdx-video-priority .sdx-sec-h{color:#c8f5ff}.sdx-video-priority .sd-input-wrap input{font-size:18px;font-weight:600}.sdx-video-priority .sdx-aviso{font-size:10px}
+.sd-3dlayers{position:absolute;top:12px;left:12px;display:flex;flex-wrap:wrap;gap:12px;z-index:5;padding:8px 12px;border:1px solid rgba(161,201,224,.17);background:rgba(11,20,34,.88);border-radius:9px;color:#b9ccda;font-size:10px}.sd-3dlayers label{display:flex;align-items:center;gap:5px;cursor:pointer}.sd-3dlayers input{accent-color:#46d3e6;margin:0}
+
+
+.sd-report-review{position:fixed;inset:0;z-index:20000;background:rgba(5,9,14,.97);overflow:auto;padding:24px;display:flex;align-items:center;flex-direction:column;gap:16px}.sd-report-review>button{align-self:flex-end;position:sticky;top:0;z-index:2}.sd-report-review-paper{zoom:.74;box-shadow:0 12px 80px rgba(0,0,0,.4)}@media(max-width:980px){.sd-report-review-paper{zoom:.56}}@media(max-width:760px){.sd-report-review{padding:12px}.sd-report-review-paper{zoom:.34}}@media(max-width:480px){.sd-report-review-paper{zoom:.27}}
 
 `;

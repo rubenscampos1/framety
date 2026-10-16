@@ -3,6 +3,10 @@
 Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 (tag git). Correções em andamento entram em "Não lançado" até o próximo deploy.
 
+## Aspecty — 16/10/2026 · projeção 3D e ficha A4
+
+- **Aspecty: vídeo em destaque, projeção 3D mais limpa e ficha A4.** Teste de dimensões do vídeo ganha prioridade; ângulo/overlap ficam em ajustes recolhidos. 3D com melhor contraste e enquadramento, camadas de medidas/projetores/área segura e controles existentes preservados. PDF de uma página A4 horizontal com resolução, projeção, mapa, medidas essenciais e teste do vídeo; prévia antes de baixar. Sangria exibida quando ativa.
+
 ## Não lançado
 
 - Aspecty: opção de forçar a altura final em pixels após informar medidas em metros; recalcula largura e chão proporcionalmente, preserva os metros e registra a opção em links/fichas/PDF. Padrão 1080 px mantido.
