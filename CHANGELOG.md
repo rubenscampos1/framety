@@ -9,6 +9,14 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+## Tasky — não lançado
+
+- **Tasky integrado ao FramePlus.** O aplicativo ganha um item Tasky no menu principal e abre o painel completo dentro da própria janela, sem segundo login. Tasky e FramePlus usam os mesmos usuários, nomes, senhas, sessões e permissões; o banco separado do Tasky guarda times, categorias, tasks, conversas e histórico.
+- **Sincronização em tempo real.** Site e Tasky embutido no FramePlus mantêm uma conexão contínua com o servidor. Criar, resgatar, editar, concluir, excluir, conversar ou atualizar arquivos reflete imediatamente em todas as telas abertas, sem recarregar a página.
+- O painel `/tasky` inclui fila por equipe, resgate por uma única pessoa, histórico, painel pessoal, dashboard global para administradores, chat por task, links compartilháveis e integração com pastas finais no Google Drive.
+- Ao resgatar, a task é assinada automaticamente pelo usuário conectado. Tasks novas destinadas à equipe entram no feed do aplicativo e geram notificação na área de trabalho.
+- A interface usa fila cronológica, destaque para tasks disponíveis, identificação dos times de origem e destino, cores configuráveis por equipe e detalhe em formato de ticket.
+
 - Aspecty: opção de forçar a altura final em pixels após informar medidas em metros; recalcula largura e chão proporcionalmente, preserva os metros e registra a opção em links/fichas/PDF. Padrão 1080 px mantido.
 - **Aspecty: layout em painéis.** Configurações à esquerda (tipo de sala, medidas, ângulo e overlap com controle deslizante, número de projetores calculado, vídeo original e sangria), visualização no centro com abas Visualização / Vídeo na tela / Comparação / Parâmetros técnicos e vistas 2D / 3D / Vista frontal, resultados à direita (vídeo a produzir, área segura, projetores, overlap, compatibilidade, dimensões calculadas) e resumo do projeto embaixo. O 3D fica sempre montado (PDF e fichas salvas dependem dele); botão direito move o enquadramento e o 3D acompanha o tamanho do painel. Botão Resetar. Todas as funções anteriores mantidas; metros convertidos com 3 casas (antes 3.840 px voltava como 3.841). Teste de funções 38/38, incluindo PDF baixado.
 - **Aspecty: modo Pixels corrigido e sala semicircular mais limpa.** No modo Pixels a tela agora é informada como largura × altura (ex. 3840 × 1080); antes só a largura era em pixels e o campo ao lado continuava em metros, então digitar 3840 × 1080 virava uma tela 1×1. A altura em metros virou "Altura real", só para as medidas físicas, com aviso quando passa de 50 m. Medidas em dois grupos (Tela e Sala), resultado em destaque no topo, overlap resumido em uma linha, quatro cartões em vez de seis e 3D enquadrado pela largura visível da curva. Links e fichas antigos continuam iguais (`altura_px`, padrão 1080).

@@ -447,7 +447,8 @@ app.use((req, res, next) => {
 
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  // O Tasky também roda embutido no aplicativo FramePlus (WebView local).
+  if (!(req.path === '/tasky' || req.path.startsWith('/tasky/'))) res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
@@ -482,6 +483,10 @@ app.use((req, res, next) => {
 // por rotas.js no fim da cadeia (ver "Endereços públicos"), junto dos links
 // antigos em /framety, que viram redirecionamento.
 const SPA_ROUTES = ['/', '/console', '/console/*', '/presentation', '/presentation/*', '/cadastroparceiro', '/tutorial', '/novidades', '/play', '/producoes', '/assistir', '/assistir/*', '/screendimension', '/screendimension/*', '/sb', '/sb/*', '/storyboards', '/storyboards/*'];
+
+// Tasky tem uma interface interna propria. Os links unicos das tasks caem na
+// mesma pagina e ela abre o detalhe depois do login.
+app.get(['/tasky', '/tasky/*'], (req, res) => res.sendFile(path.join(DIR, 'Tasky.html')));
 
 app.get(SPA_ROUTES, (req, res) => enviarSpa(req, res, null));
 
