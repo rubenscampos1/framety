@@ -28,7 +28,7 @@ const slug = (v) => texto(v, 100).normalize('NFD').replace(/[\u0300-\u036f]/g, '
   .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const dataValida = (v) => !v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z')));
 
-function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falha, pessoa, google, confereSenha, novoId, abrirSessao, usuarioPublico }) {
+function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falha, pessoa, google, confereSenha, hashSenha, novoId, abrirSessao, usuarioPublico }) {
   const D = () => loja.dados;
   const U = () => lojaUsuarios.dados;
   const T = () => {
@@ -38,6 +38,7 @@ function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falh
     t.times.forEach((time, i) => { if (!time.cor) time.cor = CORES_TIME[i % CORES_TIME.length]; });
     if (!Array.isArray(t.tipos) || !t.tipos.length) t.tipos = TIPOS_PADRAO.map((x) => ({ ...x, ativo: true }));
     if (!Array.isArray(t.tarefas)) t.tarefas = [];
+    if (!Array.isArray(t.cadastros)) t.cadastros = [];
     if (!Number.isFinite(t.sequencia)) t.sequencia = 0;
     if (!t.raiz_id) { t.raiz_id = RAIZ_PADRAO; t.raiz_nome = 'RAIZ TASKY'; }
     return t;
@@ -159,13 +160,32 @@ function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falh
     res.json({ token, usuario: membro(req.usuario) });
   });
 
-  r.post('/tasky/cadastro', (req, res) => res.status(403).json({ erro: 'Crie e gerencie os usuarios pelo FramePlus.' }));
+  r.post('/tasky/cadastro', envolve(async (req, res) => {
+    const nome = texto((req.body || {}).nome, 80);
+    const senha = String((req.body || {}).senha || '');
+    if (nome.length < 2) throw falha(400, 'Informe seu nome.');
+    if (senha.length < 4) throw falha(400, 'A senha precisa ter pelo menos 4 caracteres.');
+    const nomeNormalizado = nome.toLocaleLowerCase('pt-BR');
+    if (U().usuarios.some((u) => u.nome.toLocaleLowerCase('pt-BR') === nomeNormalizado)) throw falha(409, 'Esse nome ja possui uma conta.');
+    if (T().cadastros.some((c) => c.nome.toLocaleLowerCase('pt-BR') === nomeNormalizado)) throw falha(409, 'Seu cadastro ja esta aguardando aprovacao.');
+    let base = slug(nome).slice(0, 36) || 'usuario';
+    let usuario = base, n = 2;
+    const existe = (v) => U().usuarios.some((u) => u.usuario === v) || T().cadastros.some((c) => c.usuario === v);
+    while (existe(usuario)) usuario = `${base.slice(0, 36 - String(n).length)}-${n++}`;
+    T().cadastros.push({ id: novoId('cad_'), nome, usuario, senha: hashSenha(senha), criado_em: agora() });
+    await loja.salvar();
+    publicar('cadastro');
+    res.json({ ok: true, mensagem: 'Cadastro enviado. Aguarde a aprovacao de um administrador.' });
+  }));
 
   r.post('/tasky/login', envolve(async (req, res) => {
     const nome = texto((req.body || {}).nome, 150).toLocaleLowerCase('pt-BR');
     const senha = String((req.body || {}).senha || '');
     const u = U().usuarios.find((x) => x.ativo !== false && (x.nome.toLocaleLowerCase('pt-BR') === nome || x.usuario === nome.replace(/^@/, '')));
-    if (!u || !confereSenha(senha, u.senha)) throw falha(401, 'Nome ou senha incorretos.');
+    if (!u || !confereSenha(senha, u.senha)) {
+      const pendente = T().cadastros.some((c) => c.nome.toLocaleLowerCase('pt-BR') === nome || c.usuario === nome.replace(/^@/, ''));
+      throw falha(401, pendente ? 'Seu cadastro ainda aguarda aprovacao.' : 'Nome ou senha incorretos.');
+    }
     const token = abrirSessao(u);
     await lojaUsuarios.salvar();
     res.json({ token, usuario: membro(u) });
@@ -177,7 +197,8 @@ function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falh
     res.json({ usuario: membro(req.usuario), times: T().times, tipos: T().tipos.filter((x) => x.ativo !== false),
       membros: U().usuarios.filter((u) => u.ativo !== false && u.equipe && u.equipe === req.usuario.equipe).map(membro),
       tarefas: lista.sort((a, b) => Date.parse(b.criado_em) - Date.parse(a.criado_em)).map((t) => publico(t, req.usuario, false)),
-      raiz_url: `https://drive.google.com/drive/folders/${T().raiz_id}` });
+      raiz_url: `https://drive.google.com/drive/folders/${T().raiz_id}`,
+      cadastros_pendentes: req.usuario.admin ? T().cadastros.length : 0 });
   }));
 
   r.get('/tasky/stream', autenticar, (req, res) => {
@@ -327,7 +348,27 @@ function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falh
   r.get('/tasky/admin', autenticar, soAdmin, envolve(async (req, res) => {
     res.json({ times: T().times, tipos: T().tipos, usuarios: U().usuarios.filter((u) => u.ativo !== false).map(membro),
       tarefas: T().tarefas.map((t) => publico(t, req.usuario, false)), raiz_id: T().raiz_id,
-      raiz_url: `https://drive.google.com/drive/folders/${T().raiz_id}` });
+      raiz_url: `https://drive.google.com/drive/folders/${T().raiz_id}`,
+      cadastros: T().cadastros.map(({ senha, ...c }) => c) });
+  }));
+  r.post('/tasky/admin/cadastros/:id/aprovar', autenticar, soAdmin, envolve(async (req, res) => {
+    const i = T().cadastros.findIndex((c) => c.id === req.params.id);
+    const c = T().cadastros[i];
+    if (!c) throw falha(404, 'Cadastro nao encontrado.');
+    const equipe = texto((req.body || {}).equipe, 80);
+    if (!timePorId(equipe)) throw falha(400, 'Escolha o time da pessoa.');
+    if (U().usuarios.some((u) => u.usuario === c.usuario || u.nome.toLocaleLowerCase('pt-BR') === c.nome.toLocaleLowerCase('pt-BR'))) throw falha(409, 'Ja existe uma conta com esse nome.');
+    const u = { id: novoId('u_'), nome: c.nome, usuario: c.usuario, senha: c.senha, admin: false, marketing: false,
+      ativo: true, equipe, projetos: [], criado_em: agora() };
+    U().usuarios.push(u); T().cadastros.splice(i, 1);
+    await Promise.all([lojaUsuarios.salvar(), loja.salvar()]);
+    publicar('cadastro_aprovado');
+    res.json({ usuario: membro(u) });
+  }));
+  r.delete('/tasky/admin/cadastros/:id', autenticar, soAdmin, envolve(async (req, res) => {
+    const i = T().cadastros.findIndex((c) => c.id === req.params.id);
+    if (i < 0) throw falha(404, 'Cadastro nao encontrado.');
+    T().cadastros.splice(i, 1); await loja.salvar(); publicar('cadastro_recusado'); res.json({ ok: true });
   }));
   r.put('/tasky/admin/usuarios/:id', autenticar, soAdmin, envolve(async (req, res) => {
     const u = usuarioPorId(req.params.id); if (!u) throw falha(404, 'Usuario nao encontrado.');

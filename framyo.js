@@ -1477,7 +1477,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   // Tasks e histórico ficam no banco próprio do Tasky; identidade, senha,
   // sessão, nome, papel e equipe são os mesmos usuários do FramePlus.
   taskyApi = montarTasky({ r, loja: lojaTasky, lojaUsuarios: loja, autenticar, soAdmin,
-    envolve, falha, pessoa, google, confereSenha, novoId, abrirSessao, usuarioPublico });
+    envolve, falha, pessoa, google, confereSenha, hashSenha, novoId, abrirSessao, usuarioPublico });
 
   // ── chat privado entre os usuários (arquivos no mesmo Google Drive) ─────────
   chatApi = montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaTexto, google });
