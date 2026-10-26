@@ -135,12 +135,12 @@
   function homeTime() {
     const meuTime = state.usuario.equipe;
     const equipe = state.times.find((x)=>x.id===meuTime);
-    const base = state.usuario.admin && !meuTime ? state.tarefas : state.tarefas.filter((t)=>t.time.id===meuTime);
-    const disponiveis = base.filter((t)=>t.status==='aberta'&&!t.responsavel).sort((a,b)=>new Date(b.criado_em)-new Date(a.criado_em));
-    const assumidas = base.filter((t)=>t.responsavel&&!['concluida','cancelada'].includes(t.status)).sort((a,b)=>new Date(b.resgatado_em||b.criado_em)-new Date(a.resgatado_em||a.criado_em));
+    const recebidas = state.usuario.admin && !meuTime ? state.tarefas : state.tarefas.filter((t)=>t.time.id===meuTime);
+    const disponiveis = recebidas.filter((t)=>t.status==='aberta'&&!t.responsavel).sort((a,b)=>new Date(b.criado_em)-new Date(a.criado_em));
+    const enviadas = state.tarefas.filter((t)=>t.criador.equipe===meuTime&&!['concluida','cancelada'].includes(t.status)).sort((a,b)=>new Date(b.criado_em)-new Date(a.criado_em));
     return `<h2 class="queue-intro">Confira as tasks disponíveis para a <span>${esc(equipe?equipe.nome:'sua equipe')}</span>:</h2>
       <section class="queue-section"><div class="queue-stack">${disponiveis.length?disponiveis.map(filaCard).join(''):`<div class="queue-empty"><span>✓</span><strong>A fila está livre.</strong><p>Quando uma nova task chegar para o time, ela aparecerá aqui.</p></div>`}</div></section>
-      <section class="queue-section team-work-section"><header class="queue-heading"><div><div><h3>Em andamento no meu time</h3><p>Veja tudo que a equipe assumiu e quem está responsável por cada entrega.</p></div></div><span class="queue-count">${assumidas.length}</span></header><div class="queue-stack">${assumidas.length?assumidas.map(filaCard).join(''):`<div class="queue-empty compact"><strong>Nenhuma task em andamento.</strong><p>As tasks resgatadas pela equipe aparecerão aqui.</p></div>`}</div></section>`;
+      <section class="queue-section team-work-section"><header class="queue-heading"><div><div><h3>Enviadas pelo meu time</h3><p>Acompanhe os pedidos criados por qualquer pessoa da sua equipe.</p></div></div><span class="queue-count">${enviadas.length}</span></header><div class="queue-stack">${enviadas.length?enviadas.map(filaCard).join(''):`<div class="queue-empty compact"><strong>Nenhuma task enviada.</strong><p>Os pedidos criados pela sua equipe aparecerão aqui.</p></div>`}</div></section>`;
   }
   function painel(lista = state.tarefas) {
     const itens = filtradas(lista);

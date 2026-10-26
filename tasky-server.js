@@ -86,7 +86,11 @@ function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falh
   const tipoPorId = (id) => T().tipos.find((x) => x.id === id);
   const timePorId = (id) => T().times.find((x) => x.id === id);
   const tarefaPorId = (id) => T().tarefas.find((x) => !x.excluido_em && (x.id === id || x.slug === id));
-  const podeVer = (u, t) => !!(!t.excluido_em && (u.admin || t.criador_id === u.id || t.responsavel_id === u.id || (u.equipe && t.time_id === u.equipe)));
+  const podeVer = (u, t) => {
+    const criador = usuarioPorId(t.criador_id);
+    return !!(!t.excluido_em && (u.admin || t.criador_id === u.id || t.responsavel_id === u.id
+      || (u.equipe && (t.time_id === u.equipe || (criador && criador.equipe === u.equipe)))));
+  };
   const podeEditar = (u, t) => !!(u.admin || t.criador_id === u.id);
   const podeConversar = (u, t) => !!(u.admin || t.criador_id === u.id || t.responsavel_id === u.id);
   const historico = (t, por, acao, detalhe) => {
