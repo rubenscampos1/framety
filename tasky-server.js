@@ -85,8 +85,8 @@ function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falh
   const usuarioPorId = (id) => U().usuarios.find((u) => u.id === id && u.ativo !== false);
   const tipoPorId = (id) => T().tipos.find((x) => x.id === id);
   const timePorId = (id) => T().times.find((x) => x.id === id);
-  const tarefaPorId = (id) => T().tarefas.find((x) => x.id === id || x.slug === id);
-  const podeVer = (u, t) => !!(u.admin || t.criador_id === u.id || t.responsavel_id === u.id || (u.equipe && t.time_id === u.equipe));
+  const tarefaPorId = (id) => T().tarefas.find((x) => !x.excluido_em && (x.id === id || x.slug === id));
+  const podeVer = (u, t) => !!(!t.excluido_em && (u.admin || t.criador_id === u.id || t.responsavel_id === u.id || (u.equipe && t.time_id === u.equipe)));
   const podeEditar = (u, t) => !!(u.admin || t.criador_id === u.id);
   const podeConversar = (u, t) => !!(u.admin || t.criador_id === u.id || t.responsavel_id === u.id);
   const historico = (t, por, acao, detalhe) => {
@@ -296,11 +296,19 @@ function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falh
   }));
 
   r.delete('/tasky/tarefas/:id', autenticar, envolve(async (req, res) => {
-    const i = T().tarefas.findIndex((x) => x.id === req.params.id || x.slug === req.params.id);
-    const t = T().tarefas[i];
+    // O cliente sempre envia o ID interno. Nao aceitamos slug aqui: excluir e
+    // uma operacao destrutiva e deve apontar para uma unica identidade exata.
+    const encontradas = T().tarefas.filter((x) => !x.excluido_em && x.id === req.params.id);
+    if (encontradas.length > 1) throw falha(409, 'Existem tasks com identificador duplicado. Nada foi excluido; procure o administrador.');
+    const t = encontradas[0];
     if (!t || !podeEditar(req.usuario, t)) throw falha(404, 'Task nao encontrada.');
-    T().tarefas.splice(i, 1); // A pasta permanece no Drive: nunca apagamos arquivos finais por esta tela.
-    await loja.salvar(); publicar('excluida'); res.json({ ok: true });
+    // Exclusao logica: some de todas as telas, mas o registro permanece no
+    // banco para auditoria e recuperacao. A pasta do Drive tambem e preservada.
+    t.excluido_em = agora();
+    t.excluido_por_id = req.usuario.id;
+    t.atualizado_em = t.excluido_em;
+    historico(t, req.usuario, 'excluida', 'Removida do Tasky; arquivos do Drive preservados');
+    await loja.salvar(); publicar('excluida'); res.json({ ok: true, tarefa_id: t.id });
   }));
 
   r.post('/tasky/tarefas/:id/mensagens', autenticar, envolve(async (req, res) => {
@@ -347,7 +355,7 @@ function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falh
   // Painel administrativo: visao global, tipos, times e vinculo dos usuarios.
   r.get('/tasky/admin', autenticar, soAdmin, envolve(async (req, res) => {
     res.json({ times: T().times, tipos: T().tipos, usuarios: U().usuarios.filter((u) => u.ativo !== false).map(membro),
-      tarefas: T().tarefas.map((t) => publico(t, req.usuario, false)), raiz_id: T().raiz_id,
+      tarefas: T().tarefas.filter((t) => !t.excluido_em).map((t) => publico(t, req.usuario, false)), raiz_id: T().raiz_id,
       raiz_url: `https://drive.google.com/drive/folders/${T().raiz_id}`,
       cadastros: T().cadastros.map(({ senha, ...c }) => c) });
   }));
@@ -417,7 +425,7 @@ function montarTasky({ r, loja, lojaUsuarios, autenticar, soAdmin, envolve, falh
       const sequencia = T().sequencia || 0;
       if (!u) return { seq: sequencia, avisos: [] };
       const n = Number(visto) || 0;
-      const avisos = T().tarefas.filter((t) => {
+      const avisos = T().tarefas.filter((t) => !t.excluido_em).filter((t) => {
         const seq = Number(t.seq) || Number(String(t.codigo || '').replace(/\D/g, '')) || 0;
         return seq > n && t.criador_id !== u.id && (u.admin || (u.equipe && t.time_id === u.equipe));
       }).slice(-50).map((t) => ({ seq: Number(t.seq) || Number(String(t.codigo || '').replace(/\D/g, '')) || 0,
