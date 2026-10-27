@@ -214,7 +214,7 @@ const SDVideoTest = ({ vw, vh, setVw, setVh, st, setSt, fit, areaLbl, children }
    imagem deforma junto — a porcentagem aparece em cima. As linhas brancas
    tracejadas marcam a largura original, sem deformar. O que passa da tela é
    cortado; o que falta fica escuro. */
-const SDStretch = ({ fit, st, setSt }) => {
+const SDStretch = ({ fit, st, setSt, compact = false }) => {
   const wrap = React.useRef(null), box = React.useRef(null);
   const [maxW, setMaxW] = React.useState(600);
   React.useEffect(() => {
@@ -226,8 +226,8 @@ const SDStretch = ({ fit, st, setSt }) => {
   }, []);
   const excedente = Math.abs(fit.st) < 0.0005 && fit.dw > fit.aw + 0.5;
   // The room sets the scale. Changing the video's ratio or stretch never changes its height.
-  const totalW = Math.min(maxW, 640);
-  const k = Math.min(totalW * 0.62 / fit.aw, 110 / fit.ah);
+  const totalW = Math.min(maxW, compact ? 300 : 640);
+  const k = Math.min(totalW * (compact ? 0.94 : 0.62) / fit.aw, (compact ? 72 : 110) / fit.ah);
   const bw = fit.aw * k, bh = fit.ah * k, margem = (totalW - bw) / 2;
   const img = sdNature(fit.vw, fit.vh);
   const lim = (x) => Math.max(0, Math.min(1, x));
@@ -249,7 +249,7 @@ const SDStretch = ({ fit, st, setSt }) => {
   };
   const forte = Math.abs(fit.st) > SD_FIT_TOL + 1e-9;
   return (
-    <div className="sd-stretch" ref={wrap}>
+    <div className={`sd-stretch${compact ? " compact" : ""}`} ref={wrap}>
       <div className="sd-stretch-stage" style={{ width: totalW, height: bh }}>
         {excedente && <img className="sd-stretch-ghost" style={{ left: (totalW - fit.dw * k) / 2, width: fit.dw * k }} src={img.url} alt="Trechos do vídeo cortados pela sala" draggable="false" />}
         <div className="sd-stretch-box" ref={box} style={{ width: bw, height: bh }}>
@@ -1117,7 +1117,7 @@ const SDI = ({ n, s = 16 }) => {
 };
 // Forma da tela pela proporção, como se fala no dia a dia.
 const sdForma = (w, h) => { const r = w / h; return Math.abs(r - 1) < 0.02 ? "Quadrado" : r < 1 ? "Vertical" : r <= 1.85 ? "Widescreen" : "Panorâmico"; };
-const SD_ABAS = [["vis", "Visualização"], ["video", "Vídeo na tela"], ["comp", "Comparação"], ["tec", "Parâmetros técnicos"]];
+const SD_ABAS = [["vis", "Visualização"], ["comp", "Comparação"], ["tec", "Parâmetros técnicos"]];
 
 /* Linha "Dimensões calculadas" / parâmetros: rótulo e valor. */
 const SDLinhas = ({ rows }) => (
@@ -1171,12 +1171,45 @@ const SDCompat = ({ fit }) => {
   );
 };
 
-const SDShell = ({ mode, setMode, onReset, config, results, resumo, mapa, video, comp, tecnico, preview3dRef, render3d, sheetRef }) => {
+/* O teste fica na coluna de resultados para continuar disponível enquanto a
+   visualização 2D/3D/360 permanece aberta. Ele usa exatamente o mesmo estado
+   de esticamento consumido pelo preview, pelo resumo e pela ficha técnica. */
+const SDVideoSidebar = ({ vw, vh, setVw, setVh, fit, st, setSt, screen, screenLabel = "Tela" }) => {
+  const ativo = Boolean(vw || vh);
+  const alternar = (on) => {
+    if (on) { setVw(String(Math.round(screen[0]))); setVh(String(Math.round(screen[1]))); }
+    else { setVw(""); setVh(""); setSt(""); }
+  };
+  return (
+  <section className="sdx-video-tester" aria-label="Testar dimensões do vídeo">
+    <div className="sdx-video-tester-h">
+      <label className="sdx-video-toggle"><input type="checkbox" checked={ativo} onChange={(e) => alternar(e.target.checked)} /><span><em>Teste de vídeo</em><b>Testar dimensões</b></span></label>
+      {ativo && <button type="button" className="sdx-link" onClick={() => alternar(false)}>limpar</button>}
+    </div>
+    {ativo && <div className="sdx-video-inputs">
+      <label><span>Largura</span><span className="sd-input-wrap"><input type="number" min="1" step="1" inputMode="numeric" value={vw} placeholder="3840" onChange={(e) => setVw(e.target.value)} /><b>px</b></span></label>
+      <i><SDI n="seta" s={14} /></i>
+      <label><span>Altura</span><span className="sd-input-wrap"><input type="number" min="1" step="1" inputMode="numeric" value={vh} placeholder="1080" onChange={(e) => setVh(e.target.value)} /><b>px</b></span></label>
+    </div>}
+    {!ativo ? <div className="sdx-video-tester-empty"><SDI n="filme" s={17} /><span>Ative para comparar outro vídeo com a tela 360.</span></div> : !fit ? <div className="sdx-video-tester-empty"><SDI n="filme" s={17} /><span>Preencha largura e altura para visualizar o encaixe na tela 360.</span></div> : <>
+      <div className="sdx-video-measures" aria-label="Tamanho da tela e do vídeo">
+        <div><span>{screenLabel}</span><b>{sdFmt(fit.aw)} × {sdFmt(fit.ah)}</b><small>{sdRatio(fit.aw, fit.ah)}</small></div>
+        <i><SDI n="seta" s={13} /></i>
+        <div><span>Vídeo original</span><b>{sdFmt(fit.vw)} × {sdFmt(fit.vh)}</b><small>{sdRatio(fit.vw, fit.vh)}</small></div>
+      </div>
+      <SDStretch fit={fit} st={st} setSt={setSt} compact />
+      <div className={`sd-vfit ${fit.ok ? "ok" : "bad"}`}>{fit.ok ? "✓ " : "⚠ "}{fit.msg}</div>
+    </>}
+  </section>
+  );
+};
+
+const SDShell = ({ mode, setMode, onReset, config, results, resumo, mapa, comp, tecnico, preview3dRef, render3d, sheetRef }) => {
   const [aba, setAba] = React.useState("vis");
   const [vista, setVista] = React.useState("3d");      // "2d" | "3d" | "frente"
   const [vistaN, setVistaN] = React.useState(0);
   const escolher = (v) => { setAba("vis"); setVista(v); if (v !== "2d") setVistaN((n) => n + 1); };
-  const camada = aba === "vis" ? (vista === "2d" ? mapa : null) : aba === "video" ? video : aba === "comp" ? comp : tecnico;
+  const camada = aba === "vis" ? (vista === "2d" ? mapa : null) : aba === "comp" ? comp : tecnico;
   return (
     <div ref={sheetRef} className="sdx">
       <aside className="sdx-config" aria-label="Configurações">
@@ -1364,7 +1397,6 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMod
         {!ready && <div className="sdx-dica">Comece pela altura; depois largura e profundidade.</div>}
         {Un !== "m" && <div className="sdx-dica">{Un === "px" ? "Largura e profundidade em pixels na base de entrada de 1080 px." : "Largura e profundidade em proporção (ex. 16:9 ou 1,78)."} A altura continua em metros.</div>}
       </div>
-      <SDVideoCampos vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} setSt={setSt} fit={fit} tela={[R.frontTotalW, R.H]} />
       <div className="sdx-sec">
         <div className="sdx-sec-h"><span>Chão</span></div>
         <div className="sdx-par sdx-tres">
@@ -1394,15 +1426,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMod
       <div className="sdx-card sdx-frente">
         <em>Projeção frontal</em><b>{sdFmt(R.frontTotalW)} × {sdFmt(R.H)}</b><span>{sdRatio(R.frontTotalW, R.H)} · {frenteTxt}</span>
       </div>
-      <div className="sdx-card sdx-safe">
-        <div><em>Área segura (margem 10%)</em><b>{sdSafeTxt(R.Wc, R.H).replace(/ /g, "")}</b><span>central{Ss ? "" : ` · laterais ${sdSafeTxt(R.Ws, R.H)}`}</span></div>
-        <i>10%<small>margem</small></i>
-      </div>
-      <div className="sdx-dupla">
-        <div className="sdx-card"><em>Projetores</em><b>{nProj}<SDI n="proj" s={18} /></b><span>{Ss ? "central + chão" : "paredes + chão"}</span></div>
-        <div className="sdx-card"><em>Chão</em><b>{sdFmt(Math.max(R.fBase, R.fTop))}×{sdFmt(R.fDepth)}</b><span>{R.fBase !== R.fTop ? "trapézio · máscara" : sdRatio(R.fBase, R.fDepth)}</span></div>
-      </div>
-      <SDCompat fit={fit} />
+      <SDVideoSidebar vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} fit={fit} st={St} setSt={setSt} screen={[R.frontTotalW, R.H]} screenLabel="Projeção frontal" />
       <div className="sdx-card sdx-calc">
         <em><SDI n="escala" s={14} />Dimensões calculadas</em>
         <SDLinhas rows={[
@@ -1418,7 +1442,6 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMod
   );
 
   const resumo = [
-    { ic: "filme", lbl: "Vídeo original", val: fit ? `${sdFmt(fit.vw)} × ${sdFmt(fit.vh)}` : "—", sub: fit ? sdRatio(fit.vw, fit.vh) : "nenhum testado" },
     { ic: "corte", lbl: "Projeção frontal", val: `${sdFmt(R.frontTotalW)} × ${sdFmt(R.H)}`, sub: sdRatio(R.frontTotalW, R.H) },
     { ic: "escudo", lbl: "Área segura", val: sdSafeTxt(R.Wc, R.H), sub: "central · 10% de margem", tom: "safe" },
     { ic: "corte", lbl: "Corte necessário", val: corte ? corte.val : "—", sub: corte ? corte.sub : "sem vídeo testado", tom: fit && !fit.ok ? "bad" : "" },
@@ -1449,18 +1472,6 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMod
     </div>
   );
 
-  const video = fit ? (
-    <div className="sdx-videotela">
-      <div className="sd-video-dimensions" aria-label="Medidas da projeção frontal e do vídeo original">
-        <div><span>{Ss ? "Tela central" : "Projeção frontal"}</span><b>{sdFmt(fit.aw)} × {sdFmt(fit.ah)} <small>px</small></b><em>{sdRatio(fit.aw, fit.ah)} · sem o chão</em></div>
-        <div><span>Vídeo original · sem esticar</span><b>{sdFmt(fit.vw)} × {sdFmt(fit.vh)} <small>px</small></b><em>{sdRatio(fit.vw, fit.vh)} · largura × altura</em>
-          {fit.vh !== fit.ah && <i>Na base {sdFmt(fit.ah)}: {sdFmt(fit.sw)} × {sdFmt(fit.ah)} px</i>}</div>
-      </div>
-      <SDStretch fit={fit} st={St} setSt={setSt} />
-      <div className={`sd-vfit ${fit.ok ? "ok" : "bad"}`}>{fit.ok ? "✓ " : "⚠ "}{fit.msg}</div>
-    </div>
-  ) : <div className="sdx-vazio"><SDI n="filme" s={28} /><b>Teste um vídeo nas paredes</b><span>Informe a largura e a altura do vídeo original em Configurações. O teste vale para as telas frontais (o chão tem conteúdo próprio).</span></div>;
-
   const tecnico = (
     <div className="sdx-tec">
       <div><h4>Medidas informadas</h4><SDLinhas rows={docRef.current.inputs} /></div>
@@ -1470,7 +1481,7 @@ const SDRectMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMod
 
   return (
     <SDShell mode="rect" setMode={setMode} onReset={resetar} sheetRef={sheetRef} preview3dRef={preview3dRef}
-      config={config} results={results} resumo={resumo} mapa={mapa} video={video} tecnico={tecnico}
+      config={config} results={results} resumo={resumo} mapa={mapa} tecnico={tecnico}
       comp={<SDComparacao fit={fit} tela={[R.frontTotalW, R.H]} rotuloTela={Ss ? "Tela central" : "Projeção frontal"} />}
       render3d={(vista, vistaN) => <SDPreview3D initView={view} vista={vista} vistaN={vistaN} res={{ Wc: R.Wc, Ws: R.Ws, H: R.H, fBase: R.fBase, fTop: R.fTop, fDepth: R.fDepth, simple: Ss, front: R.frontTotalW,
                                                 fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok, st: fit.st } : null }} />} />
@@ -1635,7 +1646,6 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMo
         {!cM && <div className="sdx-dica">{Un === "m" ? "Digite o comprimento da curva." : Un === "px" ? "Digite a largura da tela em pixels." : "Digite a proporção da tela (ex. 32:9)."}</div>}
         {a > 50 && <div className="sdx-aviso bad"><SDI n="alerta" s={15} /><div><b>Altura de {sdM(a)} m</b>Esse campo é em metros{Un === "px" ? "; os pixels ficam em Largura e Altura" : ""}.</div></div>}
       </div>
-      <SDVideoCampos vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} setSt={setSt} fit={fit} tela={[R.Wpx, R.Hpx]} />
       <details className="sdx-secondary"><summary>Ajustes da projeção <span>ângulo e overlap</span></summary>
       <div className="sdx-sec">
         <div className="sdx-sec-h"><span>Ângulo do arco</span></div>
@@ -1672,15 +1682,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMo
         <b>{sdFmt(R.Wpx)} × {sdFmt(R.Hpx)}</b>
         <div className="sdx-chips"><span>{sdRatio(R.Wpx, R.Hpx)}</span><span>{sdForma(R.Wpx, R.Hpx)}</span>{!ready && <span className="vazio">padrão</span>}</div>
       </div>
-      <div className="sdx-card sdx-safe">
-        <div><em>Área segura (margem 10%)</em><b>{sdSafeTxt(R.Wpx, R.Hpx).replace(/ /g, "")}</b><span>{sdM(arc * 0.8)} × {sdM(a * 0.8)} m</span></div>
-        <i>10%<small>margem</small></i>
-      </div>
-      <div className="sdx-dupla">
-        <div className="sdx-card"><em>Projetores</em><b>{R.totalProj}<SDI n="proj" s={18} /></b><span>{R.rows > 1 ? `${R.N} colunas × ${R.rows} linhas · sem overlap vertical` : `cada um ${sdFmt(R.pw)} × ${sdFmt(R.Hpx)}`}</span></div>
-        <div className="sdx-card"><em>Overlap</em><b>{sdPct(blend / 100)}</b><span>{R.less ? `−${sdFmt(R.less)} px · ${sdFmt(R.ov)} px/junção` : "projetores encostados"}</span></div>
-      </div>
-      <SDCompat fit={fit} />
+      <SDVideoSidebar vw={Vw} vh={Vh} setVw={setVw} setVh={setVh} fit={fit} st={St} setSt={setSt} screen={[R.Wpx, R.Hpx]} screenLabel="Tela da sala" />
       <div className="sdx-card sdx-calc">
         <em><SDI n="escala" s={14} />Dimensões calculadas</em>
         <SDLinhas rows={[
@@ -1697,7 +1699,6 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMo
   );
 
   const resumo = [
-    { ic: "filme", lbl: "Vídeo original", val: fit ? `${sdFmt(fit.vw)} × ${sdFmt(fit.vh)}` : "—", sub: fit ? sdRatio(fit.vw, fit.vh) : "nenhum testado" },
     { ic: "corte", lbl: "Vídeo na tela", val: `${sdFmt(R.Wpx)} × ${sdFmt(R.Hpx)}`, sub: sdRatio(R.Wpx, R.Hpx) },
     { ic: "escudo", lbl: "Área segura", val: sdSafeTxt(R.Wpx, R.Hpx), sub: "10% de margem", tom: "safe" },
     { ic: "corte", lbl: "Corte necessário", val: corte ? corte.val : "—", sub: corte ? corte.sub : "sem vídeo testado", tom: fit && !fit.ok ? "bad" : "" },
@@ -1745,18 +1746,6 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMo
     </div>
   );
 
-  const video = fit ? (
-    <div className="sdx-videotela">
-      <div className="sd-video-dimensions" aria-label="Medidas da sala e do vídeo original">
-        <div><span>Tela da sala</span><b>{sdFmt(fit.aw)} × {sdFmt(fit.ah)} <small>px</small></b><em>{sdRatio(fit.aw, fit.ah)} · largura × altura</em></div>
-        <div><span>Vídeo original · sem esticar</span><b>{sdFmt(fit.vw)} × {sdFmt(fit.vh)} <small>px</small></b><em>{sdRatio(fit.vw, fit.vh)} · largura × altura</em>
-          {fit.vh !== fit.ah && <i>Na base {sdFmt(fit.ah)}: {sdFmt(fit.sw)} × {sdFmt(fit.ah)} px</i>}</div>
-      </div>
-      <SDStretch fit={fit} st={St} setSt={setSt} />
-      <div className={`sd-vfit ${fit.ok ? "ok" : "bad"}`}>{fit.ok ? "✓ " : "⚠ "}{fit.msg}</div>
-    </div>
-  ) : <div className="sdx-vazio"><SDI n="filme" s={28} /><b>Teste um vídeo nesta tela</b><span>Informe a largura e a altura do vídeo original em Configurações. Aqui você vê como ele fica e pode esticar arrastando as bordas.</span></div>;
-
   const tecnico = (
     <div className="sdx-tec">
       <div><h4>Medidas informadas</h4><SDLinhas rows={docRef.current.inputs} /></div>
@@ -1766,7 +1755,7 @@ const SDCurveMode = ({ sheetRef, preview3dRef, docRef, initial = {}, view, setMo
 
   return (
     <SDShell mode="curve" setMode={setMode} onReset={resetar} sheetRef={sheetRef} preview3dRef={preview3dRef}
-      config={config} results={results} resumo={resumo} mapa={mapa} video={video} tecnico={tecnico}
+      config={config} results={results} resumo={resumo} mapa={mapa} tecnico={tecnico}
       comp={<SDComparacao fit={fit} tela={[R.Wpx, R.Hpx]} rotuloTela="Tela da sala" />}
       render3d={(vista, vistaN) => <SDPreview3D initView={view} vista={vista} vistaN={vistaN} res={{ curve: true, rows: R.rows, Wpx: R.Wpx, Hpx: R.Hpx, theta: R.theta, projs: R.projs, pw: R.pw, cut: R.cut, radiusM: R.radiusM, ov: R.ov, bleed: Sg ? bleed.f : 0, fit: fit ? { a: fit.a, b: fit.b, vw: fit.vw, vh: fit.vh, ok: fit.ok, st: fit.st } : null }} />} />
   );
@@ -3007,6 +2996,39 @@ const SD_CSS = `
 .sdx-dupla .sdx-card > b{ font-size:17px; white-space:nowrap; }
 .sdx-dupla .sdx-card{ overflow:hidden; }
 .sdx-dupla .sdx-card > b .sdx-ic{ color:var(--sdx-mute); }
+.sdx-video-tester{ flex:none; display:flex; flex-direction:column; gap:11px; padding:13px; border:1px solid rgba(70,211,230,.32); border-radius:13px; background:linear-gradient(180deg,rgba(70,211,230,.07),rgba(255,255,255,.02)); min-height:0; }
+.sdx-video-tester-h{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.sdx-video-toggle{ display:flex; align-items:flex-start; gap:8px; cursor:pointer; min-width:0; }
+.sdx-video-toggle input{ width:15px; height:15px; margin:1px 0 0; accent-color:var(--sdx-ac); flex:none; }
+.sdx-video-toggle > span{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.sdx-video-tester-h em{ font-style:normal; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--sdx-ac); }
+.sdx-video-tester-h b{ font-size:14px; color:#fff; }
+.sdx-video-inputs{ display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:end; gap:6px; }
+.sdx-video-inputs label{ display:flex; flex-direction:column; gap:5px; min-width:0; }
+.sdx-video-inputs label > span:first-child{ font-size:10px; color:var(--sdx-mute); }
+.sdx-video-inputs .sd-input-wrap{ width:100%; box-sizing:border-box; }
+.sdx-video-inputs .sd-input-wrap input{ width:100%; min-width:0; padding:7px 4px 7px 7px; font-size:14px; }
+.sdx-video-inputs > i{ color:var(--sdx-ac); padding-bottom:10px; }
+.sdx-video-tester-empty{ display:flex; align-items:center; gap:8px; padding:9px; border:1px dashed var(--sdx-line2); border-radius:9px; font-size:10.5px; line-height:1.4; color:var(--sdx-mute); }
+.sdx-video-tester-empty .sdx-ic{ color:var(--sdx-ac); }
+.sdx-video-measures{ display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:6px; padding:8px 0 9px; border-top:1px solid var(--sdx-line); border-bottom:1px solid var(--sdx-line); }
+.sdx-video-measures > div{ min-width:0; display:flex; flex-direction:column; gap:2px; }
+.sdx-video-measures > div:last-child{ text-align:right; align-items:flex-end; }
+.sdx-video-measures span{ font-size:9.5px; color:var(--sdx-mute); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sdx-video-measures b{ font-size:13px; color:#fff; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.sdx-video-measures small{ font-size:9.5px; color:var(--sdx-mute); }
+.sdx-video-measures > i{ color:var(--sdx-ac); opacity:.8; }
+.sdx-video-tester .sd-stretch{ gap:7px; }
+.sdx-video-tester .sd-stretch-stage{ margin:1px 0; }
+.sdx-video-tester .sd-stretch-pct{ top:4px; font-size:9px; padding:2px 6px; }
+.sdx-video-tester .sd-stretch-h{ width:18px; margin-left:-9px; }
+.sdx-video-tester .sd-stretch-h b{ width:9px; height:27px; }
+.sdx-video-tester .sd-stretch-bar{ gap:6px; font-size:10.5px; }
+.sdx-video-tester .sd-stretch-bar .sd-input-v input{ width:42px; padding-left:4px; padding-right:3px; font-size:12px; }
+.sdx-video-tester .sd-stretch-bar .sd-btn{ padding:5px 7px; font-size:9.5px; }
+.sdx-video-tester .sd-stretch-bar em{ font-size:9.5px; line-height:1.35; }
+.sdx-video-tester .sd-stretch-legend{ font-size:9.5px; }
+.sdx-video-tester .sd-vfit{ width:100%; max-width:none; box-sizing:border-box; margin-top:1px; padding:7px 8px; font-size:10px; line-height:1.4; }
 .sdx-compat{ flex-direction:row; align-items:flex-start; gap:10px; }
 .sdx-compat > div{ display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }
 .sdx-compat > div b{ font-size:13px; color:#fff; }
