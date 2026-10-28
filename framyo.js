@@ -955,7 +955,10 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       avatar: c.owner && c.owner.avatar_url || null,
       quadro: typeof c.timestamp === 'number' ? c.timestamp : null,
       duracao: c.duration || null, concluido: !!c.completed_at,
-      anotacao: !!c.annotation,
+      // A anotação é o desenho vetorial feito sobre o quadro no Frame.io.
+      // O desktop interpreta a geometria normalizada e a sobrepõe ao player.
+      anotacao: typeof c.annotation === 'string' ? c.annotation : null,
+      ancora: c.anchor && typeof c.anchor === 'object' ? { x: c.anchor.x, y: c.anchor.y } : null,
       respostas: (c.replies || []).map((x) => ({ id: x.id, texto: x.text || '', autor: autorDe(x), criado_em: x.created_at })),
     })).sort((a, b) => (a.quadro ?? 1e12) - (b.quadro ?? 1e12) || String(a.criado_em).localeCompare(String(b.criado_em)));
     res.json({ comentarios });
