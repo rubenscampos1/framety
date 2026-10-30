@@ -2,6 +2,7 @@ services:
   - type: web
     name: framety
     runtime: node
+    autoDeploy: true
     buildCommand: npm install
     startCommand: node server.js
     envVars:
