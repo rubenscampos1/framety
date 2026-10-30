@@ -26,6 +26,7 @@ const { montarChat } = require('./framyo-chat');
 const { montarYoutube, EVENTS: EVENTOS_YOUTUBE } = require('./framyo-youtube');
 const { montarInstagram } = require('./framyo-instagram');
 const { montarTasky } = require('./tasky-server');
+const { montarMeets } = require('./framyo-meets');
 const { apagarVersao } = require('./framyo-apagar');
 let chatApi = null;            // montado junto com as rotas; o /eventos consulta o resumo do chat
 let postsApi = null;           // idem: avisos de post aprovado (?posts=N no /eventos)
@@ -1476,6 +1477,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   postsApi = montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica: URL_PUBLICA });
   const { google } = postsApi;
   montarInstagram({ r, loja, autenticar, soAdmin, envolve, pagina, urlPublica: URL_PUBLICA });
+  montarMeets({ r, loja, autenticar, soAdmin, envolve, google });
 
   // Tasks e histórico ficam no banco próprio do Tasky; identidade, senha,
   // sessão, nome, papel e equipe são os mesmos usuários do FramePlus.

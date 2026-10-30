@@ -9,6 +9,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **FramePlus Notas:** transforma as anotações automáticas do Google Meet/Gemini em um acervo compartilhado e pesquisável, com tópicos, texto original, citações destacadas, tarefas por data e fila de revisão sem descarte silencioso.
+
 ## Tasky — não lançado
 
 - **Tasky integrado ao FramePlus.** O aplicativo ganha um item Tasky no menu principal e abre o painel completo dentro da própria janela, sem segundo login. Tasky e FramePlus usam os mesmos usuários, nomes, senhas, sessões e permissões; o banco separado do Tasky guarda times, categorias, tasks, conversas e histórico.
