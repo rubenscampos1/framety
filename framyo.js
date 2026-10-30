@@ -24,12 +24,10 @@ const path = require('path');
 const { montarPosts } = require('./framyo-posts');
 const { montarChat } = require('./framyo-chat');
 const { montarYoutube, EVENTS: EVENTOS_YOUTUBE } = require('./framyo-youtube');
-const { montarInstagram } = require('./framyo-instagram');
-const { montarTasky } = require('./tasky-server');
+const { montarMeets } = require('./framyo-meets');
 const { apagarVersao } = require('./framyo-apagar');
 let chatApi = null;            // montado junto com as rotas; o /eventos consulta o resumo do chat
 let postsApi = null;           // idem: avisos de post aprovado (?posts=N no /eventos)
-let taskyApi = null;           // tasks novas para a equipe (?tasky=N no /eventos)
 
 // As duas variáveis de endereço existem só para os testes (um Frame.io falso).
 const FRAMEIO = process.env.FRAMYO_TESTE_FRAMEIO || 'https://api.frame.io/v4';
@@ -69,7 +67,7 @@ const apelidoValido = (s) => /^[a-z0-9._-]{2,40}$/.test(s);
 function usuarioPublico(u) {
   return { id: u.id, nome: u.nome, usuario: u.usuario, admin: !!u.admin, ativo: u.ativo !== false,
            marketing: !u.admin && !!u.marketing, papel: u.admin ? 'admin' : u.marketing ? 'marketing' : 'editor',
-           equipe: u.equipe || null, tasky: !!u.tasky, projetos: u.projetos || [], criado_em: u.criado_em,
+           projetos: u.projetos || [], criado_em: u.criado_em,
            versao: u.versao || null, sistema: u.sistema || null, visto_em: u.visto_em || null, forcar_atualizacao: u.forcar_atualizacao || null };
 }
 
@@ -95,14 +93,10 @@ const VAZIO = () => ({
   envios: [],                  // o que a equipe subiu pelo Framyo (feed do Início), mais novo primeiro
   seq: 0,
 });
-const VAZIO_TASKY = () => ({ usuarios: [], sessoes: {}, tasky: {}, google: {} });
 
 const DIAS_DE_COPIA = 30;             // cópias diárias guardadas (framyo_backup)
 
-function criarLoja({ pool, arquivo, produto = 'framyo', vazio = VAZIO }) {
-  const nomes = produto === 'tasky'
-    ? { store: 'tasky_store', backup: 'tasky_backup', constraint: 'tasky_uma_linha', log: 'tasky' }
-    : { store: 'framyo_store', backup: 'framyo_backup', constraint: 'framyo_uma_linha', log: 'framyo' };
+function criarLoja({ pool, arquivo }) {
   let dados = null;
   let pronto = null;
   let gravando = Promise.resolve();
@@ -110,32 +104,32 @@ function criarLoja({ pool, arquivo, produto = 'framyo', vazio = VAZIO }) {
 
   async function carregar() {
     if (pool) {
-      await pool.query(`CREATE TABLE IF NOT EXISTS ${nomes.store} (
-        id INTEGER PRIMARY KEY DEFAULT 1, data JSONB NOT NULL, CONSTRAINT ${nomes.constraint} CHECK (id = 1))`);
-      await pool.query(`CREATE TABLE IF NOT EXISTS ${nomes.backup} (
+      await pool.query(`CREATE TABLE IF NOT EXISTS framyo_store (
+        id INTEGER PRIMARY KEY DEFAULT 1, data JSONB NOT NULL, CONSTRAINT framyo_uma_linha CHECK (id = 1))`);
+      await pool.query(`CREATE TABLE IF NOT EXISTS framyo_backup (
         dia DATE PRIMARY KEY, data JSONB NOT NULL, gravado_em TIMESTAMPTZ NOT NULL DEFAULT now())`);
-      const r = await pool.query(`SELECT data FROM ${nomes.store} WHERE id = 1`);
-      dados = r.rows.length ? r.rows[0].data : vazio();
+      const r = await pool.query('SELECT data FROM framyo_store WHERE id = 1');
+      dados = r.rows.length ? r.rows[0].data : VAZIO();
     } else if (fs.existsSync(arquivo)) {
       // Arquivo ilegível: para aqui (sem trocar por um banco vazio na próxima gravação).
       dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
     } else {
-      dados = vazio();
+      dados = VAZIO();
     }
-    dados = Object.assign(vazio(), dados);
+    dados = Object.assign(VAZIO(), dados);
   }
 
   async function gravar(copia) {
     if (pool) {
-      await pool.query(`INSERT INTO ${nomes.store} (id, data) VALUES (1, $1)
+      await pool.query(`INSERT INTO framyo_store (id, data) VALUES (1, $1)
                         ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`, [copia]);
       // Uma cópia por dia (a do fim do dia fica), guardando os últimos 30 dias.
       const dia = new Date().toISOString().slice(0, 10);
-      await pool.query(`INSERT INTO ${nomes.backup} (dia, data) VALUES ($1, $2)
+      await pool.query(`INSERT INTO framyo_backup (dia, data) VALUES ($1, $2)
                         ON CONFLICT (dia) DO UPDATE SET data = EXCLUDED.data, gravado_em = now()`, [dia, copia]);
       if (copiaDoDia !== dia) {
         copiaDoDia = dia;
-        await pool.query(`DELETE FROM ${nomes.backup} WHERE dia < CURRENT_DATE - $1::int`, [DIAS_DE_COPIA]);
+        await pool.query(`DELETE FROM framyo_backup WHERE dia < CURRENT_DATE - $1::int`, [DIAS_DE_COPIA]);
       }
     } else {
       fs.writeFileSync(arquivo + '.tmp', copia);
@@ -151,7 +145,7 @@ function criarLoja({ pool, arquivo, produto = 'framyo', vazio = VAZIO }) {
     const esta = gravando.then(async () => {
       for (let i = 0; ; i++) {
         try { return await gravar(copia); } catch (e) {
-          console.error(`[${nomes.log}] erro ao gravar (tentativa ${i + 1}):`, e.message);
+          console.error('[framyo] erro ao gravar (tentativa ' + (i + 1) + '):', e.message);
           if (i >= 2) throw Object.assign(new Error('Não foi possível salvar no banco agora. Tente de novo em instantes.'), { status: 503 });
           await new Promise((ok) => setTimeout(ok, 500 * 2 ** i));
         }
@@ -165,8 +159,8 @@ function criarLoja({ pool, arquivo, produto = 'framyo', vazio = VAZIO }) {
     // Se o banco falhar ao ligar, a próxima requisição tenta de novo.
     pronto: () => (pronto = pronto || carregar().catch((e) => {
       pronto = null;
-      console.error(`[${nomes.log}] erro ao carregar:`, e.message);
-      throw Object.assign(new Error(`O banco do ${produto === 'tasky' ? 'Tasky' : 'FramePlus'} não respondeu. Tente de novo em instantes.`), { status: 503 });
+      console.error('[framyo] erro ao carregar:', e.message);
+      throw Object.assign(new Error('O banco do FramePlus não respondeu. Tente de novo em instantes.'), { status: 503 });
     })),
     get dados() { return dados; },
     salvar,
@@ -256,18 +250,11 @@ function criarFrameio(loja) {
 // ── o roteador ────────────────────────────────────────────────────────────────
 function roteador({ pool, dir, senhaDoConsoleConfere }) {
   const loja = criarLoja({ pool, arquivo: process.env.FRAMYO_DB_FILE || path.join(dir, 'framyo-db.json') });
-  const lojaTasky = criarLoja({
-    pool,
-    arquivo: process.env.TASKY_DB_FILE || path.join(dir, 'tasky-db.json'),
-    produto: 'tasky',
-    vazio: VAZIO_TASKY,
-  });
   const fio = criarFrameio(loja);
   const r = express.Router();
   const D = () => loja.dados;
 
   loja.pronto().catch((e) => console.error('[framyo] erro ao carregar:', e.message));
-  lojaTasky.pronto().catch((e) => console.error('[tasky] erro ao carregar:', e.message));
 
   // O corpo cru é guardado para conferir a assinatura dos avisos do Frame.io.
   r.use(express.json({ limit: '1mb', verify: (req, res, buf) => { req.corpoCru = buf; } }));
@@ -696,11 +683,9 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const chatVisto = req.query.chat === undefined ? null : Number(req.query.chat) || 0;
     // posts: avisos de post aprovado, num canal à parte (programas antigos ignoram)
     const postsVisto = req.query.posts === undefined ? null : Number(req.query.posts) || 0;
-    const taskyVisto = req.query.tasky === undefined ? null : Number(req.query.tasky) || 0;
     res.json({ seq: D().seq, modo: D().config.notificacoes, eventos, atualizar: forcar,
                chat: chatApi ? chatApi.resumo(u, chatVisto) : null,
                posts: postsApi ? postsApi.avisosPara(u, postsVisto) : null,
-               tasky: taskyApi ? taskyApi.avisosPara(u, taskyVisto === null ? Number.MAX_SAFE_INTEGER : taskyVisto) : null,
                versao: pub && pub.versao ? { versao: pub.versao, notas: pub.notas || '', tamanho: pub.tamanho } : null });
   }));
 
@@ -955,10 +940,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       avatar: c.owner && c.owner.avatar_url || null,
       quadro: typeof c.timestamp === 'number' ? c.timestamp : null,
       duracao: c.duration || null, concluido: !!c.completed_at,
-      // A anotação é o desenho vetorial feito sobre o quadro no Frame.io.
-      // O desktop interpreta a geometria normalizada e a sobrepõe ao player.
-      anotacao: typeof c.annotation === 'string' ? c.annotation : null,
-      ancora: c.anchor && typeof c.anchor === 'object' ? { x: c.anchor.x, y: c.anchor.y } : null,
+      anotacao: !!c.annotation,
       respostas: (c.replies || []).map((x) => ({ id: x.id, texto: x.text || '', autor: autorDe(x), criado_em: x.created_at })),
     })).sort((a, b) => (a.quadro ?? 1e12) - (b.quadro ?? 1e12) || String(a.criado_em).localeCompare(String(b.criado_em)));
     res.json({ comentarios });
@@ -1475,12 +1457,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
 
   postsApi = montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica: URL_PUBLICA });
   const { google } = postsApi;
-  montarInstagram({ r, loja, autenticar, soAdmin, envolve, pagina, urlPublica: URL_PUBLICA });
-
-  // Tasks e histórico ficam no banco próprio do Tasky; identidade, senha,
-  // sessão, nome, papel e equipe são os mesmos usuários do FramePlus.
-  taskyApi = montarTasky({ r, loja: lojaTasky, lojaUsuarios: loja, autenticar, soAdmin,
-    envolve, falha, pessoa, google, confereSenha, hashSenha, novoId, abrirSessao, usuarioPublico });
+  montarMeets({ r, loja, autenticar, soAdmin, envolve, google });
 
   // ── chat privado entre os usuários (arquivos no mesmo Google Drive) ─────────
   chatApi = montarChat({ r, loja, autenticar, envolve, falha, pessoa, agora, limpaTexto, google });
@@ -1491,7 +1468,6 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   });
 
   r.loja = loja;                          // para testes
-  r.lojaTasky = lojaTasky;
   return r;
 }
 
