@@ -143,21 +143,10 @@ function criarGoogle(loja, retorno) {
     return f;
   }
 
-  async function textoDocumento(id) {
-    const url = `${DRIVE}/files/${encodeURIComponent(id)}/export?mimeType=${encodeURIComponent('text/plain')}`;
-    const resposta = await fetch(url, { headers: { Authorization: `Bearer ${await token()}` } });
-    if (!resposta.ok) {
-      const j = await resposta.json().catch(() => ({}));
-      throw Object.assign(new Error((j.error && j.error.message) || `Google Docs respondeu ${resposta.status}`),
-                          { status: resposta.status >= 500 ? 502 : 400 });
-    }
-    return resposta.text();
-  }
-
   const urlLogin = (estado) => `${AUTORIZAR}?${new URLSearchParams({ client_id: clientId(), redirect_uri: retorno, response_type: 'code',
     scope: ESCOPO, access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state: estado })}`;
 
-  return { G, clientId, segredo, trocar, guardar, api, token, conectado, pronto, pastaFilha, garantirPasta, arquivos, conferirPasta, textoDocumento, urlLogin };
+  return { G, clientId, segredo, trocar, guardar, api, token, conectado, pronto, pastaFilha, garantirPasta, arquivos, conferirPasta, urlLogin };
 }
 
 function montarPosts({ r, loja, autenticar, soAdmin, envolve, falha, pessoa, pagina, agora, limpaTexto, urlPublica }) {
