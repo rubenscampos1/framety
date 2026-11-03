@@ -94,6 +94,7 @@ const VAZIO = () => ({
   responsaveis: {},            // id do vídeo ou da pilha de versões -> id do usuário
   eventos: [],
   envios: [],                  // o que a equipe subiu pelo Framyo (feed do Início), mais novo primeiro
+  envios_abertos: {},          // chave idempotente -> upload assinado/conclusão (limpeza automática)
   seq: 0,
 });
 const VAZIO_TASKY = () => ({ usuarios: [], sessoes: {}, tasky: {}, google: {} });
@@ -1193,21 +1194,42 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   r.post('/envios', autenticar, envolve(async (req, res) => {
     const conta = fio.conta();
     const { pasta_id: pasta, nome, tamanho, tipo } = req.body || {};
+    const chave = /^[a-f0-9]{32}$/i.test(String(req.body?.chave || '')) ? String(req.body.chave).toLowerCase() : null;
     if (!pasta || !nome || !(Number(tamanho) > 0)) throw falha(400, 'Faltam pasta, nome ou tamanho do arquivo.');
+    const abertos = D().envios_abertos || (D().envios_abertos = {}), agoraMs = Date.now();
+    for (const [k, v] of Object.entries(abertos)) {
+      if (Date.parse(v.criado_em || 0) < agoraMs - 6 * 60 * 60 * 1000) delete abertos[k];
+    }
+    const idempotencia = chave ? `${req.usuario.id}:${chave}` : null;
+    const anterior = idempotencia && abertos[idempotencia];
+    if (anterior) {
+      if (anterior.pasta !== pasta || anterior.nome !== nome || Number(anterior.tamanho) !== Number(tamanho))
+        throw falha(409, 'Esta tentativa de envio já pertence a outro arquivo. Inicie novamente.');
+      return res.json(anterior.resposta);
+    }
     // O Frame.io não aceita media_type na criação ("Unexpected field"): deduz
     // pela extensão e devolve na resposta — e é ESSE o Content-Type que o PUT de
     // cada parte tem de mandar. O tipo que o programa calculou fica de reserva.
     const mediaType = /^[a-z]+\/[a-z0-9.+-]+$/i.test(String(tipo || '')) ? String(tipo) : undefined;
     const j = await fio.api('POST', `/accounts/${conta}/folders/${encodeURIComponent(pasta)}/files/local_upload`,
                             { data: { name: limpaTexto(nome, 255), file_size: Number(tamanho) } });
-    res.json({ arquivo_id: j.data.id, media_type: j.data.media_type || mediaType || null,
-               partes: (j.data.upload_urls || []).map((u) => ({ url: u.url, tamanho: u.size })) });
+    const resposta = { arquivo_id: j.data.id, media_type: j.data.media_type || mediaType || null,
+      partes: (j.data.upload_urls || []).map((u) => ({ url: u.url, tamanho: u.size })) };
+    if (idempotencia) {
+      abertos[idempotencia] = { usuario_id: req.usuario.id, pasta, nome, tamanho: Number(tamanho),
+        criado_em: agora(), resposta };
+      await loja.salvar();
+    }
+    res.json(resposta);
   }));
 
   r.post('/envios/:id/concluir', autenticar, envolve(async (req, res) => {
     const conta = fio.conta();
     const novo = req.params.id;
     const { versao_de: base, tipo_base: tipo } = req.body || {};
+    const registro = Object.values(D().envios_abertos || {}).find((x) =>
+      x.usuario_id === req.usuario.id && x.resposta?.arquivo_id === novo);
+    if (registro?.resultado) return res.json(registro.resultado);
     // Espera o Frame.io dar o arquivo como recebido (até ~2 min).
     let status = null;
     for (let i = 0; i < 40; i++) {
@@ -1240,12 +1262,19 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const a = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(novo)}?include=project`)).data;
     resultado.view_url = a.view_url;
     // Feed do Início: quem subiu o quê, onde.
-    D().envios.unshift({ id: crypto.randomBytes(6).toString('hex'), em: agora(), usuario_id: req.usuario.id, usuario: req.usuario.usuario,
-      nome: req.usuario.nome, arquivo_id: novo, arquivo_nome: a.name || limpaTexto((req.body || {}).nome, 255), pilha_id: resultado.pilha_id || null, versao: !!base,
-      projeto_id: a.project_id, projeto_nome: (a.project && a.project.name) || '', view_url: a.view_url });
+    if (!D().envios.some((e) => e.arquivo_id === novo)) D().envios.unshift({
+      id: crypto.randomBytes(6).toString('hex'), em: agora(), usuario_id: req.usuario.id, usuario: req.usuario.usuario,
+      nome: req.usuario.nome, arquivo_id: novo, arquivo_nome: a.name || limpaTexto((req.body || {}).nome, 255),
+      pilha_id: resultado.pilha_id || null, versao: !!base, projeto_id: a.project_id,
+      projeto_nome: (a.project && a.project.name) || '', view_url: a.view_url });
     if (D().envios.length > 300) D().envios.length = 300;
     await loja.salvar().catch((e) => console.error('[framyo] feed:', e.message));
     await youtube.enfileirar(novo);
+    if (registro) {
+      registro.resultado = resultado;
+      registro.concluido_em = agora();
+      await loja.salvar();
+    }
     res.json(resultado);
   }));
 
