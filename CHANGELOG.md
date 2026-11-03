@@ -10,6 +10,7 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 ## Não lançado
 
 - **FramePlus Notas:** transforma as anotações automáticas do Google Meet/Gemini em um acervo compartilhado e pesquisável, com tópicos, texto original, citações destacadas, tarefas por data e fila de revisão sem descarte silencioso.
+- **FramePlus Notas: consulta inteligente e agenda legível.** Perguntas são respondidas somente com trechos do acervo e sempre exibem as reuniões usadas como fonte. Os compromissos ganham títulos operacionais curtos, preservando logo abaixo a frase completa da reunião.
 
 ## Tasky — não lançado
 

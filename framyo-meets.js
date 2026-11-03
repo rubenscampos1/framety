@@ -83,6 +83,64 @@ function semanticaDe(c, internos) {
   return {responsavel:responsavel||null,papel:papelDe(responsavel,internos),tipo_acao:(verbos.find(([,raiz])=>new RegExp(`\\b${raiz}[a-z]*\\b`).test(texto))||['acompanhar'])[0],versao:v?(versoes[semAcento(v[1])]||v[1].toUpperCase().replace(/\s+/g,'')):null};
 }
 
+const PALAVRAS_VAZIAS = new Set(('a o os as de da do das dos e em no na nos nas um uma para por com que se ' +
+  'como qual quais quando onde quem isso essa esse ao aos ate até sobre tem foi ser esta está sao são').split(/\s+/));
+const palavras = (s) => semAcento(s).replace(/[^a-z0-9]+/g,' ').split(/\s+/)
+  .filter(x=>x.length>2&&!PALAVRAS_VAZIAS.has(x));
+
+function nomeProjeto(titulo) {
+  let t=String(titulo||'').replace(/\s*-\s*Anota[cç][oõ]es do Gemini.*$/i,'')
+    .replace(/\s*-\s*20\d{2}[\/-]\d{2}[\/-]\d{2}.*$/i,'').replace(/\s+/g,' ').trim();
+  if(t.length>42)t=t.slice(0,39).trim()+'…';
+  return t||'PROJETO';
+}
+
+function tituloCurto(c, doc) {
+  const texto=semAcento(`${c.acao||''} ${c.descricao||''}`), projeto=nomeProjeto(doc?.titulo).toUpperCase();
+  let assunto='PRAZO';
+  if(/\b(v\s*\d+|primeira versao|segunda versao|terceira versao)\b/.test(texto)) assunto=`ENTREGA ${(texto.match(/\bv\s*\d+\b/)||['VERSÃO'])[0].replace(/\s/g,'').toUpperCase()}`;
+  else if(/\b(final|versao final|entrega final)\b/.test(texto)) assunto='ENTREGA FINAL';
+  else if(/\b(maquete|modelo 3d)\b/.test(texto)) assunto=/receb|cheg/.test(texto)?'RECEBER MAQUETE':'MAQUETE';
+  else if(/\b(material|arquivo|foto|planta|logo|briefing)\b/.test(texto)) assunto=/receb|cliente|mand/.test(texto)?'RECEBER MATERIAL':'ENTREGAR MATERIAL';
+  else if(/\b(aprov|valid)\b/.test(texto)) assunto='APROVAÇÃO';
+  else if(/\b(revis|ajust|alter)\b/.test(texto)) assunto='REVISÃO';
+  else if(/\b(public|post|campanha)\b/.test(texto)) assunto='PUBLICAÇÃO';
+  else if(/\b(grava|film|capta)\b/.test(texto)) assunto='GRAVAÇÃO';
+  else if(/\b(apresent)\b/.test(texto)) assunto='APRESENTAÇÃO';
+  else if(/\b(envi|entreg)\b/.test(texto)) assunto='ENTREGA';
+  else if(/\b(receb)\b/.test(texto)) assunto='RECEBIMENTO';
+  return `${assunto} · ${projeto}`;
+}
+
+function responderComNotas(base, pergunta) {
+  const q=String(pergunta||'').trim();
+  if(q.length<3)throw Object.assign(new Error('Escreva uma pergunta um pouco mais completa.'),{status:400});
+  const termos=[...new Set(palavras(q))], frase=semAcento(q), docs=new Map((base.documentos||[]).map(x=>[x.id,x]));
+  const candidatos=[];
+  const pontuar=(texto,titulo='')=>{const n=semAcento(texto), nt=semAcento(titulo);let pontos=0;for(const t of termos){if(nt.includes(t))pontos+=7;if(n.includes(t))pontos+=2;}if(termos.length&&termos.every(t=>n.includes(t)||nt.includes(t)))pontos+=10;return pontos;};
+  for(const d of base.documentos||[]){
+    const blocos=[...(d.topicos||[]),...String(d.resumo||'').split(/\n+/),...String(d.conteudo_original||'').split(/\n+|(?<=[.!?])\s+/)]
+      .map(x=>String(x).trim()).filter(x=>x.length>24&&x.length<900);
+    for(const trecho of blocos){const pontos=pontuar(trecho,d.titulo);if(pontos)candidatos.push({pontos,tipo:'nota',doc:d,trecho});}
+  }
+  for(const c of base.compromissos||[]){const d=docs.get(c.documento_id),texto=[c.acao,c.descricao,c.evidencia,c.responsavel,c.data_inicio].join(' '),pontos=pontuar(texto,d?.titulo||'');if(pontos)candidatos.push({pontos:pontos+3,tipo:'prazo',doc:d,compromisso:c,trecho:c.descricao||c.evidencia||c.acao});}
+  candidatos.sort((a,b)=>b.pontos-a.pontos||String(b.doc?.reuniao_dia||'').localeCompare(String(a.doc?.reuniao_dia||'')));
+  const vistos=new Set(), fontes=[];
+  for(const x of candidatos){const chave=`${x.doc?.id}|${semAcento(x.trecho).slice(0,160)}`;if(vistos.has(chave))continue;vistos.add(chave);fontes.push(x);if(fontes.length===6)break;}
+  if(!fontes.length)return {resposta:'Não encontrei essa informação nas notas disponíveis. Tente usar o nome do projeto, do cliente ou uma palavra mencionada na reunião.',fontes:[]};
+  const prazos=fontes.filter(x=>x.tipo==='prazo'&&x.compromisso?.data_inicio);
+  let resposta='';
+  if(/\b(quando|data|dia|prazo|entrega|vence|vencimento)\b/.test(frase)&&prazos.length){
+    resposta='Encontrei estes prazos nas reuniões:\n'+prazos.slice(0,4).map(x=>`• ${x.compromisso.data_inicio}${x.compromisso.data_fim&&x.compromisso.data_fim!==x.compromisso.data_inicio?` a ${x.compromisso.data_fim}`:''} — ${tituloCurto(x.compromisso,x.doc)}`).join('\n');
+  } else if(/\b(quem|responsavel|responsável)\b/.test(frase)){
+    const resp=fontes.filter(x=>x.compromisso?.responsavel).slice(0,4);
+    resposta=resp.length?'Os responsáveis citados são:\n'+resp.map(x=>`• ${x.compromisso.responsavel} — ${tituloCurto(x.compromisso,x.doc)}`).join('\n'):'As notas relacionadas não indicam um responsável de forma clara.';
+  } else {
+    resposta=fontes.slice(0,4).map((x,i)=>`${i? 'Também consta que':'Pelas notas, '}${String(x.trecho).replace(/^[•●▪\-*]\s*/,'').trim()}`).join('\n\n');
+  }
+  return {resposta,fontes:fontes.slice(0,5).map(x=>({documento_id:x.doc?.id||null,titulo:x.doc?.titulo||'Reunião',reuniao_dia:x.doc?.reuniao_dia||null,trecho:x.trecho,url:x.doc?.url||null}))};
+}
+
 function extrairDocumento(doc, internos=[]) {
   const data=dataDaReuniao(doc), s=secoes(doc.texto), candidatos=[];
   for(const linha of s.proximas){ const m=linha.match(/^\[([^\]]+)\]\s*([^:]+):\s*(.+)$/); if(m)candidatos.push({responsavel:m[1].trim(),acao:m[2].trim(),evidencia:linha,descricao:m[3].trim(),fonte:'proximas_etapas'}); }
@@ -104,7 +162,7 @@ function montarMeets({ r, loja, autenticar, soAdmin, envolve, google }) {
   const D=()=>loja.dados;
   const dados=()=>D().meets||(D().meets={documentos:[],compromissos:[],candidatos:[],erros:[],correcoes:{},pais:[],versao_extracao:0,historico_concluido:false,ultima_varredura:null,avisos:[],seq:0});
   const internos=()=>D().usuarios.filter(u=>u.ativo!==false).flatMap(u=>[semAcento(u.nome),semAcento(u.usuario)]).filter(Boolean);
-  const listar=()=>({documentos:dados().documentos,compromissos:dados().compromissos,candidatos:dados().candidatos||[],erros:dados().erros||[],historico_concluido:!!dados().historico_concluido,ultima_varredura:dados().ultima_varredura,pendentes:dados().documentos.filter(x=>x.status==='revisar').length+(dados().candidatos||[]).length+(dados().erros||[]).length});
+  const listar=()=>{const base=dados(),docs=new Map(base.documentos.map(x=>[x.id,x]));return {documentos:base.documentos,compromissos:base.compromissos.map(c=>({...c,titulo_curto:c.titulo_curto||tituloCurto(c,docs.get(c.documento_id))})),candidatos:base.candidatos||[],erros:base.erros||[],historico_concluido:!!base.historico_concluido,ultima_varredura:base.ultima_varredura,pendentes:base.documentos.filter(x=>x.status==='revisar').length+(base.candidatos||[]).length+(base.erros||[]).length};};
 
   async function executarVarredura() {
     if (!google.conectado()) throw Object.assign(new Error('Conecte a conta Google no FramePlus.'),{status:409});
@@ -177,6 +235,7 @@ function montarMeets({ r, loja, autenticar, soAdmin, envolve, google }) {
   }
 
   r.get('/meets',autenticar,(req,res)=>res.json(listar()));
+  r.post('/meets/perguntar',autenticar,(req,res)=>res.json(responderComNotas(dados(),req.body?.pergunta)));
   r.post('/meets/varrer',autenticar,soAdmin,envolve(async(req,res)=>res.json(await varrer())));
   r.put('/meets/compromissos/:id',autenticar,envolve(async(req,res)=>{
     const base=dados(), atual=base.compromissos.find(x=>x.id===req.params.id);
@@ -195,4 +254,4 @@ function montarMeets({ r, loja, autenticar, soAdmin, envolve, google }) {
   return { varrer, extrairDocumento, ehCandidato, iniciarAutomatico };
 }
 
-module.exports={ montarMeets, extrairDocumento, ehCandidato, janelaDeData, dataDaReuniao };
+module.exports={ montarMeets, extrairDocumento, ehCandidato, janelaDeData, dataDaReuniao, tituloCurto, responderComNotas };
