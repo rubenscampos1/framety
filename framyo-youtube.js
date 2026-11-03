@@ -9,13 +9,19 @@ const OAUTH = process.env.FRAMYO_TESTE_GOOGLE_OAUTH || 'https://oauth2.googleapi
 const AUTH = process.env.FRAMYO_TESTE_GOOGLE_AUTORIZAR || 'https://accounts.google.com/o/oauth2/v2/auth';
 const SCOPE = 'https://www.googleapis.com/auth/youtube.force-ssl';
 const EVENTS = ['file.ready', 'file.upload.completed', 'file.versioned', 'file.updated'];
-const titulo = (nome, versao) => Array.from(`(em aprovação - V${versao}) ${String(nome || 'Vídeo').replace(/[<>]/g, '').trim()}`).slice(0, 100).join('');
+const titulo = (nome, versao) => {
+  const v = Math.max(1, Math.trunc(Number(versao) || 1));
+  const prefixo = `(V${v}) - `, sufixo = ' - (ÚLTIMA VERSÃO)';
+  const limpo = String(nome || 'Vídeo').replace(/[<>]/g, '').trim() || 'Vídeo';
+  const miolo = Array.from(limpo).slice(0, Math.max(1, 100 - Array.from(prefixo + sufixo).length)).join('');
+  return prefixo + miolo + sufixo;
+};
 const erro = (status, message) => Object.assign(new Error(message), { status });
 const enc = encodeURIComponent;
 
 function criarYoutube({ loja, fio }) {
   const D = () => loja.dados;
-  const Y = () => D().youtube || (D().youtube = { registros: {}, aliases: {}, entrada: {}, ativo: false });
+  const Y = () => D().youtube || (D().youtube = { registros: {}, aliases: {}, entrada: {}, avisos: [], aviso_seq: 0, ativo: false });
   const PERMISSAO_DELETE = Symbol('exclusao-com-comprovante');
   const avisos = new EventEmitter(); avisos.setMaxListeners(0);
   function seguranca() {
@@ -92,6 +98,11 @@ function criarYoutube({ loja, fio }) {
         url: r.atual ? `https://youtu.be/${r.atual.id}` : null, sincronizado: !!r.atual?.processado && r.atual.arquivo === r.desejado?.arquivo && r.atual.titulo === titulo(r.desejado.nome, r.desejado.versao),
         erro: r.erro || null, limpeza_pendente: r.anteriores.length, enviando: !!r.upload, projeto: r.projeto })) };
   }
+  function avisosPara(u, visto) {
+    const y = Y(), seq = Number(y.aviso_seq) || 0;
+    if (visto == null) return { seq, avisos: [] };
+    return { seq, avisos: (y.avisos || []).filter(a => a.seq > visto && permitido(u, a.projeto)).slice(-30) };
+  }
   async function ativarCanal(canal, novaAuth, pending) {
     const y = Y(), destino = pending.canal_esperado || y.destino_id;
     if (destino && canal.id !== destino) throw erro(409, 'O canal autorizado não corresponde ao destino escolhido. Sincronização preservada e não ativada.');
@@ -154,7 +165,9 @@ function criarYoutube({ loja, fio }) {
     let filhos = [f];
     if (!stack && f.parent_id) {
       try { stack = (await fio.api('GET', `${prefix}/version_stacks/${enc(f.parent_id)}`)).data; }
-      catch (e) { if (e.status !== 404) throw e; }
+      // Em arquivo avulso, parent_id é a pasta. O Frame.io pode responder 400,
+      // 404 ou 422 ao consultar essa pasta como pilha; todos significam "sem pilha".
+      catch (e) { if (![400, 404, 422].includes(e.status)) throw e; }
     }
     if (stack) {
       filhos = (await fio.tudo(`${prefix}/version_stacks/${enc(stack.id)}/children`)).filter(x => x.type === 'file')
@@ -271,6 +284,9 @@ function criarYoutube({ loja, fio }) {
   async function concluir(r, up, id) {
     const ref = { id, arquivo: up.arquivo, canal: up.canal, marca: marca(r), trabalho: `framyo-job:${up.id}`, titulo: up.titulo };
     const g = seguranca();
+    if (up.substitui && (!r.atual || r.atual.id !== up.substitui.id || r.atual.arquivo !== up.substitui.arquivo ||
+        `https://youtu.be/${r.atual.id}` !== up.substitui.url))
+      throw erro(409, 'O link anterior do YouTube mudou durante o envio. A versão anterior foi preservada para revisão.');
     if (up.protocolo !== 2 || !up.origem || !(Date.parse(up.iniciado_em) >= Date.parse(g.inicio)) ||
         !(Date.parse(up.origem.criado_em) >= Date.parse(g.inicio)) || !up.sessao || !sessaoValida(up.sessao))
       throw erro(409, 'Upload sem origem e sessão próprias verificáveis. Nenhum vínculo foi adotado.');
@@ -293,6 +309,14 @@ function criarYoutube({ loja, fio }) {
     const arquivoAnterior = r.atual?.arquivo;
     r.atual = ref; delete r.upload; delete r.erro;
     r.falhas = 0;
+    const y = Y();
+    if (!(y.avisos || (y.avisos = [])).some(a => a.video_id === id)) {
+      y.aviso_seq = (Number(y.aviso_seq) || 0) + 1;
+      y.avisos.push({ seq: y.aviso_seq, video_id: id, arquivo: up.arquivo, projeto: r.projeto,
+        nome: r.desejado?.nome || up.titulo, versao: r.desejado?.versao || null,
+        url: `https://youtu.be/${id}`, em: new Date().toISOString() });
+      if (y.avisos.length > 300) y.avisos.splice(0, y.avisos.length - 300);
+    }
     await loja.salvar(); // commit da nova referência ANTES de qualquer DELETE
     avisos.emit("arquivo:" + up.arquivo);   // o link aparece no FramePlus neste instante
     if (arquivoAnterior && arquivoAnterior !== up.arquivo) avisos.emit("arquivo:" + arquivoAnterior);
@@ -332,7 +356,12 @@ function criarYoutube({ loja, fio }) {
       for (const [key, e] of Object.entries(y.entrada).filter(([, e]) => e.conta === fio.conta() && e.tentar_em <= Date.now()).slice(0, 3)) {
         if (e.conta !== fio.conta() || e.tentar_em > Date.now()) continue;
         try { await registrar(e.arquivo); delete y.entrada[key]; }
-        catch (ex) { e.erro = ex.message; e.tentar_em = Date.now() + recuo(e); }
+        catch (ex) {
+          // Webhooks podem chegar depois que a versão já foi removida. Não há
+          // nada para enviar e repetir para sempre só congestiona a fila.
+          if (ex.status === 404) delete y.entrada[key];
+          else { e.erro = ex.message; e.tentar_em = Date.now() + recuo(e); }
+        }
         await loja.salvar();
       }
       let verificados = 0;
@@ -342,7 +371,9 @@ function criarYoutube({ loja, fio }) {
         try {
           if (r.upload?.lease && r.upload.lease.ate > Date.now()) continue;
           // Atualiza a origem antes de retomar, inclusive renomeações feitas no site.
-          const item = await registrar(r.desejado.arquivo);
+          // Numa pilha, consulte a entidade estável. A versão que era cabeça
+          // pode já ter sido removida, enquanto a pilha continua com uma nova.
+          const item = await registrar(r.desejado.pilha || r.desejado.arquivo);
           if (!item) continue;
           const d = item.d;
           if (r.atual && r.atual.arquivo !== d.arquivo && !(Date.parse(d.criado_em) > Date.parse(comprovante(r.atual).origem_criada_em)))
@@ -360,7 +391,9 @@ function criarYoutube({ loja, fio }) {
             r.upload = { id: crypto.randomUUID(), arquivo: d.arquivo, tamanho: d.tamanho, tipo: d.tipo,
               protocolo: 2, iniciado_em: new Date().toISOString(),
               origem: { conta: d.conta, projeto: d.projeto, pilha: d.pilha, criado_em: d.criado_em },
-              titulo: titulo(d.nome, d.versao), canal: y.canal.id };
+              titulo: titulo(d.nome, d.versao), canal: y.canal.id,
+              // A substituição nasce do link já vinculado à pilha no FramePlus, nunca de busca por título no canal.
+              substitui: r.atual ? { id: r.atual.id, arquivo: r.atual.arquivo, url: `https://youtu.be/${r.atual.id}` } : null };
             await loja.salvar();
           }
           const up = r.upload;
@@ -378,7 +411,16 @@ function criarYoutube({ loja, fio }) {
           const st = await situacao(up);
           if (st.id) { await concluir(r, up, st.id); continue; }
           // A versão em trânsito pode já ser antiga: sua fonte deve ser a original.
-          const source = up.arquivo === d.arquivo ? d : await descreverArquivo(up.arquivo);
+          let source;
+          try { source = up.arquivo === d.arquivo ? d : await descreverArquivo(up.arquivo); }
+          catch (ex) {
+            // A versão seguinte pode ter substituído/removido a origem enquanto
+            // a sessão antiga ainda estava incompleta. A sessão é abandonada,
+            // mas nenhum vídeo do YouTube é adotado ou excluído às cegas.
+            if (ex.status !== 404 || up.arquivo === d.arquivo) throw ex;
+            delete r.upload; delete r.erro; r.pendente = true; r.tentar_em = 0;
+            await loja.salvar(); avisos.emit('trabalho'); continue;
+          }
           if (!source.fonte) throw erro(409, 'Original ainda indisponível para retomada.');
           up.lease = { id: crypto.randomUUID(), usuario: u.id, ate: Date.now() + 600000 };
           delete r.erro;
@@ -457,7 +499,7 @@ function criarYoutube({ loja, fio }) {
     if (signal.aborted) return {};
     return { ...(await trabalhar(u)), espera: 1 };
   }
-  return { Y, auth, estado, linkArquivo, aguardarLink, exclusivo, credenciais, trocar, api, ativarCanal, enfileirar, trabalhar, trabalharEsperando, atualizarLease, recuperar, registrar,
+  return { Y, auth, estado, avisosPara, linkArquivo, aguardarLink, exclusivo, credenciais, trocar, api, ativarCanal, enfileirar, trabalhar, trabalharEsperando, atualizarLease, recuperar, registrar,
     async mudou(id) {
       await enfileirar(id);
       if (!Y().ativo || !auth().refresh_token) return;

@@ -11,6 +11,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 - **FramePlus: uploads retomáveis e sem duplicação.** A criação e a conclusão de envios ao Frame.io aceitam uma chave idempotente: oscilações de rede podem ser repetidas sem criar outro arquivo, outra versão, outro item no feed ou outra tarefa no YouTube. Registros temporários são removidos automaticamente.
 
+- **FramePlus: transferência e YouTube recuperáveis.** Vídeo novo ou sem link cria a primeira cópia; uma nova versão usa o link anterior já vinculado no FramePlus, envia e processa a nova cópia antes de excluir a anterior. A fila descarta eventos de arquivos removidos, retoma pela pilha atual, gera o título `(Vn) - nome - (ÚLTIMA VERSÃO)` e avisa a pessoa na área de trabalho quando o novo link estiver pronto. Administradores também passam a escolher, por usuário, quais abas atuais e futuras aparecem no aplicativo.
+
 - **FramePlus Notas:** transforma as anotações automáticas do Google Meet/Gemini em um acervo compartilhado e pesquisável, com tópicos, texto original, citações destacadas, tarefas por data e fila de revisão sem descarte silencioso.
 - **FramePlus Notas: consulta inteligente e agenda legível.** Perguntas são respondidas somente com trechos do acervo e sempre exibem as reuniões usadas como fonte. Os compromissos ganham títulos operacionais curtos, preservando logo abaixo a frase completa da reunião.
 

@@ -70,7 +70,8 @@ const apelidoValido = (s) => /^[a-z0-9._-]{2,40}$/.test(s);
 function usuarioPublico(u) {
   return { id: u.id, nome: u.nome, usuario: u.usuario, admin: !!u.admin, ativo: u.ativo !== false,
            marketing: !u.admin && !!u.marketing, papel: u.admin ? 'admin' : u.marketing ? 'marketing' : 'editor',
-           equipe: u.equipe || null, tasky: !!u.tasky, projetos: u.projetos || [], criado_em: u.criado_em,
+           equipe: u.equipe || null, tasky: !!u.tasky, projetos: u.projetos || [],
+           abas: Array.isArray(u.abas) ? u.abas : null, criado_em: u.criado_em,
            versao: u.versao || null, sistema: u.sistema || null, visto_em: u.visto_em || null, forcar_atualizacao: u.forcar_atualizacao || null };
 }
 
@@ -343,7 +344,8 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
 
   r.get('/estado', (req, res) => {
     res.json({ ok: true, precisa_configurar: D().usuarios.length === 0,
-               frameio_conectado: !!(D().frameio && D().frameio.refresh_token) });
+               frameio_conectado: !!(D().frameio && D().frameio.refresh_token),
+               transferencias_versao: 2 });
   });
 
   // Primeiro admin: só enquanto não há nenhum usuário, e só com a senha do
@@ -392,13 +394,16 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   }));
 
   // ── admin: usuários e configurações ─────────────────────────────────────────
+  const limpaAbas = (abas) => [...new Set((Array.isArray(abas) ? abas : []).map(String)
+    .filter(x => /^[a-z0-9_-]{2,40}$/.test(x)).slice(0, 50))];
   function novoUsuario(b, admin) {
     const usuario = limpaApelido(b.usuario);
     if (!apelidoValido(usuario)) throw falha(400, 'Usuário: 2 a 40 letras minúsculas, números, ponto, hífen ou sublinhado.');
     if (D().usuarios.some((x) => x.usuario === usuario)) throw falha(409, `Já existe o usuário @${usuario}.`);
     if (String(b.senha || '').length < 6) throw falha(400, 'A senha precisa de pelo menos 6 caracteres.');
     return { id: novoId('u_'), nome: limpaTexto(b.nome, 80) || usuario, usuario, senha: hashSenha(String(b.senha)),
-             admin: !!admin, marketing: !admin && b.papel === 'marketing', ativo: true, projetos: [], criado_em: agora() };
+             admin: !!admin, marketing: !admin && b.papel === 'marketing', ativo: true, projetos: [],
+             abas: Array.isArray(b.abas) ? limpaAbas(b.abas) : null, criado_em: agora() };
   }
   const admins = () => D().usuarios.filter((x) => x.admin && x.ativo !== false);
 
@@ -490,6 +495,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       if (!u.ativo) for (const [k, s] of Object.entries(D().sessoes)) if (s.usuario_id === u.id) delete D().sessoes[k];
     }
     if (Array.isArray(b.projetos)) u.projetos = b.projetos.map(String).slice(0, 500);
+    if (Array.isArray(b.abas)) u.abas = limpaAbas(b.abas);
     await loja.salvar();
     res.json({ usuario: usuarioPublico(u) });
   }));
@@ -699,10 +705,12 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     // posts: avisos de post aprovado, num canal à parte (programas antigos ignoram)
     const postsVisto = req.query.posts === undefined ? null : Number(req.query.posts) || 0;
     const taskyVisto = req.query.tasky === undefined ? null : Number(req.query.tasky) || 0;
+    const youtubeVisto = req.query.youtube === undefined ? null : Number(req.query.youtube) || 0;
     res.json({ seq: D().seq, modo: D().config.notificacoes, eventos, atualizar: forcar,
                chat: chatApi ? chatApi.resumo(u, chatVisto) : null,
                posts: postsApi ? postsApi.avisosPara(u, postsVisto) : null,
                tasky: taskyApi ? taskyApi.avisosPara(u, taskyVisto === null ? Number.MAX_SAFE_INTEGER : taskyVisto) : null,
+               youtube: youtube.avisosPara(u, youtubeVisto),
                versao: pub && pub.versao ? { versao: pub.versao, notas: pub.notas || '', tamanho: pub.tamanho } : null });
   }));
 
