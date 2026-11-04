@@ -21,7 +21,7 @@ const enc = encodeURIComponent;
 
 function criarYoutube({ loja, fio }) {
   const D = () => loja.dados;
-  const Y = () => D().youtube || (D().youtube = { registros: {}, aliases: {}, entrada: {}, avisos: [], aviso_seq: 0, ativo: false });
+  const Y = () => D().youtube || (D().youtube = { registros: {}, aliases: {}, entrada: {}, revisao: [], avisos: [], aviso_seq: 0, ativo: false });
   const PERMISSAO_DELETE = Symbol('exclusao-com-comprovante');
   const avisos = new EventEmitter(); avisos.setMaxListeners(0);
   function seguranca() {
@@ -93,9 +93,10 @@ function criarYoutube({ loja, fio }) {
       troca_canal_segura: 1, destino_id: y.destino_id || null, canais_arquivados: (y.historico_canais || []).length,
       canal: y.canal ? { id: y.canal.id, nome: y.canal.nome } : null, ultimo_trabalhador: y.ultimo_trabalhador || null,
       erros_entrada: Object.values(y.entrada).filter(e => e.erro).map(e => ({ arquivo: e.arquivo, erro: e.erro })),
+      revisoes: (y.revisao || []).slice(-30), revisoes_total: (y.revisao || []).length,
       pendentes: Object.keys(y.entrada).length + Object.values(y.registros).filter(r => r.pendente || r.upload || r.anteriores.length).length,
       registros: Object.values(y.registros).map(r => ({ id: r.id, nome: r.desejado?.nome, versao: r.desejado?.versao,
-        url: r.atual ? `https://youtu.be/${r.atual.id}` : null, sincronizado: !!r.atual?.processado && r.atual.arquivo === r.desejado?.arquivo && r.atual.titulo === titulo(r.desejado.nome, r.desejado.versao),
+        url: r.atual ? `https://youtu.be/${r.atual.id}` : null, sincronizado: !!r.atual?.processado && r.atual.arquivo === r.desejado?.arquivo && !r.upload && !r.anteriores.length,
         erro: r.erro || null, limpeza_pendente: r.anteriores.length, enviando: !!r.upload, projeto: r.projeto })) };
   }
   function avisosPara(u, visto) {
@@ -196,7 +197,11 @@ function criarYoutube({ loja, fio }) {
       throw erro(409, 'Aguardando o envio anterior antes de reunir as versões.');
     for (const a of d.aliases) y.aliases[chave(a)] = r.id;
     const { fonte, aliases, ...persistente } = d; // links de origem temporários nunca persistidos
-    r.pendente = r.pendente || !r.desejado || JSON.stringify(r.desejado) !== JSON.stringify(persistente);
+    const anterior = r.desejado;
+    const mudouTitulo = !!anterior && anterior.arquivo === persistente.arquivo &&
+      (anterior.nome !== persistente.nome || anterior.versao !== persistente.versao);
+    r.pendente = r.pendente || !anterior || JSON.stringify(anterior) !== JSON.stringify(persistente);
+    if (mudouTitulo) r.titulo_pendente = true;
     r.desejado = persistente; r.projeto = d.projeto;
     await loja.salvar();
     return { r, d };
@@ -256,16 +261,29 @@ function criarYoutube({ loja, fio }) {
     g.exclusoes[a.id].estado = 'excluida'; await loja.salvar();
   }
   async function renomear(r) {
-    if (!r.atual || r.atual.arquivo !== r.desejado.arquivo) return;
+    if (!r.titulo_pendente || !r.atual || r.atual.arquivo !== r.desejado.arquivo) return;
     const nome = titulo(r.desejado.nome, r.desejado.versao);
-    if (r.atual.titulo === nome) return;
+    if (r.atual.titulo === nome) { delete r.titulo_pendente; return; }
     const v = await video(r.atual.id); conferirProprio(v, r.atual);
     const snippet = Object.fromEntries(['title','description','tags','categoryId','defaultLanguage']
       .filter(k => v.snippet[k] !== undefined).map(k => [k, v.snippet[k]]));
     snippet.title = nome;
     await api('PUT', '/videos?part=snippet', { id: v.id, snippet });
-    r.atual.titulo = nome;
+    r.atual.titulo = nome; delete r.titulo_pendente;
     await loja.salvar();
+  }
+
+  function migrarTitulosAntigos(y) {
+    if ((Number(y.titulo_politica) || 0) >= 2) return false;
+    y.titulo_politica = 2;
+    for (const r of Object.values(y.registros || {})) {
+      delete r.titulo_pendente;
+      // A nova convenção vale para próximos envios/renomeações. Não
+      // transforme toda a biblioteca histórica numa fila apenas para retitular.
+      if (r.atual?.processado && r.atual.arquivo === r.desejado?.arquivo && !r.upload && !r.anteriores?.length)
+        r.pendente = false;
+    }
+    return true;
   }
   function sessaoValida(url) {
     const u = new URL(url);
@@ -307,7 +325,7 @@ function criarYoutube({ loja, fio }) {
     await loja.salvar();
     if (r.atual && r.atual.id !== id) r.anteriores.push(r.atual);
     const arquivoAnterior = r.atual?.arquivo;
-    r.atual = ref; delete r.upload; delete r.erro;
+    r.atual = ref; delete r.upload; delete r.erro; delete r.titulo_pendente;
     r.falhas = 0;
     const y = Y();
     if (!(y.avisos || (y.avisos = [])).some(a => a.video_id === id)) {
@@ -352,6 +370,7 @@ function criarYoutube({ loja, fio }) {
       const y = Y();
       if (!y.ativo || !auth().refresh_token || !permitido(u, null) && !(u.projetos || []).length) return {};
       if (u.marketing && !u.admin) throw erro(403, 'Marketing não pode sincronizar vídeos.');
+      if (migrarTitulosAntigos(y)) await loja.salvar();
       y.ultimo_trabalhador = new Date().toISOString();
       for (const [key, e] of Object.entries(y.entrada).filter(([, e]) => e.conta === fio.conta() && e.tentar_em <= Date.now()).slice(0, 3)) {
         if (e.conta !== fio.conta() || e.tentar_em > Date.now()) continue;
@@ -360,6 +379,12 @@ function criarYoutube({ loja, fio }) {
           // Webhooks podem chegar depois que a versão já foi removida. Não há
           // nada para enviar e repetir para sempre só congestiona a fila.
           if (ex.status === 404) delete y.entrada[key];
+          else if (ex.status === 409 && ex.message.startsWith('Arquivos de vínculos diferentes foram reunidos.')) {
+            const revisao = y.revisao || (y.revisao = []);
+            if (!revisao.some(x => x.arquivo === e.arquivo)) revisao.push({ arquivo: e.arquivo, erro: ex.message, em: new Date().toISOString() });
+            if (revisao.length > 200) revisao.splice(0, revisao.length - 200);
+            delete y.entrada[key];
+          }
           else { e.erro = ex.message; e.tentar_em = Date.now() + recuo(e); }
         }
         await loja.salvar();
