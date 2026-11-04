@@ -95,7 +95,7 @@ function criarYoutube({ loja, fio }) {
       erros_entrada: Object.values(y.entrada).filter(e => e.erro).map(e => ({ arquivo: e.arquivo, erro: e.erro })),
       revisoes: (y.revisao || []).slice(-30), revisoes_total: (y.revisao || []).length,
       pendentes: Object.keys(y.entrada).length + Object.values(y.registros).filter(r => r.pendente || r.upload || r.anteriores.length).length,
-      registros: Object.values(y.registros).map(r => ({ id: r.id, nome: r.desejado?.nome, versao: r.desejado?.versao,
+      registros: Object.values(y.registros).filter(r => !r.arquivado).map(r => ({ id: r.id, nome: r.desejado?.nome, versao: r.desejado?.versao,
         url: r.atual ? `https://youtu.be/${r.atual.id}` : null, sincronizado: !!r.atual?.processado && r.atual.arquivo === r.desejado?.arquivo && !r.upload && !r.anteriores.length,
         erro: r.erro || null, limpeza_pendente: r.anteriores.length, enviando: !!r.upload, projeto: r.projeto })) };
   }
@@ -391,6 +391,7 @@ function criarYoutube({ loja, fio }) {
       }
       let verificados = 0;
       for (const r of Object.values(y.registros)) {
+        if (r.arquivado) continue;
         if (r.conta !== fio.conta() || !permitido(u, r.projeto) || r.tentar_em > Date.now() || (!r.pendente && !r.upload && !r.anteriores.length && (!r.atual || r.atual.processado))) continue;
         if (++verificados > 4) break;
         try {
@@ -453,7 +454,16 @@ function criarYoutube({ loja, fio }) {
           r.falhas = 0;
           return { tarefa: { registro: r.id, trabalho: up.id, lease: up.lease.id, sessao: up.sessao, fonte: source.fonte,
             tamanho: up.tamanho, tipo: up.tipo, offset: st.offset } };
-        } catch (ex) { r.erro = ex.message; r.tentar_em = Date.now() + recuo(r); await loja.salvar(); }
+        } catch (ex) {
+          if (ex.status === 404 && r.atual && !r.upload && !r.anteriores.length) {
+            const revisao = y.revisao || (y.revisao = []);
+            if (!revisao.some(x => x.arquivo === r.desejado.arquivo)) revisao.push({ arquivo: r.desejado.arquivo,
+              erro: 'A origem foi removida do Frame.io. O link existente do YouTube foi preservado e saiu da fila.', em: new Date().toISOString() });
+            if (revisao.length > 200) revisao.splice(0, revisao.length - 200);
+            r.arquivado = true; r.pendente = false; delete r.erro; delete r.tentar_em;
+          } else { r.erro = ex.message; r.tentar_em = Date.now() + recuo(r); }
+          await loja.salvar();
+        }
       }
       return {};
     });
