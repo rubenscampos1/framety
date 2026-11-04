@@ -55,6 +55,10 @@ function criarYoutube({ loja, fio }) {
   }
   let fila = Promise.resolve();
   const exclusivo = (fn) => { const p = fila.then(fn); fila = p.catch(() => {}); return p; };
+  // Vários FramePlus podem estar abertos ao mesmo tempo. Uma chamada de
+  // trabalho faz consultas externas e não deve formar uma fila de requests
+  // atrás dela: os demais clientes recebem "ocupado" e tentam novamente.
+  let trabalhoOcupado = false;
   const credenciais = () => ({ client_id: process.env.YOUTUBE_CLIENT_ID || Y().client_id || process.env.GOOGLE_CLIENT_ID || D().google?.client_id,
     client_secret: process.env.YOUTUBE_CLIENT_SECRET || Y().client_secret || process.env.GOOGLE_CLIENT_SECRET || D().google?.client_secret });
   const auth = () => Y().auth || {};
@@ -89,12 +93,18 @@ function criarYoutube({ loja, fio }) {
   const permitido = (u, p) => !!u && (u.admin || (!u.marketing && (!(u.projetos || []).length || u.projetos.includes(p))));
   function estado() {
     const y = Y(), c = credenciais();
+    const ativos = Object.values(y.registros).filter(r => !r.arquivado && !r.pausado &&
+      (r.pendente || r.upload || r.anteriores.length || (r.atual && !r.atual.processado)));
+    const idsAtivos = new Set(ativos.map(r => r.id));
+    const entradasSoltas = Object.values(y.entrada).filter(e => !idsAtivos.has(y.aliases[chave(e.arquivo)]));
     return { inicio_escopo: seguranca().inicio, politica_exclusao: 2, comprovante_formato: 'hmac-sha256-canonico-v1', conectado: !!auth().refresh_token, credencial: !!(c.client_id && c.client_secret), ativo: !!y.ativo,
       troca_canal_segura: 1, destino_id: y.destino_id || null, canais_arquivados: (y.historico_canais || []).length,
       canal: y.canal ? { id: y.canal.id, nome: y.canal.nome } : null, ultimo_trabalhador: y.ultimo_trabalhador || null,
       erros_entrada: Object.values(y.entrada).filter(e => e.erro).map(e => ({ arquivo: e.arquivo, erro: e.erro })),
       revisoes: (y.revisao || []).slice(-30), revisoes_total: (y.revisao || []).length,
-      pendentes: Object.keys(y.entrada).length + Object.values(y.registros).filter(r => r.pendente || r.upload || r.anteriores.length).length,
+      pendentes: entradasSoltas.length + ativos.length,
+      enviando: ativos.filter(r => !!r.upload).length,
+      aguardando: entradasSoltas.length + ativos.filter(r => !r.upload).length,
       registros: Object.values(y.registros).filter(r => !r.arquivado).map(r => ({ id: r.id, nome: r.desejado?.nome, versao: r.desejado?.versao,
         url: r.atual ? `https://youtu.be/${r.atual.id}` : null, sincronizado: !!r.atual?.processado && r.atual.arquivo === r.desejado?.arquivo && !r.upload && !r.anteriores.length,
         erro: r.erro || null, limpeza_pendente: r.anteriores.length, enviando: !!r.upload, projeto: r.projeto })) };
@@ -134,12 +144,12 @@ function criarYoutube({ loja, fio }) {
     } catch (ex) { D().youtube = anterior; throw ex; }
   }
   async function enfileirar(id) {
-    return exclusivo(async () => {
-      if (!Y().ativo || !id) return;
-      Y().entrada[chave(id)] = { arquivo: String(id), conta: fio.conta(), em: Date.now(), tentar_em: Date.now() };
-      await loja.salvar();
-      avisos.emit("trabalho");                  // acorda na hora o FramePlus que está esperando tarefa
-    });
+    if (!Y().ativo || !id) return;
+    // Inserção simples e idempotente; não espera pelas consultas externas do
+    // trabalhador. salvar() já serializa as gravações no banco.
+    Y().entrada[chave(id)] = { arquivo: String(id), conta: fio.conta(), em: Date.now(), tentar_em: Date.now() };
+    await loja.salvar();
+    avisos.emit("trabalho");                  // acorda na hora o FramePlus que está esperando tarefa
   }
   // Nova tentativa logo, e mais espaçada se o problema persistir: 3, 6, 12, 24, 48, 60 s.
   const recuo = (x) => Math.min(60000, 3000 * 2 ** Math.min(5, (x.falhas = (x.falhas || 0) + 1) - 1));
@@ -147,7 +157,8 @@ function criarYoutube({ loja, fio }) {
   function proximaTentativa() {
     const y = Y(), agora = Date.now();
     const datas = [...Object.values(y.entrada).map(e => e.tentar_em || 0),
-      ...Object.values(y.registros).filter(r => r.pendente || r.upload || r.anteriores.length || (r.atual && !r.atual.processado)).map(r => r.tentar_em || 0)];
+      ...Object.values(y.registros).filter(r => !r.arquivado && !r.pausado &&
+        (r.pendente || r.upload || r.anteriores.length || (r.atual && !r.atual.processado))).map(r => r.tentar_em || 0)];
     return datas.length ? Math.max(0, Math.min(...datas) - agora) : Infinity;
   }
   async function descrever(id) {
@@ -198,6 +209,7 @@ function criarYoutube({ loja, fio }) {
     for (const a of d.aliases) y.aliases[chave(a)] = r.id;
     const { fonte, aliases, ...persistente } = d; // links de origem temporários nunca persistidos
     const anterior = r.desejado;
+    delete r.pausado; // um evento posterior a "Limpar fila" reativa somente este vínculo
     const mudouTitulo = !!anterior && anterior.arquivo === persistente.arquivo &&
       (anterior.nome !== persistente.nome || anterior.versao !== persistente.versao);
     r.pendente = r.pendente || !anterior || JSON.stringify(anterior) !== JSON.stringify(persistente);
@@ -213,9 +225,9 @@ function criarYoutube({ loja, fio }) {
         || !v.snippet.tags.includes(ref.trabalho)) throw erro(409, 'Vínculo do vídeo não confere. Exclusão bloqueada para revisão.');
   }
   function pronto(v) { return v.status?.privacyStatus === 'unlisted' && (v.processingDetails?.processingStatus === 'succeeded' || v.status?.uploadStatus === 'processed'); }
-  async function limpar(r) {
+  async function limpar(r, videoConfirmado = null) {
     if (!r.atual || r.atual.arquivo !== r.desejado.arquivo) return;
-    const v = await video(r.atual.id); conferirProprio(v, r.atual);
+    const v = videoConfirmado || await video(r.atual.id); conferirProprio(v, r.atual);
     if (!pronto(v)) {
       if (['failed','rejected','deleted'].includes(v.status?.uploadStatus) || ['failed','terminated'].includes(v.processingDetails?.processingStatus))
         throw erro(409, 'A nova cópia falhou no processamento do YouTube. A anterior foi preservada.');
@@ -338,7 +350,7 @@ function criarYoutube({ loja, fio }) {
     await loja.salvar(); // commit da nova referência ANTES de qualquer DELETE
     avisos.emit("arquivo:" + up.arquivo);   // o link aparece no FramePlus neste instante
     if (arquivoAnterior && arquivoAnterior !== up.arquivo) avisos.emit("arquivo:" + arquivoAnterior);
-    await renomear(r); await limpar(r);
+    await renomear(r); await limpar(r, v);
   }
   async function recuperar(r) {
     const up = r.upload;
@@ -366,15 +378,18 @@ function criarYoutube({ loja, fio }) {
   }
 
   async function trabalhar(u) {
-    return exclusivo(async () => {
+    if (trabalhoOcupado) return { ocupado: true };
+    trabalhoOcupado = true;
+    try { return await exclusivo(async () => {
       const y = Y();
       if (!y.ativo || !auth().refresh_token || !permitido(u, null) && !(u.projetos || []).length) return {};
       if (u.marketing && !u.admin) throw erro(403, 'Marketing não pode sincronizar vídeos.');
       if (migrarTitulosAntigos(y)) await loja.salvar();
       y.ultimo_trabalhador = new Date().toISOString();
-      for (const [key, e] of Object.entries(y.entrada).filter(([, e]) => e.conta === fio.conta() && e.tentar_em <= Date.now()).slice(0, 3)) {
+      let registradoAgora = null;
+      for (const [key, e] of Object.entries(y.entrada).filter(([, e]) => e.conta === fio.conta() && e.tentar_em <= Date.now()).slice(0, 1)) {
         if (e.conta !== fio.conta() || e.tentar_em > Date.now()) continue;
-        try { await registrar(e.arquivo); delete y.entrada[key]; }
+        try { registradoAgora = await registrar(e.arquivo); delete y.entrada[key]; }
         catch (ex) {
           // Webhooks podem chegar depois que a versão já foi removida. Não há
           // nada para enviar e repetir para sempre só congestiona a fila.
@@ -391,15 +406,19 @@ function criarYoutube({ loja, fio }) {
       }
       let verificados = 0;
       for (const r of Object.values(y.registros)) {
-        if (r.arquivado) continue;
+        if (r.arquivado || r.pausado) continue;
         if (r.conta !== fio.conta() || !permitido(u, r.projeto) || r.tentar_em > Date.now() || (!r.pendente && !r.upload && !r.anteriores.length && (!r.atual || r.atual.processado))) continue;
-        if (++verificados > 4) break;
+        // Uma requisição trata no máximo um vínculo. Assim uma fila grande não
+        // vira uma única resposta longa sujeita a timeout no proxy.
+        if (++verificados > 1) break;
         try {
           if (r.upload?.lease && r.upload.lease.ate > Date.now()) continue;
           // Atualiza a origem antes de retomar, inclusive renomeações feitas no site.
           // Numa pilha, consulte a entidade estável. A versão que era cabeça
           // pode já ter sido removida, enquanto a pilha continua com uma nova.
-          const item = await registrar(r.desejado.pilha || r.desejado.arquivo);
+          // O evento recém-lido já descreveu este mesmo vínculo; não repita as
+          // chamadas ao Frame.io na sequência.
+          const item = registradoAgora?.r === r ? registradoAgora : await registrar(r.desejado.pilha || r.desejado.arquivo);
           if (!item) continue;
           const d = item.d;
           if (r.atual && r.atual.arquivo !== d.arquivo && !(Date.parse(d.criado_em) > Date.parse(comprovante(r.atual).origem_criada_em)))
@@ -408,10 +427,6 @@ function criarYoutube({ loja, fio }) {
             await renomear(r); await limpar(r); delete r.erro; r.pendente = !r.atual.processado || !!r.anteriores.length; await loja.salvar(); r.tentar_em = Date.now() + recuo(r); continue;
           }
           if (r.upload && r.upload.protocolo !== 2) throw erro(409, 'Upload anterior à proteção atual. Retomada bloqueada.');
-          if (r.upload?.sessao) {
-            const st = await situacao(r.upload);
-            if (st.id) { await concluir(r, r.upload, st.id); continue; }
-          }
           if (!r.upload) {
             if (!d.fonte || !(d.tamanho > 0)) throw erro(409, 'Aguardando original disponível no Frame.io.');
             r.upload = { id: crypto.randomUUID(), arquivo: d.arquivo, tamanho: d.tamanho, tipo: d.tipo,
@@ -466,6 +481,33 @@ function criarYoutube({ loja, fio }) {
         }
       }
       return {};
+    }); } finally { trabalhoOcupado = false; }
+  }
+
+  async function limparFila() {
+    return exclusivo(async () => {
+      const y = Y();
+      const entradas = Object.keys(y.entrada).length;
+      let cancelados = 0;
+      y.entrada = {};
+      for (const r of Object.values(y.registros)) {
+        const ativo = r.pendente || r.upload || r.anteriores.length || (r.atual && !r.atual.processado);
+        if (!ativo) continue;
+        cancelados++;
+        // Cancela só o trabalho pendente. Links e vídeos já confirmados são
+        // preservados; limpar a fila nunca apaga conteúdo do canal.
+        r.pausado = true;
+        r.pendente = false;
+        r.anteriores = [];
+        delete r.upload;
+        delete r.erro;
+        delete r.tentar_em;
+        delete r.falhas;
+        delete r.titulo_pendente;
+      }
+      await loja.salvar();
+      avisos.emit('trabalho');
+      return { ok: true, cancelados: entradas + cancelados };
     });
   }
   async function descreverArquivo(id) {
@@ -534,17 +576,11 @@ function criarYoutube({ loja, fio }) {
     if (signal.aborted) return {};
     return { ...(await trabalhar(u)), espera: 1 };
   }
-  return { Y, auth, estado, avisosPara, linkArquivo, aguardarLink, exclusivo, credenciais, trocar, api, ativarCanal, enfileirar, trabalhar, trabalharEsperando, atualizarLease, recuperar, registrar,
+  return { Y, auth, estado, avisosPara, linkArquivo, aguardarLink, exclusivo, credenciais, trocar, api, ativarCanal, enfileirar, trabalhar, trabalharEsperando, atualizarLease, recuperar, registrar, limparFila,
     async mudou(id) {
+      // Renomear/mover termina assim que a fila durável é gravada. A conversa
+      // com o YouTube acontece no trabalhador e nunca prende a tela do usuário.
       await enfileirar(id);
-      if (!Y().ativo || !auth().refresh_token) return;
-      // O rename no Framyo tenta refletir o nome já nesta requisição.
-      // Uma falha externa permanece na fila e nunca desfaz o nome no Frame.io.
-      await exclusivo(async () => {
-        let item;
-        try { item = await registrar(id); if (item) await renomear(item.r); }
-        catch (ex) { if (item) item.r.erro = ex.message; await loja.salvar(); }
-      });
     },
     async evento(b) { if (EVENTS.includes(b.type) && b.resource?.id && (!b.account?.id || b.account.id === fio.conta())) await enfileirar(b.resource.id); } };
 }
@@ -605,6 +641,9 @@ function montarYoutube({ r, loja, fio, autenticar, soAdmin, envolve, pagina, url
   r.post('/youtube/desconectar', autenticar, soAdmin, envolve(async (req, res) => yt.exclusivo(async () => {
     yt.Y().ativo = false; delete yt.Y().auth; await loja.salvar(); res.json({ ok: true });
   })));
+  r.post('/youtube/fila/limpar', autenticar, soAdmin, envolve(async (req, res) => {
+    res.json(await yt.limparFila());
+  }));
   // Sem tarefa, a resposta espera (até 20 s) o próximo envio entrar na fila: o FramePlus começa a transferir na hora.
   r.post('/youtube/trabalho', autenticar, envolve(async (req, res) => {
     const controle = new AbortController();

@@ -1238,15 +1238,29 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const registro = Object.values(D().envios_abertos || {}).find((x) =>
       x.usuario_id === req.usuario.id && x.resposta?.arquivo_id === novo);
     if (registro?.resultado) return res.json(registro.resultado);
-    // Espera o Frame.io dar o arquivo como recebido (até ~2 min).
+    const confirmacaoCurta = (req.body || {}).confirmacao_curta === true;
+    // Clientes novos confirmam em chamadas curtas. Assim o proxy nunca segura
+    // uma única resposta por dois minutos enquanto o arquivo já aparece no Frame.io.
     let status = null;
-    for (let i = 0; i < 40; i++) {
+    const tentativasStatus = confirmacaoCurta ? 1 : 40;
+    for (let i = 0; i < tentativasStatus; i++) {
       const s = await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(novo)}/status`).catch(() => null);
       status = s && s.data;
       if (status && status.upload_failed) throw falha(502, 'O Frame.io não conseguiu receber o arquivo. Tente enviar de novo.');
       if (status && status.upload_complete) break;
-      await new Promise((ok) => setTimeout(ok, 3000));
+      if (!confirmacaoCurta) await new Promise((ok) => setTimeout(ok, 3000));
     }
+    if (!status?.upload_complete) {
+      if (confirmacaoCurta) return res.status(202).json({ arquivo_id: novo, aguardando: true });
+      throw falha(504, 'O Frame.io ainda está processando o arquivo. O FramePlus tentará confirmar novamente.');
+    }
+    if (registro?.finalizando_ate > Date.now())
+      return res.status(202).json({ arquivo_id: novo, aguardando: true, finalizando: true });
+    if (registro) {
+      registro.finalizando_ate = Date.now() + 120000;
+      await loja.salvar();
+    }
+    try {
     let resultado = { arquivo_id: novo };
     if (base) {
       if (tipo === 'version_stack') {
@@ -1281,9 +1295,17 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     if (registro) {
       registro.resultado = resultado;
       registro.concluido_em = agora();
+      delete registro.finalizando_ate;
       await loja.salvar();
     }
     res.json(resultado);
+    } catch (ex) {
+      if (registro) {
+        delete registro.finalizando_ate;
+        await loja.salvar().catch(() => {});
+      }
+      throw ex;
+    }
   }));
 
   // ── Início: últimos envios da equipe e últimos comentários ──────────────────
