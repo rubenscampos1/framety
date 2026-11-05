@@ -1291,7 +1291,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
       projeto_nome: (a.project && a.project.name) || '', view_url: a.view_url });
     if (D().envios.length > 300) D().envios.length = 300;
     await loja.salvar().catch((e) => console.error('[framyo] feed:', e.message));
-    await youtube.enfileirar(novo);
+    await youtube.autorizar(novo, { usuario_id: req.usuario.id, em: agora() });
     if (registro) {
       registro.resultado = resultado;
       registro.concluido_em = agora();

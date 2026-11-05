@@ -129,11 +129,11 @@ function criarYoutube({ loja, fio }) {
       if (mudou) {
         seguranca();
         const arquivo = { em: new Date().toISOString(), canal: y.canal, registros: y.registros,
-          aliases: y.aliases, entrada: y.entrada, seguranca: y.seguranca };
+          aliases: y.aliases, entrada: y.entrada, origens: y.origens || {}, seguranca: y.seguranca };
         y.historico_canais = [...(y.historico_canais || []), structuredClone(arquivo)];
         // Novo destino recebe somente fontes criadas após esta ativação.
         // Histórico e pendências anteriores ficam arquivados, sem reenvio.
-        y.registros = {}; y.aliases = {}; y.entrada = {};
+        y.registros = {}; y.aliases = {}; y.entrada = {}; y.origens = {};
         y.seguranca = { versao: 2, inicio: new Date().toISOString(), chave: crypto.randomBytes(32).toString('hex'), comprovantes: {}, exclusoes: {} };
         delete y.ultimo_trabalhador;
       }
@@ -143,8 +143,23 @@ function criarYoutube({ loja, fio }) {
       avisos.emit("canal");
     } catch (ex) { D().youtube = anterior; throw ex; }
   }
+  function origemAutorizada(id) {
+    const y = Y(), k = chave(id);
+    if (y.origens?.[k]) return true;
+    // Compatibilidade com uploads concluídos pelo FramePlus antes desta regra.
+    return (D().envios || []).some(e => e.arquivo_id === String(id));
+  }
+  async function autorizar(id, dados = {}) {
+    if (!id) return;
+    const y = Y(), origens = y.origens || (y.origens = {}), k = chave(id);
+    origens[k] = { arquivo: String(id), conta: fio.conta(), via: 'frameplus',
+      usuario_id: dados.usuario_id || null, em: dados.em || new Date().toISOString() };
+    if (y.ativo) y.entrada[k] = { arquivo: String(id), conta: fio.conta(), em: Date.now(), tentar_em: Date.now() };
+    await loja.salvar();
+    avisos.emit('trabalho');
+  }
   async function enfileirar(id) {
-    if (!Y().ativo || !id) return;
+    if (!Y().ativo || !id || !origemAutorizada(id)) return;
     // Inserção simples e idempotente; não espera pelas consultas externas do
     // trabalhador. salvar() já serializa as gravações no banco.
     Y().entrada[chave(id)] = { arquivo: String(id), conta: fio.conta(), em: Date.now(), tentar_em: Date.now() };
@@ -576,8 +591,9 @@ function criarYoutube({ loja, fio }) {
     if (signal.aborted) return {};
     return { ...(await trabalhar(u)), espera: 1 };
   }
-  return { Y, auth, estado, avisosPara, linkArquivo, aguardarLink, exclusivo, credenciais, trocar, api, ativarCanal, enfileirar, trabalhar, trabalharEsperando, atualizarLease, recuperar, registrar, limparFila,
+  return { Y, auth, estado, avisosPara, linkArquivo, aguardarLink, exclusivo, credenciais, trocar, api, ativarCanal, autorizar, enfileirar, trabalhar, trabalharEsperando, atualizarLease, recuperar, registrar, limparFila,
     async mudou(id) {
+      if (!origemAutorizada(id)) return;
       // Renomear/mover termina assim que a fila durável é gravada. A conversa
       // com o YouTube acontece no trabalhador e nunca prende a tela do usuário.
       await enfileirar(id);

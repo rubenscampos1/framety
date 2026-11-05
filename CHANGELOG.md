@@ -9,6 +9,8 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **FramePlus: somente envios próprios seguem para o YouTube.** O servidor grava uma autorização persistente quando o upload é concluído pela rota do FramePlus. Webhooks, renomeações e empilhamentos de arquivos enviados diretamente no Frame.io não criam mais tarefas no YouTube. Na troca V1→V2, o vídeo anterior continua até a nova cópia ficar processada; depois a exclusão usa o ID e os comprovantes da mesma linhagem, e o link fica somente na versão atual. A limpeza administrativa da fila cancela transferências e tentativas pendentes sem apagar vídeos nem links já confirmados.
+
 - **FramePlus: fila do YouTube e janelas administrativas corrigidas.** A troca do padrão de título não transforma vídeos históricos em transferências pendentes. Arquivos reunidos pelo Frame.io com vínculos diferentes saem da fila ativa e aparecem separadamente como conflitos preservados, sem exclusão automática. A edição de usuário passa a ter cabeçalho e rodapé fixos, conteúdo rolável, fechar visível e adaptação a janelas menores.
 
 - **FramePlus: uploads retomáveis e sem duplicação.** A criação e a conclusão de envios ao Frame.io aceitam uma chave idempotente: oscilações de rede podem ser repetidas sem criar outro arquivo, outra versão, outro item no feed ou outra tarefa no YouTube. Registros temporários são removidos automaticamente.
