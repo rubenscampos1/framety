@@ -104,6 +104,13 @@
     // Duração real dos vídeos, buscada no YouTube
     buscarDuracoes: (todos) => req("POST", "/api/videos/duracoes", { todos: !!todos }),
 
+    // Monitor do feed público do canal: tudo entra como rascunho.
+    getYoutubeSync:  ()       => req('GET',  '/api/youtube-sync'),
+    saveYoutubeSync: (config) => req('PUT',  '/api/youtube-sync', config),
+    runYoutubeSync:  (includeExisting) => req('POST', '/api/youtube-sync/run', { includeExisting: !!includeExisting }),
+    startYoutubeOauth: ()     => req('POST', '/api/youtube-sync/oauth/start', {}),
+    disconnectYoutube: ()    => req('DELETE', '/api/youtube-sync/oauth'),
+
     // Lista de formatos de vídeo imersivo
     salvarFormatosImersivos: (formatos) => req("POST", "/api/formatos-imersivos", { formatos }),
 

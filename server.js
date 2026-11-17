@@ -321,6 +321,52 @@ async function destroyAsset(url, publicId, resourceType) {
 
 let db;
 const save = () => saveDB(db).catch(e => console.error('[db save]', e));
+const YOUTUBE_SYNC_DEFAULT = {
+  enabled: false,
+  channelUrl: '',
+  channelId: '',
+  intervalMinutes: 15,
+  initialized: false,
+  seenIds: [],
+  lastCheck: null,
+  lastSuccess: null,
+  lastError: '',
+  importedCount: 0,
+  oauth: null,
+};
+const youtubeOauthStates = new Map();
+const YOUTUBE_OAUTH_BASE = process.env.FRAMETY_TESTE_YOUTUBE_OAUTH || 'https://oauth2.googleapis.com';
+const YOUTUBE_AUTH_URL = process.env.FRAMETY_TESTE_YOUTUBE_AUTH || 'https://accounts.google.com/o/oauth2/v2/auth';
+const YOUTUBE_API_BASE = process.env.FRAMETY_TESTE_YOUTUBE_API || 'https://www.googleapis.com/youtube/v3';
+const youtubeCredenciais = () => ({
+  clientId: process.env.YOUTUBE_CLIENT_ID || '',
+  clientSecret: process.env.YOUTUBE_CLIENT_SECRET || '',
+});
+const youtubeBasePublica = (req) => String(process.env.FRAMYO_URL_PUBLICA || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+const youtubeRedirectUri = (req) => youtubeBasePublica(req) + '/api/youtube-sync/oauth/callback';
+
+/* O refresh token nunca sai do servidor e fica cifrado no banco com uma chave
+   derivada do client secret. O escopo pedido ao Google e somente leitura. */
+function youtubeSelar(valor) {
+  if (!valor) return '';
+  const { clientSecret } = youtubeCredenciais();
+  if (!clientSecret) throw new Error('YOUTUBE_CLIENT_SECRET não configurado.');
+  const key = crypto.createHash('sha256').update('framety-youtube-readonly\0' + clientSecret).digest();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const body = Buffer.concat([cipher.update(String(valor), 'utf8'), cipher.final()]);
+  return ['v1', iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), body.toString('base64url')].join('.');
+}
+function youtubeAbrir(valor) {
+  if (!valor) return '';
+  const { clientSecret } = youtubeCredenciais();
+  const partes = String(valor).split('.');
+  if (!clientSecret || partes.length !== 4 || partes[0] !== 'v1') throw new Error('A autorização do YouTube precisa ser refeita.');
+  const key = crypto.createHash('sha256').update('framety-youtube-readonly\0' + clientSecret).digest();
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(partes[1], 'base64url'));
+  decipher.setAuthTag(Buffer.from(partes[2], 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(partes[3], 'base64url')), decipher.final()]).toString('utf8');
+}
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 // Sets (not single tokens) so multiple people can be logged in at the same time
@@ -932,6 +978,249 @@ async function duracaoDoYoutube(url) {
     return '';                                  // sem rede, sem duração: fica como estava
   }
 }
+
+/* ── Monitor da biblioteca autenticada do YouTube ───────────────────────────
+   OAuth usa apenas youtube.readonly: enxerga públicos, não listados e privados,
+   mas não pode publicar, editar, excluir nem mudar privacidade no YouTube. Cada
+   item entra como rascunho no portfólio. */
+const ytSyncConfig = () => {
+  if (!db.settings.youtubeSync) db.settings.youtubeSync = JSON.parse(JSON.stringify(YOUTUBE_SYNC_DEFAULT));
+  return db.settings.youtubeSync;
+};
+const xmlTexto = (s) => String(s || '')
+  .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+  .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+  .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n || 32))
+  .replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+const ytIdDaUrl = (url) => String(url || '').match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/)?.[1] || '';
+
+async function resolverCanalYoutube(valor) {
+  const bruto = String(valor || '').trim();
+  const direto = bruto.match(/(?:^|[/?=])(UC[A-Za-z0-9_-]{22})(?:$|[/?&#])/i)?.[1]
+    || (/^UC[A-Za-z0-9_-]{22}$/i.test(bruto) ? bruto : '');
+  if (direto) return direto;
+  if (!bruto) throw new Error('Informe o endereço ou o ID do canal.');
+  let url = bruto;
+  if (!/^https?:\/\//i.test(url)) url = 'https://www.youtube.com/' + url.replace(/^\/+/, '');
+  const r = await fetch(url, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout(15000),
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Safari/537.36' },
+  });
+  if (!r.ok) throw new Error('O YouTube não abriu esse canal.');
+  const html = await r.text();
+  const id = html.match(/"channelId":"(UC[A-Za-z0-9_-]{22})"/)?.[1]
+    || html.match(/"externalId":"(UC[A-Za-z0-9_-]{22})"/)?.[1]
+    || html.match(/itemprop="channelId"\s+content="(UC[A-Za-z0-9_-]{22})"/)?.[1];
+  if (!id) throw new Error('Não foi possível identificar o ID desse canal.');
+  return id;
+}
+
+function lerFeedYoutube(xml) {
+  return [...String(xml || '').matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map(([, bloco]) => {
+    const campo = (re) => xmlTexto(bloco.match(re)?.[1] || '');
+    const id = campo(/<yt:videoId>([\s\S]*?)<\/yt:videoId>/);
+    return {
+      id,
+      title: campo(/<title>([\s\S]*?)<\/title>/),
+      published: campo(/<published>([\s\S]*?)<\/published>/),
+      thumb: bloco.match(/<media:thumbnail[^>]+url="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&') || '',
+    };
+  }).filter(v => /^[A-Za-z0-9_-]{11}$/.test(v.id));
+}
+
+async function youtubeTokenAcesso() {
+  const cfg = ytSyncConfig();
+  const auth = cfg.oauth;
+  if (!auth?.refreshToken) throw new Error('Conecte a conta do YouTube no admin.');
+  if (auth.accessToken && Number(auth.expiresAt || 0) > Date.now() + 60_000) return youtubeAbrir(auth.accessToken);
+  const { clientId, clientSecret } = youtubeCredenciais();
+  if (!clientId || !clientSecret) throw new Error('Configure YOUTUBE_CLIENT_ID e YOUTUBE_CLIENT_SECRET no servidor.');
+  const r = await fetch(YOUTUBE_OAUTH_BASE + '/token', {
+    method: 'POST', signal: AbortSignal.timeout(15000),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: youtubeAbrir(auth.refreshToken), grant_type: 'refresh_token' }),
+  });
+  const dados = await r.json().catch(() => ({}));
+  if (!r.ok || !dados.access_token) throw new Error(dados.error_description || 'O YouTube recusou a renovação da autorização.');
+  auth.accessToken = youtubeSelar(dados.access_token);
+  auth.expiresAt = Date.now() + (Number(dados.expires_in) || 3600) * 1000;
+  await saveDB(db);
+  return dados.access_token;
+}
+async function youtubeApi(caminho, parametros) {
+  const token = await youtubeTokenAcesso();
+  const url = new URL(YOUTUBE_API_BASE.replace(/\/$/, '') + '/' + caminho);
+  Object.entries(parametros || {}).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+  const r = await fetch(url, { signal: AbortSignal.timeout(20000), headers: { Authorization: 'Bearer ' + token } });
+  const dados = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(dados?.error?.message || `A API do YouTube respondeu ${r.status}.`);
+  return dados;
+}
+const youtubeDuracao = (iso) => {
+  const m = String(iso || '').match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!m) return '';
+  const h = +(m[1] || 0), min = +(m[2] || 0), seg = +(m[3] || 0);
+  return h ? `${h}:${String(min).padStart(2, '0')}:${String(seg).padStart(2, '0')}` : `${min}:${String(seg).padStart(2, '0')}`;
+};
+async function lerBibliotecaYoutube() {
+  const canais = await youtubeApi('channels', { part: 'snippet,contentDetails', mine: 'true', maxResults: 1 });
+  const canal = canais.items?.[0];
+  const uploads = canal?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploads) throw new Error('A conta conectada não possui um canal do YouTube acessível.');
+  const playlist = await youtubeApi('playlistItems', { part: 'contentDetails', playlistId: uploads, maxResults: 50 });
+  const ids = (playlist.items || []).map(x => x.contentDetails?.videoId).filter(Boolean);
+  if (!ids.length) return { canal, itens: [] };
+  const detalhes = await youtubeApi('videos', { part: 'snippet,status,contentDetails', id: ids.join(','), maxResults: 50 });
+  const porId = new Map((detalhes.items || []).map(x => [x.id, x]));
+  const itens = ids.map(id => porId.get(id)).filter(Boolean).map(v => ({
+    id: v.id,
+    title: v.snippet?.title || 'Vídeo do YouTube',
+    published: v.snippet?.publishedAt || '',
+    thumb: v.snippet?.thumbnails?.maxres?.url || v.snippet?.thumbnails?.high?.url || v.snippet?.thumbnails?.medium?.url || '',
+    privacyStatus: v.status?.privacyStatus || 'private',
+    duration: youtubeDuracao(v.contentDetails?.duration),
+  }));
+  return { canal, itens };
+}
+
+let youtubeSyncRunning = false;
+async function sincronizarYoutube({ importarAtuais = false } = {}) {
+  if (youtubeSyncRunning) throw new Error('A sincronização já está em andamento.');
+  youtubeSyncRunning = true;
+  const cfg = ytSyncConfig();
+  cfg.lastCheck = new Date().toISOString();
+  cfg.lastError = '';
+  try {
+    const biblioteca = await lerBibliotecaYoutube();
+    const itens = biblioteca.itens;
+    cfg.channelId = biblioteca.canal?.id || cfg.channelId || '';
+    cfg.channelTitle = biblioteca.canal?.snippet?.title || cfg.channelTitle || '';
+
+    const vistos = new Set(Array.isArray(cfg.seenIds) ? cfg.seenIds : []);
+    const cadastrados = new Set(db.videos.map(v => v.youtubeVideoId || ytIdDaUrl(v.videoUrl)).filter(Boolean));
+    /* Ao ativar, os vídeos atuais viram a linha de base. Isso evita despejar o
+       histórico no Console sem pedido. O botão "Importar os últimos" ignora a
+       linha de base explicitamente. */
+    if (!cfg.initialized && !importarAtuais) {
+      itens.forEach(v => vistos.add(v.id));
+      cfg.initialized = true;
+      cfg.seenIds = [...vistos].slice(-300);
+      cfg.lastSuccess = new Date().toISOString();
+      await saveDB(db);
+      return { ok: true, imported: 0, baseline: itens.length, videos: [] };
+    }
+
+    const novos = itens.filter(v => !cadastrados.has(v.id) && (importarAtuais || !vistos.has(v.id)));
+    let ordem = db.videos.reduce((m, v) => Math.max(m, v.sortOrder ?? 0), 0);
+    const criados = [];
+    for (const item of [...novos].reverse()) {
+      const quando = Date.parse(item.published) ? new Date(item.published) : new Date();
+      const video = {
+        id: 'v' + crypto.randomBytes(4).toString('hex'),
+        title: item.title || 'Novo vídeo do YouTube',
+        category: '', catLabel: 'A definir', client: '—',
+        year: String(quando.getFullYear()), duration: item.duration || '', director: '', tags: [],
+        featured: false, status: 'draft', views: '—',
+        videoUrl: `https://www.youtube.com/watch?v=${item.id}`,
+        youtubeVideoId: item.id, youtubeImportedAt: new Date().toISOString(),
+        youtubePrivacyStatus: item.privacyStatus,
+        thumbUrl: item.thumb || `https://img.youtube.com/vi/${item.id}/hqdefault.jpg`,
+        sortOrder: ++ordem, updatedAt: new Date().toISOString(),
+        aiGenerated: false, has360: false, vertical: false,
+      };
+      video.slug = slugDoVideo(video, null);
+      db.videos.push(video); criados.push(video); cadastrados.add(item.id);
+    }
+    itens.forEach(v => vistos.add(v.id));
+    cfg.initialized = true;
+    cfg.seenIds = [...vistos].slice(-300);
+    cfg.lastSuccess = new Date().toISOString();
+    cfg.importedCount = (cfg.importedCount || 0) + criados.length;
+    await saveDB(db);
+    if (criados.length) broadcast('content');
+    return { ok: true, imported: criados.length, videos: criados.map(v => ({ id: v.id, title: v.title })) };
+  } catch (e) {
+    cfg.lastError = e.message || String(e);
+    await saveDB(db).catch(() => {});
+    throw e;
+  } finally {
+    youtubeSyncRunning = false;
+  }
+}
+
+app.get('/api/youtube-sync', requireAuth, (req, res) => {
+  const cfg = ytSyncConfig();
+  const cred = youtubeCredenciais();
+  res.json({ ...cfg, seenIds: undefined, oauth: undefined, running: youtubeSyncRunning,
+    oauthConfigured: !!(cred.clientId && cred.clientSecret), connected: !!cfg.oauth?.refreshToken,
+    channelTitle: cfg.channelTitle || cfg.oauth?.channelTitle || '' });
+});
+app.put('/api/youtube-sync', requireAuth, async (req, res) => {
+  try {
+    const atual = ytSyncConfig();
+    const enabled = !!req.body?.enabled;
+    if (enabled && !atual.oauth?.refreshToken) return res.status(400).json({ error: 'Conecte a conta do YouTube antes de ativar o monitor.' });
+    atual.enabled = enabled;
+    atual.intervalMinutes = Math.max(5, Math.min(1440, Number(req.body?.intervalMinutes) || 15));
+    await saveDB(db);
+    const cred = youtubeCredenciais();
+    res.json({ ...atual, seenIds: undefined, oauth: undefined, running: youtubeSyncRunning,
+      oauthConfigured: !!(cred.clientId && cred.clientSecret), connected: !!atual.oauth?.refreshToken });
+  } catch (e) { res.status(400).json({ error: e.message || 'Falha ao salvar o monitor.' }); }
+});
+app.post('/api/youtube-sync/oauth/start', requireAuth, (req, res) => {
+  const { clientId, clientSecret } = youtubeCredenciais();
+  if (!clientId || !clientSecret) return res.status(409).json({ error: 'Configure YOUTUBE_CLIENT_ID e YOUTUBE_CLIENT_SECRET no Render.' });
+  const state = crypto.randomBytes(32).toString('base64url');
+  youtubeOauthStates.set(state, { expiresAt: Date.now() + 10 * 60_000, redirectUri: youtubeRedirectUri(req) });
+  const url = new URL(YOUTUBE_AUTH_URL);
+  url.search = new URLSearchParams({ client_id: clientId, redirect_uri: youtubeRedirectUri(req), response_type: 'code',
+    scope: 'https://www.googleapis.com/auth/youtube.readonly', access_type: 'offline', prompt: 'consent', state }).toString();
+  res.json({ url: url.toString(), redirectUri: youtubeRedirectUri(req) });
+});
+app.get('/api/youtube-sync/oauth/callback', async (req, res) => {
+  const registro = youtubeOauthStates.get(String(req.query.state || ''));
+  youtubeOauthStates.delete(String(req.query.state || ''));
+  const destino = youtubeBasePublica(req) + '/console/videos';
+  if (!registro || registro.expiresAt < Date.now()) return res.redirect(destino + '?youtube=erro_estado');
+  if (req.query.error || !req.query.code) return res.redirect(destino + '?youtube=cancelado');
+  try {
+    const { clientId, clientSecret } = youtubeCredenciais();
+    const tr = await fetch(YOUTUBE_OAUTH_BASE + '/token', { method: 'POST', signal: AbortSignal.timeout(15000),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code: String(req.query.code),
+        grant_type: 'authorization_code', redirect_uri: registro.redirectUri }) });
+    const tokens = await tr.json().catch(() => ({}));
+    if (!tr.ok || !tokens.access_token) throw new Error(tokens.error_description || 'O Google não devolveu a autorização.');
+    const cfg = ytSyncConfig();
+    cfg.oauth = { refreshToken: youtubeSelar(tokens.refresh_token || (cfg.oauth?.refreshToken ? youtubeAbrir(cfg.oauth.refreshToken) : '')),
+      accessToken: youtubeSelar(tokens.access_token), expiresAt: Date.now() + (Number(tokens.expires_in) || 3600) * 1000 };
+    if (!cfg.oauth.refreshToken) throw new Error('O Google não devolveu acesso contínuo; reconecte a conta.');
+    const biblioteca = await lerBibliotecaYoutube();
+    cfg.channelId = biblioteca.canal?.id || '';
+    cfg.channelTitle = biblioteca.canal?.snippet?.title || '';
+    cfg.oauth.channelTitle = cfg.channelTitle;
+    cfg.enabled = false; cfg.initialized = false; cfg.seenIds = []; cfg.lastError = '';
+    await saveDB(db);
+    res.redirect(destino + '?youtube=conectado');
+  } catch (e) {
+    console.error('[youtube oauth]', e.message);
+    res.redirect(destino + '?youtube=erro');
+  }
+});
+app.delete('/api/youtube-sync/oauth', requireAuth, async (req, res) => {
+  const cfg = ytSyncConfig();
+  cfg.enabled = false; cfg.oauth = null; cfg.channelId = ''; cfg.channelTitle = '';
+  cfg.initialized = false; cfg.seenIds = []; cfg.lastError = '';
+  await saveDB(db);
+  res.json({ ok: true });
+});
+app.post('/api/youtube-sync/run', requireAuth, async (req, res) => {
+  try { res.json(await sincronizarYoutube({ importarAtuais: !!req.body?.includeExisting })); }
+  catch (e) { res.status(502).json({ error: e.message || 'Falha ao consultar o YouTube.' }); }
+});
 
 /* Preenche o catálogo. Sem 'todos', só quem está sem duração. */
 app.post('/api/videos/duracoes', requireAuth, async (req, res) => {
@@ -2222,6 +2511,7 @@ setInterval(() => {
   db.storyboards.forEach(s => { if (!s.pathSlug) { s.pathSlug = sbBuildPath(s); _migrated = true; } });
   if (!db.settings.aiSection) db.settings.aiSection = JSON.parse(JSON.stringify(SEED.settings.aiSection));
   if (!db.settings.aiSection.items) db.settings.aiSection.items = JSON.parse(JSON.stringify(SEED.settings.aiSection.items));
+  if (!db.settings.youtubeSync) { db.settings.youtubeSync = JSON.parse(JSON.stringify(YOUTUBE_SYNC_DEFAULT)); _migrated = true; }
   if (db.settings.producoes_pass == null) db.settings.producoes_pass = SEED.settings.producoes_pass;
   if (db.settings.recovery_token == null) db.settings.recovery_token = SEED.settings.recovery_token;
   if (!db.settings.formatosImersivos) { db.settings.formatosImersivos = JSON.parse(JSON.stringify(SEED.settings.formatosImersivos)); _migrated = true; }
@@ -2251,6 +2541,20 @@ setInterval(() => {
   app.listen(PORT, () => {
     console.log(`\n  Framety  →  http://localhost:${PORT}/Framety.html\n`);
   });
+
+  /* Um relógio leve acorda a cada minuto e só consulta o canal quando o
+     intervalo configurado venceu. unref evita prender testes/processos. */
+  const verificarYoutube = () => {
+    const cfg = ytSyncConfig();
+    if (!cfg.enabled || youtubeSyncRunning) return;
+    const ultima = Date.parse(cfg.lastCheck || 0) || 0;
+    if (Date.now() - ultima < (cfg.intervalMinutes || 15) * 60000) return;
+    sincronizarYoutube().catch(e => console.error('[youtube sync]', e.message || e));
+  };
+  const youtubeTimer = setInterval(verificarYoutube, 60000);
+  youtubeTimer.unref?.();
+  const youtubePrimeira = setTimeout(verificarYoutube, 5000);
+  youtubePrimeira.unref?.();
 
   /* Formato dos vídeos já cadastrados: quem nunca foi medido é medido agora,
      um de cada vez e depois que o site já está no ar — é ida à rede, e não

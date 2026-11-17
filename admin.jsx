@@ -490,6 +490,115 @@ const OverviewPanel = ({ vids, cats, clients, setTab }) => (
 );
 
 /* =========================== Videos =========================== */
+const YoutubeSyncPanel = ({ setVids }) => {
+  const [cfg, setCfg] = React.useState(null);
+  const [saving, setSaving] = React.useState(false);
+  const [running, setRunning] = React.useState(false);
+  const [message, setMessage] = React.useState("");
+
+  const load = React.useCallback(() => {
+    window.API.getYoutubeSync().then(setCfg).catch(ex => setMessage(ex?.error || "Não foi possível ler o monitor."));
+  }, []);
+  React.useEffect(load, [load]);
+  React.useEffect(() => {
+    const resultado = new URLSearchParams(window.location.search).get("youtube");
+    if (resultado === "conectado") setMessage("Conta do YouTube conectada. Confira o canal e ative o monitor quando estiver pronto.");
+    else if (resultado === "cancelado") setMessage("A conexão com o YouTube foi cancelada.");
+    else if (resultado?.startsWith("erro")) setMessage("Não foi possível concluir a conexão com o YouTube.");
+    if (resultado) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+  const fmt = (iso) => iso ? new Date(iso).toLocaleString("pt-BR") : "ainda não";
+
+  const connect = async () => {
+    setSaving(true); setMessage("");
+    try {
+      const r = await window.API.startYoutubeOauth();
+      window.location.assign(r.url);
+    } catch (ex) { setMessage(ex?.error || "Não foi possível iniciar a conexão."); setSaving(false); }
+  };
+  const disconnect = async () => {
+    window.__adminConfirm?.("Desconectar esta conta do YouTube? Isso pausa o monitor, mas não remove vídeos já importados.", async () => {
+      setSaving(true); setMessage("");
+      try { await window.API.disconnectYoutube(); load(); setMessage("Conta desconectada. Os vídeos já importados foram preservados."); }
+      catch (ex) { setMessage(ex?.error || "Não foi possível desconectar."); }
+      finally { setSaving(false); }
+    });
+  };
+
+  const save = async () => {
+    setSaving(true); setMessage("");
+    try {
+      const next = await window.API.saveYoutubeSync(cfg);
+      setCfg(next);
+      setMessage(next.enabled
+        ? "Monitoramento ativado. Os vídeos atuais viram a linha de base; os próximos entrarão como rascunhos privados."
+        : "Monitoramento pausado.");
+    } catch (ex) { setMessage(ex?.error || "Erro ao salvar a configuração."); }
+    finally { setSaving(false); }
+  };
+  const run = async (includeExisting) => {
+    setRunning(true); setMessage("");
+    try {
+      const r = await window.API.runYoutubeSync(includeExisting);
+      const data = await window.API.getData();
+      setVids(data.videos || []);
+      setMessage(r.imported
+        ? `${r.imported} vídeo${r.imported === 1 ? "" : "s"} importado${r.imported === 1 ? "" : "s"} como privado.`
+        : r.baseline
+          ? `Monitor iniciado: ${r.baseline} vídeos atuais reconhecidos. A partir de agora, só entram os novos.`
+          : "Nenhum vídeo novo encontrado.");
+      load();
+    } catch (ex) { setMessage(ex?.error || "Falha ao consultar o YouTube."); load(); }
+    finally { setRunning(false); }
+  };
+
+  if (!cfg) return <div className="yt-sync-panel"><span className="yt-sync-muted">Carregando monitor do YouTube…</span></div>;
+  return (
+    <div className="yt-sync-panel">
+      <div className="yt-sync-head">
+        <div>
+          <h3>Monitor do YouTube</h3>
+          <p>Vídeos públicos, não listados e privados da conta conectada entram nesta lista como <strong>rascunhos privados</strong>. Depois, edite categoria, cliente e capa e publique no portfólio.</p>
+        </div>
+        <label className="yt-sync-toggle">
+          <input type="checkbox" checked={!!cfg.enabled} disabled={!cfg.connected} onChange={e => setCfg({ ...cfg, enabled: e.target.checked })}/>
+          <span>{cfg.enabled ? "Ativo" : "Pausado"}</span>
+        </label>
+      </div>
+      <div className="yt-sync-grid">
+        <div className="yt-sync-account">
+          <span>Conta do YouTube</span>
+          <strong>{cfg.connected ? (cfg.channelTitle || "Canal conectado") : "Nenhuma conta conectada"}</strong>
+          <small>Acesso somente leitura: o portfólio não pode alterar, publicar ou excluir nada no YouTube.</small>
+        </div>
+        <label>
+          <span>Verificar a cada</span>
+          <select value={cfg.intervalMinutes || 15} onChange={e => setCfg({ ...cfg, intervalMinutes: +e.target.value })}>
+            <option value="5">5 minutos</option><option value="15">15 minutos</option>
+            <option value="30">30 minutos</option><option value="60">1 hora</option>
+          </select>
+        </label>
+      </div>
+      <div className="yt-sync-actions">
+        {!cfg.connected
+          ? <button className="btn btn-accent" onClick={connect} disabled={saving || !cfg.oauthConfigured}>{saving ? "Abrindo…" : "Conectar YouTube"}</button>
+          : <><button className="btn btn-accent" onClick={save} disabled={saving || running}>{saving ? "Salvando…" : "Salvar configuração"}</button>
+            <button className="btn btn-ghost" onClick={() => run(false)} disabled={saving || running}>{running ? "Consultando…" : "Buscar novos agora"}</button>
+            <button className="btn btn-ghost" onClick={() => run(true)} disabled={saving || running} title="Importa os 50 vídeos mais recentes da biblioteca">Importar os últimos</button>
+            <button className="btn btn-ghost yt-sync-disconnect" onClick={disconnect} disabled={saving || running}>Desconectar</button></>}
+      </div>
+      <div className="yt-sync-status">
+        <span>Última consulta: {fmt(cfg.lastCheck)}</span><span>Último sucesso: {fmt(cfg.lastSuccess)}</span>
+        <span>Total importado: {cfg.importedCount || 0}</span>
+      </div>
+      {cfg.lastError && <div className="yt-sync-error">Último erro: {cfg.lastError}</div>}
+      {message && <div className="yt-sync-message">{message}</div>}
+      {!cfg.oauthConfigured && <p className="yt-sync-error">A integração ainda precisa das variáveis YOUTUBE_CLIENT_ID e YOUTUBE_CLIENT_SECRET no Render.</p>}
+      <p className="yt-sync-note">A autorização usa exclusivamente o escopo <code>youtube.readonly</code>. A privacidade original no YouTube não é modificada, e todo item chega oculto no portfólio.</p>
+    </div>
+  );
+};
+
 const VideosPanel = ({ vids, setVids, cats, clients, setClients }) => {
   const [view, setView] = React.useState("list");
   const [search, setSearch] = React.useState("");
@@ -567,6 +676,13 @@ const VideosPanel = ({ vids, setVids, cats, clients, setClients }) => {
   const togglePub = async (id) => {
     const prev = vids.find(v => v.id === id);
     if (!prev) return;
+    if (prev.status !== "live" && prev.youtubePrivacyStatus === "private") {
+      return window.__adminConfirm?.("Este vídeo ainda está privado no YouTube. Publicá-lo no portfólio não muda isso, e visitantes não conseguirão reproduzi-lo até você torná-lo não listado ou público no YouTube. Publicar mesmo assim?", () => togglePubForce(prev));
+    }
+    return togglePubForce(prev);
+  };
+  const togglePubForce = async (prev) => {
+    const id = prev.id;
     const updated = { ...prev, status: prev.status === "live" ? "draft" : "live" };
     setVids(vs => vs.map(v => v.id === id ? updated : v));
     try {
@@ -611,6 +727,7 @@ const VideosPanel = ({ vids, setVids, cats, clients, setClients }) => {
 
   return (
     <>
+      <YoutubeSyncPanel setVids={setVids}/>
       {/* Mobile-only: combined filters dropdown trigger */}
       <div className="admin-mobile-filter-bar">
         <div className="admin-search" style={{margin:0,flex:1}}>
@@ -752,7 +869,7 @@ const RowAdmin = ({ v, i, onTogglePub, onToggleFeat, onRemove, onEdit, onDuplica
             parecia torta sem motivo. A calha está reservada em todas. */}
         {v.featured && <span className="admin-row-star"><Icon name="star" size={11} stroke={2}/></span>}
         {v.title}
-        <span className="meta">{v.client}{v.empreendimento ? ` · ${v.empreendimento}` : ""}{v.formato ? ` · ${v.formato}` : ""}{v.padrao ? ` · padrão ${v.padrao.toLowerCase()}` : ""} · {v.duration} · {v.year}</span>
+        <span className="meta">{v.client}{v.empreendimento ? ` · ${v.empreendimento}` : ""}{v.formato ? ` · ${v.formato}` : ""}{v.padrao ? ` · padrão ${v.padrao.toLowerCase()}` : ""} · {v.duration} · {v.year}{v.youtubePrivacyStatus ? ` · YouTube: ${v.youtubePrivacyStatus === "private" ? "privado" : v.youtubePrivacyStatus === "unlisted" ? "não listado" : "público"}` : ""}</span>
       </div>
       <span className="cat-pill">{v.catLabel}</span>
       <span className={"status " + v.status} onClick={()=>onTogglePub && onTogglePub(v.id)} data-cursor="hover">
@@ -798,6 +915,7 @@ const GridCardAdmin = ({ v, cats, onTogglePub, onToggleFeat, onRemove, onEdit, o
           {v.empreendimento && <><span className="sep">·</span><span>{v.empreendimento}</span></>}
           {v.padrao && <><span className="sep">·</span><span>padrão {v.padrao.toLowerCase()}</span></>}
           {v.formato && <><span className="sep">·</span><span>{v.formato}</span></>}
+          {v.youtubePrivacyStatus && <><span className="sep">·</span><span>YouTube: {v.youtubePrivacyStatus === "private" ? "privado" : v.youtubePrivacyStatus === "unlisted" ? "não listado" : "público"}</span></>}
           <span className="sep">·</span><span>{v.year}</span>
         </div>
       </div>

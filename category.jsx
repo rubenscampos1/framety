@@ -158,6 +158,7 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef, spherical 
   const wrapRef      = React.useRef(null);
   const containerRef = React.useRef(null);
   const playerRef    = React.useRef(null);
+  const pendingPlayRef = React.useRef(false);
   const dragRef      = React.useRef(null);
   const tickRef      = React.useRef(null);
   const hideRef      = React.useRef(null);
@@ -168,6 +169,22 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef, spherical 
   const [dur, setDur]       = React.useState(0);
   const [fs, setFs]         = React.useState(false);
   const [ui, setUi]         = React.useState(true);   // custom control bar visible
+
+  /* O botão grande pode ser clicado antes de a API do YouTube terminar de
+     preparar o player. Antes, esse clique era perdido: a capa sumia, mas o
+     vídeo ficava parado em 0:00. A referência já existe desde a montagem e
+     guarda o pedido até onReady. */
+  if (controlRef) controlRef.current = {
+    play: () => {
+      const p = playerRef.current;
+      if (p?.playVideo) p.playVideo();
+      else pendingPlayRef.current = true;
+    },
+    pause: () => {
+      pendingPlayRef.current = false;
+      playerRef.current?.pauseVideo?.();
+    },
+  };
 
   React.useEffect(() => {
     let destroyed = false;
@@ -210,12 +227,10 @@ const CustomYouTubePlayer = ({ videoId, autoStart = true, controlRef, spherical 
           onReady: (e) => {
             e.target.setVolume(80);
             setDur(e.target.getDuration?.() || 0);
-            // Expose imperative play so the parent can start playback from WITHIN a
-            // tap gesture (one-tap play with sound on mobile).
-            if (controlRef) controlRef.current = {
-              play:  () => e.target.playVideo(),
-              pause: () => e.target.pauseVideo(),
-            };
+            if (pendingPlayRef.current) {
+              pendingPlayRef.current = false;
+              e.target.playVideo();
+            }
           },
           onStateChange: (e) => {
             if (e.data === 1) { setPlaying(true); startTick(); if (spherical) detect360(e.target); }
@@ -740,7 +755,17 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
               {v.empreendimento && <><span>·</span><span>{v.empreendimento}</span></>}
             </div>
           </div>
-          <div style={{display:"flex",gap:12,alignItems:"center"}}>
+          <div className="modal-top-actions">
+            {ytId && (
+              <a className="modal-youtube-btn"
+                 href={`https://www.youtube.com/watch?v=${ytId}`}
+                 target="_blank" rel="noopener noreferrer"
+                 onClick={(e) => e.stopPropagation()}
+                 title="Abrir este vídeo no YouTube">
+                <span className="modal-youtube-mark" aria-hidden="true">▶</span>
+                <span className="youtube-label">YouTube</span>
+              </a>
+            )}
             <button className="modal-share-btn" onClick={(e) => {
               e.stopPropagation();
               const url = `${window.location.origin}${window.FRAMETY_ROTAS.urlVideo(v)}`;
@@ -774,7 +799,7 @@ const VideoModal = ({ videoId, onClose, onOpenVideo, onContactNav }) => {
         </div>
 
         {/* ── Player ── */}
-        <div className={"modal-player" + (ehVertical(v) ? " v916" : "")}>
+        <div className={"modal-player" + (ehVertical(v) ? " v916" : "") + (v.has360 ? " is-360" : "")}>
           {/* YouTube is pre-mounted (cued) and revealed on play, so the tap that
               starts it happens on a ready player → one-tap play with sound on mobile.
               Fullscreen is handled by the native YouTube controls now. */}

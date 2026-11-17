@@ -9,6 +9,10 @@ Versionamento do Framety. O que está **no ar no Render** é a versão marcada
 
 ## Não lançado
 
+- **Portfólio: monitor privado da biblioteca do YouTube.** O Console conecta a conta do canal com autorização OAuth estritamente `youtube.readonly`, identifica vídeos públicos, não listados e privados e importa novidades como rascunhos ocultos. A integração não pode publicar, editar, excluir nem mudar a privacidade no YouTube; a ativação é manual, os tokens ficam cifrados no servidor e os vídeos só aparecem no portfólio depois da revisão e publicação pelo admin.
+
+- **Portfólio: player de vídeo recuperável e sem controles sobrepostos.** O clique em reproduzir agora fica guardado quando a API do YouTube ainda está carregando, em vez de revelar um player parado em 0:00. Vídeos 360° reservam uma faixa própria para os controles do site, sem cobrir os comandos do YouTube. O cabeçalho do vídeo também ganha um botão direto para abrir a mesma obra no YouTube.
+
 - **FramePlus: somente envios próprios seguem para o YouTube.** O servidor grava uma autorização persistente quando o upload é concluído pela rota do FramePlus. Webhooks, renomeações e empilhamentos de arquivos enviados diretamente no Frame.io não criam mais tarefas no YouTube. Na troca V1→V2, o vídeo anterior continua até a nova cópia ficar processada; depois a exclusão usa o ID e os comprovantes da mesma linhagem, e o link fica somente na versão atual. A limpeza administrativa da fila cancela transferências e tentativas pendentes sem apagar vídeos nem links já confirmados.
 
 - **FramePlus: fila do YouTube e janelas administrativas corrigidas.** A troca do padrão de título não transforma vídeos históricos em transferências pendentes. Arquivos reunidos pelo Frame.io com vínculos diferentes saem da fila ativa e aparecem separadamente como conflitos preservados, sem exclusão automática. A edição de usuário passa a ter cabeçalho e rodapé fixos, conteúdo rolável, fechar visível e adaptação a janelas menores.
