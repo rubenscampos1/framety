@@ -594,23 +594,211 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
   }));
 
   // Um aviso por área de trabalho, apontando para cá. O segredo de assinatura
-  // só vem na criação, então os antigos do Framyo são apagados e refeitos.
-  async function registrarWebhooks() {
+  // só vem na criação, então os antigos do Framyo são refeitos.
+  //
+  // Ordem segura (incidente de 03/11/2026: o feed parou porque o Frame.io
+  // passou a mandar avisos assinados com segredos que o servidor não tinha):
+  // 1) cria TODOS os novos, gravando o segredo de cada um assim que nasce;
+  // 2) só depois apaga os antigos. Os segredos antigos ainda valem por 15 min
+  //    (avisos em trânsito). Se a criação falhar no meio, os antigos que ainda
+  //    não foram substituídos continuam valendo e nada é apagado.
+  const destinoWebhook = () => `${URL_PUBLICA}/api/framyo/webhook`;
+  let registrando = null;
+  function registrarWebhooks() {
+    registrando = registrando || registrarWebhooksAgora().finally(() => { registrando = null; });
+    return registrando;
+  }
+  async function registrarWebhooksAgora() {
     const conta = fio.conta();
-    const destino = `${URL_PUBLICA}/api/framyo/webhook`;
+    const destino = destinoWebhook();
+    const f = D().frameio;
+    const anteriores = (f.webhooks || []).slice();
+    f.webhooks_antigos = (f.webhooks_antigos || []).filter((w) => w.ate > Date.now())
+      .concat(anteriores.map((w) => Object.assign({}, w, { ate: Date.now() + 15 * 60000 })));
     const novos = [];
-    for (const ws of await fio.tudo(`/accounts/${conta}/workspaces`)) {
-      for (const w of await fio.tudo(`/accounts/${conta}/workspaces/${ws.id}/webhooks`).catch(() => [])) {
-        if (w.url === destino) await fio.api('DELETE', `/accounts/${conta}/webhooks/${w.id}`).catch(() => {});
+    const areas = await fio.tudo(`/accounts/${conta}/workspaces`);
+    try {
+      for (const ws of areas) {
+        const j = await fio.api('POST', `/accounts/${conta}/workspaces/${ws.id}/webhooks`,
+                                { data: { name: 'Framyo', url: destino, events: EVENTOS_WEBHOOK } });
+        novos.push({ id: j.data.id, workspace_id: ws.id, secret: j.data.secret, criado_em: agora() });
+        f.webhooks = novos.concat(anteriores.filter((w) => !novos.some((n) => n.workspace_id === w.workspace_id)));
+        await loja.salvar();
       }
-      const j = await fio.api('POST', `/accounts/${conta}/workspaces/${ws.id}/webhooks`,
-                              { data: { name: 'Framyo', url: destino, events: EVENTOS_WEBHOOK } });
-      novos.push({ id: j.data.id, workspace_id: ws.id, secret: j.data.secret });
+    } catch (e) {
+      console.error('[framyo] registrar avisos do Frame.io:', e.message);
+      throw e;
     }
-    D().frameio.webhooks = novos;
+    f.webhooks = novos;
     await loja.salvar();
+    const ids = new Set(novos.map((w) => w.id));
+    for (const ws of areas) {
+      for (const w of await fio.tudo(`/accounts/${conta}/workspaces/${ws.id}/webhooks`).catch(() => [])) {
+        if (w.url === destino && !ids.has(w.id)) await fio.api('DELETE', `/accounts/${conta}/webhooks/${w.id}`).catch(() => {});
+      }
+    }
+    console.log(`[framyo] avisos do Frame.io registrados em ${novos.length} área(s) de trabalho`);
     return novos.length;
   }
+
+  // ── vigia dos avisos do Frame.io ────────────────────────────────────────────
+  // O feed de comentários só cresce pelo webhook. Se o Frame.io desativar o
+  // aviso, se ele sumir ou se o segredo guardado não bater, o feed congela em
+  // silêncio. O vigia confere a cada 10 min (e ao ligar): reativa, refaz e
+  // então recupera os comentários perdidos direto do Frame.io.
+  const saude = () => D().frameio && (D().frameio.saude || (D().frameio.saude = {}));
+  const vigiaLigada = process.env.FRAMYO_VIGIA === '1'
+    || (process.env.FRAMYO_VIGIA !== '0' && process.env.NODE_ENV === 'production' && !process.env.FRAMYO_TESTE_FRAMEIO);
+  let vigiando = null, ultimaVigiaAssinatura = 0;   // por assinatura: no máximo 1 conserto a cada 10 min
+  function vigiarWebhooks(motivo) {
+    vigiando = vigiando || vigiarAgora(motivo).catch((e) => {
+      console.error('[framyo] vigia dos avisos:', e.message);
+      const s = saude(); if (s) { s.vigia_em = agora(); s.vigia_erro = e.message; }
+      return { erro: e.message };
+    }).finally(() => { vigiando = null; });
+    return vigiando;
+  }
+  async function vigiarAgora(motivo) {
+    await loja.pronto();
+    const f = D().frameio;
+    if (!f || !f.refresh_token || !f.conta_id) return { pulou: 'Frame.io não conectado' };
+    const conta = fio.conta(), destino = destinoWebhook();
+    const conhecidos = new Map((f.webhooks || []).map((w) => [w.id, w]));
+    let refazer = motivo === 'assinatura' ? 'avisos com assinatura desconhecida' : null;
+    const reativados = [];
+    if (!refazer) {
+      for (const ws of await fio.tudo(`/accounts/${conta}/workspaces`)) {
+        const nossos = (await fio.tudo(`/accounts/${conta}/workspaces/${ws.id}/webhooks`)).filter((w) => w.url === destino);
+        const bom = nossos.find((w) => conhecidos.has(w.id));
+        if (!bom) { refazer = `área “${ws.name || ws.id}” sem aviso com segredo conhecido`; break; }
+        if (!(bom.events || EVENTOS_WEBHOOK).includes('comment.created')) { refazer = 'aviso sem comment.created'; break; }
+        if (bom.active === false) {
+          await fio.api('PATCH', `/accounts/${conta}/webhooks/${bom.id}`, { data: { active: true } });
+          reativados.push(ws.name || ws.id);
+        }
+      }
+    }
+    if (refazer) await registrarWebhooks();
+    const s = saude();
+    Object.assign(s, { vigia_em: agora(), vigia_erro: null, vigia_resultado: refazer ? `refeito: ${refazer}`
+      : reativados.length ? `reativado: ${reativados.join(', ')}` : 'ok' });
+    if (refazer || reativados.length) {
+      console.warn('[framyo] avisos do Frame.io consertados:', s.vigia_resultado);
+      s.consertado_em = agora();
+    }
+    // Recupera o que se perdeu: depois de um conserto ou na primeira vigia desta versão.
+    let recuperados = null;
+    if (refazer || reativados.length || !s.recuperacao_v1) {
+      recuperados = await recuperarComentarios();
+      s.recuperacao_v1 = agora();
+    }
+    await loja.salvar().catch(() => {});
+    return { resultado: s.vigia_resultado, recuperados };
+  }
+  if (vigiaLigada) {
+    setTimeout(() => vigiarWebhooks('inicio'), Number(process.env.FRAMYO_VIGIA_INICIO_MS) || 20000).unref();
+    setInterval(() => vigiarWebhooks('periodica'), Number(process.env.FRAMYO_VIGIA_MS) || 10 * 60000).unref();
+  }
+
+  // Comentários feitos enquanto o aviso estava quebrado: o Frame.io não lista
+  // comentários da conta toda, então confere os vídeos em que a equipe mexeu
+  // (feed, envios, responsáveis) e as pastas/pilhas deles, por ordem de
+  // atualização. Entram no feed marcados como recuperados (sem aviso na tela,
+  // para não despejar dezenas de notificações antigas de uma vez).
+  let recuperando = null;
+  function recuperarComentarios(desdeIso) {
+    recuperando = recuperando || recuperarAgora(desdeIso).finally(() => { recuperando = null; });
+    return recuperando;
+  }
+  async function recuperarAgora(desdeIso) {
+    const conta = fio.conta();
+    const comentarios = D().eventos.filter((e) => e.tipo === 'comentario');
+    const ultimo = comentarios.reduce((m, e) => Math.max(m, Date.parse(e.criado_em) || 0), 0);
+    const desde = desdeIso ? Date.parse(desdeIso) : Math.max((ultimo || 0) - 3600e3, Date.now() - 45 * 864e5);
+    const limite = Date.now() - 60 * 864e5;
+    const arquivos = new Set(), pais = new Set();
+    for (const e of comentarios.slice(-400)) {
+      if ((Date.parse(e.criado_em) || 0) < limite) continue;
+      if (e.arquivo_id) arquivos.add(e.arquivo_id);
+      if (e.pai_id) pais.add(e.pai_id);
+    }
+    for (const x of D().envios.slice(0, 150)) {
+      if (x.arquivo_id) arquivos.add(x.arquivo_id);
+      if (x.pilha_id) pais.add(x.pilha_id);
+    }
+    for (const id of Object.keys(D().responsaveis || {})) pais.add(id);
+    // Pastas e pilhas: os itens atualizados recentemente (novas versões, vídeos novos).
+    // Ritmo: listagem de pastas aceita 100/min por usuário; comentários, bem mais.
+    const ritmo = Number(process.env.FRAMYO_RECUPERAR_RITMO_MS ?? 700);
+    const pausa = (ms) => (ms > 0 ? new Promise((ok) => setTimeout(ok, ms)) : null);
+    const filhos = async (id) => {
+      for (const tipo of ['folders', 'version_stacks']) {
+        await pausa(ritmo);
+        const j = await fio.api('GET', `/accounts/${conta}/${tipo}/${encodeURIComponent(id)}/children?sort=updated_at_desc&page_size=50`).catch(() => null);
+        if (j) return j.data || [];
+      }
+      return [];
+    };
+    for (const id of [...pais].slice(0, 200)) {
+      for (const x of await filhos(id)) {
+        if ((Date.parse(x.updated_at) || 0) < desde) break;
+        if (x.type === 'file') arquivos.add(x.id);
+        else if (x.type === 'version_stack') for (const y of await filhos(x.id)) if (y.type === 'file') arquivos.add(y.id);
+      }
+    }
+    const conhecidos = new Set(comentarios.map((e) => e.comentario_id));
+    const achados = [];
+    for (const id of [...arquivos].slice(0, 600)) {
+      await pausa(ritmo / 3);
+      const j = await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(id)}/comments?include=owner&sort=created_at_desc&page_size=50&timestamp_as_timecode=false`).catch(() => null);
+      const novos = ((j && j.data) || []).filter((c) => (Date.parse(c.created_at) || 0) > desde && !conhecidos.has(c.id));
+      if (!novos.length) continue;
+      const arq = (await fio.api('GET', `/accounts/${conta}/files/${encodeURIComponent(id)}?include=project`).catch(() => null) || {}).data;
+      if (!arq) continue;
+      if (novos.some((c) => !c.owner)) await nomearRevisores(conta, arq.id, novos, true).catch(() => {});
+      const resp = responsavelDe(arq.id, arq.parent_id);
+      for (const c of novos) {
+        conhecidos.add(c.id);
+        achados.push({
+          tipo: 'comentario', comentario_id: c.id, criado_em: c.created_at || agora(), recuperado: true,
+          texto: c.text || '', autor: autorDe(c),
+          arquivo_id: arq.id, pai_id: arq.parent_id || null, arquivo_nome: arq.name, view_url: arq.view_url,
+          projeto_id: arq.project_id, projeto_nome: (arq.project && arq.project.name) || '',
+          timestamp: c.timestamp == null ? null : c.timestamp,
+          responsavel_id: resp ? resp.id : null, responsavel: resp ? resp.usuario : null,
+        });
+      }
+    }
+    achados.sort((a, b) => Date.parse(a.criado_em) - Date.parse(b.criado_em));
+    for (const e of achados) {
+      if (D().eventos.some((x) => x.comentario_id === e.comentario_id)) continue;   // chegou pelo aviso enquanto isso
+      D().seq += 1;
+      D().eventos.push(Object.assign({ seq: D().seq }, e));
+    }
+    if (D().eventos.length > MAX_EVENTOS) D().eventos.splice(0, D().eventos.length - MAX_EVENTOS);
+    const s = saude();
+    if (s) Object.assign(s, { recuperado_em: agora(), recuperados: achados.length, recuperacao_arquivos: arquivos.size,
+                              recuperacao_desde: new Date(desde).toISOString() });
+    await loja.salvar();
+    if (achados.length) console.log(`[framyo] ${achados.length} comentário(s) recuperado(s) do Frame.io`);
+    return achados.length;
+  }
+
+  r.get('/frameio/saude', autenticar, soAdmin, (req, res) => {
+    const f = D().frameio || {};
+    const ultimo = D().eventos.filter((e) => e.tipo === 'comentario' && !e.recuperado).slice(-1)[0];
+    res.json({ conectado: !!f.refresh_token, vigia_ligada: vigiaLigada,
+               avisos: (f.webhooks || []).map((w) => ({ id: w.id, workspace_id: w.workspace_id, criado_em: w.criado_em || null })),
+               ultimo_comentario_por_aviso: ultimo ? ultimo.criado_em : null, saude: f.saude || {} });
+  });
+  r.post('/frameio/vigiar', autenticar, soAdmin, envolve(async (req, res) => {
+    res.json(await vigiarWebhooks('admin'));
+  }));
+  r.post('/frameio/recuperar', autenticar, soAdmin, envolve(async (req, res) => {
+    const desde = req.body && req.body.desde ? String(req.body.desde) : null;
+    if (desde && !Date.parse(desde)) throw falha(400, 'Data inválida em "desde".');
+    res.json({ recuperados: await recuperarComentarios(desde) });
+  }));
 
   r.post('/frameio/webhooks', autenticar, soAdmin, envolve(async (req, res) => {
     res.json({ areas_de_trabalho: await registrarWebhooks() });
@@ -633,14 +821,33 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     if (!ts || !assinatura || !req.corpoCru) return false;
     if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) return false;   // aviso velho: pode ser replay
     const base = Buffer.concat([Buffer.from(`v0:${ts}:`), req.corpoCru]);
-    return (D().frameio && D().frameio.webhooks || []).some((w) => {
+    const f = D().frameio || {};
+    const segredos = (f.webhooks || []).concat((f.webhooks_antigos || []).filter((w) => w.ate > Date.now()));
+    return segredos.some((w) => {
+      if (!w.secret) return false;
       const esperado = 'v0=' + crypto.createHmac('sha256', w.secret).update(base).digest('hex');
       return esperado.length === assinatura.length && crypto.timingSafeEqual(Buffer.from(esperado), Buffer.from(assinatura));
     });
   }
 
   r.post('/webhook', envolve(async (req, res) => {
-    if (!assinaturaConfere(req)) return res.status(401).json({ erro: 'assinatura inválida' });
+    const s = saude();
+    if (!assinaturaConfere(req)) {
+      // Avisos legítimos com segredo que não temos congelam o feed (o Frame.io
+      // não repete 4xx). Três seguidos em 10 min: o vigia refaz os avisos.
+      if (s && req.headers['x-frameio-signature']) {
+        const agoraMs = Date.now();
+        s.invalidos = (s.invalidos || []).filter((t) => agoraMs - t < 10 * 60000).concat(agoraMs).slice(-20);
+        s.ultimo_invalido_em = agora();
+        if (vigiaLigada && s.invalidos.length >= 3 && agoraMs - ultimaVigiaAssinatura > 10 * 60000) {
+          s.invalidos = [];
+          ultimaVigiaAssinatura = agoraMs;
+          vigiarWebhooks('assinatura');
+        }
+      }
+      return res.status(401).json({ erro: 'assinatura inválida' });
+    }
+    if (s) { s.ultimo_aviso_em = agora(); s.invalidos = []; }
     const b = req.body || {};
     await youtube.evento(b); // grava na fila antes do ACK; entrega repetida é idempotente
     res.json({ ok: true });
@@ -659,8 +866,14 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     if (!id || vistos.has(id) || D().eventos.some((e) => e.comentario_id === id)) return;
     vistos.add(id);
     if (vistos.size > 5000) vistos.clear();
-    const c = (await fio.api('GET', `/accounts/${conta}/comments/${id}?include=owner`)).data;
-    const arq = (await fio.api('GET', `/accounts/${conta}/files/${c.file_id}?include=project`)).data;
+    let c, arq;
+    try {
+      c = (await fio.api('GET', `/accounts/${conta}/comments/${id}?include=owner`)).data;
+      arq = (await fio.api('GET', `/accounts/${conta}/files/${c.file_id}?include=project`)).data;
+    } catch (e) {
+      vistos.delete(id);              // falha passageira: a recuperação ou um aviso repetido ainda podem trazê-lo
+      throw e;
+    }
     // O responsável pode estar no arquivo ou na pilha de versões em que ele está.
     const resp = responsavelDe(arq.id, arq.parent_id);
     // Cliente pelo link de revisão: o nome vem da atividade do link, que o
@@ -695,7 +908,7 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const meus = new Set(u.projetos || []);
     const meu = (e) => (e.responsavel_id ? e.responsavel_id === u.id : meus.has(e.projeto_id));
     const eventos = u.marketing && !u.admin ? []         // marketing não recebe avisos de comentário
-      : D().eventos.filter((e) => e.seq > desde && (!filtra || meu(e))).slice(-100);
+      : D().eventos.filter((e) => e.seq > desde && !e.recuperado && (!filtra || meu(e))).slice(-100);
     await nomearEventosAntigos(eventos);
     const pub = temPara(D().atualizacao, u) ? D().atualizacao : null;
     const forcar = u.forcar_atualizacao && pub && pub.versao && compararVersoes(pub.versao, u.versao) > 0 ? pub.versao : null;
@@ -1323,7 +1536,9 @@ function roteador({ pool, dir, senhaDoConsoleConfere }) {
     const restrito = !u.admin && (u.projetos || []).length;
     const ve = (x) => !restrito || u.projetos.includes(x.projeto_id);
     const n = Math.min(Number(req.query.n) || 40, 100);
-    const comentarios = D().eventos.filter((e) => e.tipo === 'comentario' && ve(e)).slice(-n).reverse();
+    // Por data do comentário: os recuperados entram no fim da lista, fora de ordem.
+    const comentarios = D().eventos.filter((e) => e.tipo === 'comentario' && ve(e))
+      .sort((a, b) => (Date.parse(b.criado_em) || 0) - (Date.parse(a.criado_em) || 0) || b.seq - a.seq).slice(0, n);
     // Avisos antigos não guardavam a pasta/pilha do vídeo: busca uma vez e guarda.
     const sem = comentarios.filter((e) => e.pai_id === undefined && e.arquivo_id);
     if (sem.length && D().frameio && D().frameio.refresh_token) {
